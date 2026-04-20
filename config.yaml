@@ -1,0 +1,83 @@
+workdir: "~/data/2026_omni_chromhmm"
+
+tools:
+  chromhmm_jar: "ChromHMM/ChromHMM.jar"
+  omnipeak_jar: "omnipeak-1.3.6762.jar"
+  chromsizes: "ChromHMM/CHROMSIZES/hg38.txt"
+  coords_dir: "ChromHMM/COORDS/hg38"
+  java_opts: "-mx4000M"
+
+params:
+  bin: 200
+  n_states: 15
+  genome: "hg38"
+  marks: [H3K36me3, H3K9me3, H3K4me1, H3K27ac, H3K27me3, H3K4me3]
+
+datasets:
+
+  imr90:
+    cell: "IMR90"
+    ref_chromhmm: "ENCFF714POQ"   # ChromHMM 15-state reference
+    rnaseq: "ENCFF014JRQ"          # RNA-seq TSV
+    omnipeak_extra: ""
+    replicates: true
+    bams:
+      ENCFF021CLP: {mark: H3K4me3,  rep: rep1}
+      ENCFF064XTS: {mark: H3K27ac,  rep: rep1}
+      ENCFF078EHX: {mark: H3K9me3,  rep: rep1}
+      ENCFF084CZB: {mark: H3K27me3, rep: rep1}
+      ENCFF197BAZ: {mark: H3K36me3, rep: rep1}
+      ENCFF812CWF: {mark: H3K4me1,  rep: rep1}
+      ENCFF355WLE: {mark: H3K4me3,  rep: rep2}
+      ENCFF547BFL: {mark: H3K27me3, rep: rep2}
+      ENCFF827KCG: {mark: H3K27ac,  rep: rep2}
+      ENCFF927WHP: {mark: H3K4me1,  rep: rep2}
+      ENCFF942QOQ: {mark: H3K9me3,  rep: rep2}
+      ENCFF994SJM: {mark: H3K36me3, rep: rep2}
+
+  monocytes:
+    cell: "Monocyte"
+    ref_chromhmm: "ENCFF227EMB"
+    rnaseq: "ENCFF408GAO"
+    omnipeak_extra: ""
+    replicates: false
+    bams:
+      ENCFF014BCD: {mark: H3K27ac}
+      ENCFF141KHX: {mark: H3K4me1}
+      ENCFF144PKE: {mark: H3K4me3}
+      ENCFF150SGV: {mark: H3K36me3}
+      ENCFF168UCU: {mark: H3K9me3}
+      ENCFF225KQA: {mark: H3K27me3}
+      ENCFF537BKE: {mark: H3K9me3}
+      ENCFF573MNS: {mark: H3K4me1}
+      ENCFF629ODR: {mark: H3K36me3}
+      ENCFF640GCK: {mark: H3K4me3}
+      ENCFF872QFO: {mark: H3K27ac}
+
+  monocytes_mint:
+    cell: "MonocyteMint"
+    ref_chromhmm: "ENCFF166IHY"
+    rnaseq: null
+    omnipeak_extra: "--fragmentation 0"
+    replicates: false
+    bams:
+      ENCFF128UWF: {mark: H3K36me3}
+      ENCFF438HLV: {mark: H3K27ac}
+      ENCFF507NNO: {mark: H3K27me3}
+      ENCFF600ZLL: {mark: H3K4me3}
+      ENCFF613TME: {mark: H3K9me3}
+      ENCFF668OLF: {mark: H3K4me1}
+
+  gm12878_mint:
+    cell: "GM12878Mint"
+    ref_chromhmm: "ENCFF870JAH"
+    rnaseq: null
+    omnipeak_extra: "--fragmentation 0"
+    replicates: false
+    bams:
+      ENCFF241BPW: {mark: H3K27ac}
+      ENCFF304ZNG: {mark: H3K9me3}
+      ENCFF545WJH: {mark: H3K27me3}
+      ENCFF641VOI: {mark: H3K4me3}
+      ENCFF869PBS: {mark: H3K36me3}
+      ENCFF934GLQ: {mark: H3K4me1}
