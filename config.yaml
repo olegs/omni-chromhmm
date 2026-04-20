@@ -6,6 +6,8 @@ tools:
   chromsizes: "ChromHMM/CHROMSIZES/hg38.txt"
   coords_dir: "ChromHMM/COORDS/hg38"
   java_opts: "-mx4000M"
+  gencode_gtf: "gencode.v46.basic.annotation.gtf.gz"
+  gene_info: "Homo_sapiens.gene_info.gz"
 
 params:
   bin: 200

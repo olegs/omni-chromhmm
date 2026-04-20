@@ -117,7 +117,7 @@ def all_results(ds):
     if cfg.get("replicates"):
         for rep in ["rep1", "rep2"]:
             # Default ChromHMM on replicate BAMs
-            t.append(f"{ds}/{rep}/chromhmm_default_result/{cell}_{NSTATES}_chromhmm_default_matched.bed")
+            t.append(f"{ds}/{rep}/chromhmm_default_result/{cell}_{NSTATES}_chromhmm_default_{rep}_matched.bed")
             # ChromHMM over Omnipeak on replicate BAMs
             t.append(f"{ds}/{rep}/chromhmm_result/{cell}_{NSTATES}_chromhmm_{rep}_matched.bed")
             # GMM and KMeans states on replicate Omnipeak binarization

@@ -29,6 +29,22 @@ rule download_rnaseq:
         "wget -q {params.url} -O {output}"
 
 
+rule download_gencode_gtf:
+    output: TOOLS["gencode_gtf"]
+    params:
+        url = "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.basic.annotation.gtf.gz"
+    shell:
+        "wget -q {params.url} -O {output}"
+
+
+rule download_gene_info:
+    output: TOOLS["gene_info"]
+    params:
+        url = "https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz"
+    shell:
+        "wget -q {params.url} -O {output}"
+
+
 rule sort_bam:
     input:  "{ds}/bams/{name}.bam"
     output: "{ds}/bams/{name}.sorted.bam"

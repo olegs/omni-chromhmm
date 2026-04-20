@@ -23,7 +23,7 @@ rule match_rep_chromhmm_default:
     input:
         ref  = lambda w: _ref_bed(w.ds),
         work = "{ds}/{mode}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_dense.bed",
-    output:    "{ds}/{mode}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_chromhmm_default_matched.bed"
+    output:    "{ds}/{mode}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_chromhmm_default_{mode}_matched.bed"
     wildcard_constraints: mode = "rep[12]"
     conda: "../envs/python.yaml"
     shell:

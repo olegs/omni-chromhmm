@@ -32,9 +32,13 @@ The pipeline runs the following steps for each dataset:
    so all results share a single label space and are directly comparable.
 
 5. **Analysis** (`rules/analyze.smk`) — runs `scripts/analyze.py` on each
-   matched segmentation to produce segment-length distributions, state feature
-   means, functional enrichment against ChromHMM COORDS annotations, and
-   (when available) RNA-seq expression quantile plots.
+   matched segmentation to produce per-segmentation reports and plots:
+   - `report.tsv` — state count, number of segments, total bp, mean/median length
+   - `segment_length.png` — bar chart of average segment length per state
+   - `state_emissions.{tsv,png}` — emission matrix (fraction of binarized signal per state × mark)
+   - `enrichment.{tsv,png}` — overlap-fraction enrichment vs ChromHMM COORDS annotations
+     (CpGIsland, RefSeqExon, RefSeqGene, RefSeqTES, RefSeqTSS, RefSeqTSS2kb)
+     plus ExpressedGeneBodies and ExpressedTSS when RNA-seq data is available
 
 6. **Markup analysis** (`rules/markups.smk`) — downloads ENCODE reference
    ChromHMM annotations across cell types for violin plots and cross-dataset
@@ -111,3 +115,63 @@ snakemake -p markups/plots/.done \
 To enable replicate processing for a dataset, set `replicates: true` in
 `config.yaml` and ensure each BAM entry has a `rep: rep1` or `rep: rep2` tag.
 Currently only `imr90` has replicate annotations.
+
+## Analyzing results
+
+### Per-segmentation analysis (`scripts/analyze.py`)
+
+Each matched segmentation is analyzed independently. The script produces six
+output files in the specified `--outdir`:
+
+| File | Description |
+|------|-------------|
+| `report.tsv` | State count, segment counts, total bp, mean/median length per state |
+| `segment_length.png` | Bar chart of average segment length per state |
+| `state_emissions.tsv` | Emission matrix: fraction of binarized signal per state x mark |
+| `state_emissions.png` | Heatmap of the emission matrix |
+| `enrichment.tsv` | Overlap-fraction enrichment vs annotation tracks |
+| `enrichment.png` | Heatmap of the enrichment matrix with values |
+
+Standalone usage:
+
+```bash
+# Minimal: report + segment length plot
+python scripts/analyze.py --seg seg.bed --bin 200 --outdir out/
+
+# With emissions (requires ChromHMM binary input files)
+python scripts/analyze.py --seg seg.bed --bin 200 --outdir out/ \
+  --inputs chromhmm_default/*.txt
+
+# With enrichment vs COORDS annotations
+python scripts/analyze.py --seg seg.bed --bin 200 --outdir out/ \
+  --inputs chromhmm_default/*.txt \
+  --annotations ChromHMM/COORDS/hg38/*.bed.gz
+
+# With RNA-seq expressed gene enrichment (adds ExpressedGeneBodies + ExpressedTSS tracks)
+python scripts/analyze.py --seg seg.bed --bin 200 --outdir out/ \
+  --inputs chromhmm_default/*.txt \
+  --annotations ChromHMM/COORDS/hg38/*.bed.gz \
+  --rnaseq rnaseq.tsv --gene-info Homo_sapiens.gene_info.gz \
+  --gtf gencode.v46.basic.annotation.gtf.gz
+```
+
+### Cross-dataset reference analysis (`scripts/analyze_downloaded.py`)
+
+Analyzes downloaded ENCODE reference ChromHMM annotations (15-state and 18-state
+models) across multiple cell types. Produces violin plots of segment length
+distributions, coverage per state, per-sample distributions, median length
+heatmaps, and summary statistics.
+
+```bash
+python scripts/analyze_downloaded.py --dir markups/
+```
+
+### Matched segmentation comparison (`scripts/analyze_matched.py`)
+
+Finds all `*_matched.bed` files recursively under a directory, groups them
+into `chromhmm_default_result` vs other methods, and produces comparative
+violin plots, coverage plots, heatmaps, and statistics for each group.
+
+```bash
+python scripts/analyze_matched.py --dir imr90/
+```
