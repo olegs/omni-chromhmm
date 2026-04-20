@@ -1,7 +1,7 @@
 # Omni ChromHMM
 
 Snakemake pipeline that compares the default ChromHMM segmentation,
-ChromHMM over Omnipeak-summits-binarized data, and GMM/MiniBatchKMeans states over Omnipeak
+ChromHMM over Omnipeak-summits-binarized data, and GMM/KMeans states over Omnipeak
 across four ENCODE datasets (IMR90, Monocytes, Monocytes Mint ChIP-seq, GM12878 Mint ChIP-seq).
 
 ## Pipeline overview
@@ -25,7 +25,7 @@ The pipeline runs the following steps for each dataset:
    ChromHMM binary matrices. Three segmentations are produced per mode:
    - ChromHMM LearnModel on Omnipeak-binarized inputs
    - GMM clustering (via `scripts/states.py --method gmm`)
-   - MiniBatchKMeans clustering (via `scripts/states.py --method kmeans`)
+   - KMeans clustering (via `scripts/states.py --method kmeans`)
 
 4. **State matching** (`rules/match.smk`) — relabels every segmentation to the
    ENCODE reference annotation using maximum-overlap mapping (`scripts/match.py`),
