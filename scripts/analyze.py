@@ -519,23 +519,19 @@ def _compute_overlap_bp(by_chrom, starts, ann_segs):
 
 
 def compute_enrichment(segs, annotation_items):
-    """Fisher enrichment of each state vs each annotation using bp overlaps.
+    """Fold enrichment of each state vs each annotation (ChromHMM-style).
 
     annotation_items: list of (label, bed_regions_or_path).
 
     For each (state, annotation):
-        a = bp(state ∩ ann) + 1
-        b = bp(state) - a + 1
-        c = bp(ann ∩ any_state) - a + 1
-        d = total_bp - (a + b + c) + 1
-    Fisher exact test (greater) on [[a, b], [c, d]].
+        fold = (bp(state ∩ ann) / bp(state)) / (bp(ann) / total_bp)
 
-    Returns a long-form DataFrame with columns:
-        state, label, odds_ratio, p_value, q_value
+    This matches ChromHMM's OverlapEnrichment calculation where bp(ann) is the
+    total genomic coverage of the annotation (not just the part overlapping
+    the segmentation).
+
+    Returns a long-form DataFrame with columns: state, label, fold_enrichment
     """
-    from scipy.stats import fisher_exact
-    from scipy.stats import false_discovery_control
-
     by_chrom = defaultdict(list)
     state_total = defaultdict(int)
     for chrom, s, e, name in segs:
@@ -559,28 +555,27 @@ def compute_enrichment(segs, annotation_items):
         else:
             ann_segs = bed_data
 
+        # Total annotation bp (full annotation coverage, not just overlapping)
+        ann_bp = sum(e - s for _, s, e, _ in ann_segs)
+        ann_frac = ann_bp / total_bp if total_bp > 0 else 0
+
         state_hit = _compute_overlap_bp(by_chrom, starts, ann_segs)
-        ann_total = sum(state_hit.values())
 
         for st in states:
-            a = state_hit.get(st, 0) + 1
-            b = max(0, state_total[st] - a) + 1
-            c = max(0, ann_total - a) + 1
-            d = max(0, total_bp - (a + b + c)) + 1
-            odds, pval = fisher_exact([[a, b], [c, d]], alternative="greater")
+            overlap = state_hit.get(st, 0)
+            state_frac = overlap / state_total[st] if state_total[st] > 0 else 0
+            fold = state_frac / ann_frac if ann_frac > 0 else 0
             rows.append({"state": st, "label": label,
-                         "odds_ratio": odds, "p_value": pval})
+                         "fold_enrichment": fold})
 
     if not rows:
-        return pd.DataFrame(columns=["state", "label", "odds_ratio", "p_value", "q_value"])
+        return pd.DataFrame(columns=["state", "label", "fold_enrichment"])
 
-    df = pd.DataFrame(rows)
-    df["q_value"] = false_discovery_control(df["p_value"].values)
-    return df
+    return pd.DataFrame(rows)
 
 
 def save_enrichment_table(enrich_df, outdir):
-    """Save enrichment/enrichment.tsv (long-form) and pivoted odds_ratio table."""
+    """Save enrichment/enrichment.tsv (long-form fold enrichment table)."""
     edir = os.path.join(outdir, "enrichment")
     os.makedirs(edir, exist_ok=True)
     enrich_df.to_csv(os.path.join(edir, "enrichment.tsv"),
@@ -609,8 +604,8 @@ def plot_enrichment(enrich_df, segs, outdir):
     sorted_idx = sorted(enrich_df["state"].unique(), key=_natural_sort_key)
     sorted_cols = _reorder_annotations(sorted(enrich_df["label"].unique()))
 
-    odds_mat = enrich_df.pivot(index="state", columns="label", values="odds_ratio")
-    odds_mat = odds_mat.loc[sorted_idx, sorted_cols]
+    fold_mat = enrich_df.pivot(index="state", columns="label", values="fold_enrichment")
+    fold_mat = fold_mat.loc[sorted_idx, sorted_cols]
 
     # Add Genome % column
     state_bp = defaultdict(int)
@@ -620,9 +615,9 @@ def plot_enrichment(enrich_df, segs, outdir):
     genome_pct = pd.Series(
         {st: 100.0 * state_bp.get(st, 0) / total_bp for st in sorted_idx},
         name="Genome %")
-    odds_mat.insert(0, "Genome %", genome_pct)
+    fold_mat.insert(0, "Genome %", genome_pct)
 
-    scaled = _column_minmax_scale(odds_mat)
+    scaled = _column_minmax_scale(fold_mat)
 
     fig, ax = plt.subplots(figsize=(max(3, 0.4 * len(scaled.columns)),
                                     max(4, 0.35 * len(scaled))))
