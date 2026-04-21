@@ -127,17 +127,22 @@ def all_results(ds):
     return t
 
 
-rule dataset_done:
-    """Per-dataset sentinel: all segmentations + analysis + matched plots."""
-    input:
-        lambda w: all_results(w.ds)
-                  + [f"{w.ds}/analysis/.done", f"{w.ds}/plots_matched/.done"],
-    output: touch("{ds}/.done")
-
-
 rule all:
     input:
         [f"{ds}/.done" for ds in DATASETS],
+
+
+rule dataset_done:
+    """Per-dataset sentinel: all segmentations + analysis + matched plots + metrics."""
+    input:
+        lambda w: all_results(w.ds)
+                  + [f"{w.ds}/analysis/ref/report.tsv",
+                     f"{w.ds}/matched_stats_all.tsv",
+                     f"{w.ds}/analysis/comparison/entropy_summary.tsv",
+                     f"{w.ds}/analysis/comparison/kappa_matrix.tsv",
+                     f"{w.ds}/analysis/comparison/segment_stats.tsv",
+                     f"{w.ds}/analysis/methods/comparison_table.tsv"],
+    output: touch("{ds}/.done")
 
 
 include: "rules/data.smk"

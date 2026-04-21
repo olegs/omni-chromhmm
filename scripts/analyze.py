@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-# Unified analysis for any ChromHMM-style segmentation:
-#   1. Report: state count, segment counts, average/median lengths  (report.tsv)
-#   2. Segment length bar chart                                     (segment_length.png)
-#   3. State emissions heatmap + table                              (state_emissions.{png,tsv})
-#   4. Functional enrichment heatmap + table                        (enrichment.{png,tsv})
+# Segmentation analysis and quality metrics.
 #
-# Also provides shared helpers used by analyze_downloaded.py and analyze_matched.py:
-#   - BED reading (load_bed, load_bed_df)
-#   - Multi-sample violin / coverage / heatmap / stats plots
+# Single --seg: per-segmentation report, emissions, enrichment.
+# Multiple --seg: cross-segmentation entropy, kappa, segment stats.
+#
+# Also provides shared helpers used by analyze_downloaded.py / analyze_matched.py.
 #
 # Usage:
-#   analyze.py --seg SEG.bed --bin BIN --outdir OUT \
-#       [--inputs chromhmm/*.txt(.gz)] \
-#       [--annotations COORDS/*.bed.gz] \
-#       [--rnaseq RNA.tsv --gene-info gene_info.gz --gtf annotation.gtf.gz]
+#   # Per-segmentation analysis
+#   analyze.py --seg SEG.bed --bin 200 --outdir OUT \
+#       [--inputs chromhmm/*.txt] [--annotations COORDS/*.bed.gz]
+#
+#   # Cross-segmentation metrics (entropy, kappa, segment stats)
+#   analyze.py --seg SEG1.bed SEG2.bed ... --bin 200 --outdir OUT
 
 import argparse
 import csv
@@ -21,6 +20,7 @@ import glob
 import gzip
 import os
 import sys
+import types
 from bisect import bisect_left
 from collections import defaultdict
 
@@ -407,6 +407,19 @@ def plot_segment_lengths(segs, outdir):
     plt.close(fig)
 
 
+# Preferred display order for histone marks
+MARKS_ORDER = ["H3K4me3", "H3K27ac", "H3K4me1", "H3K36me3", "H3K9me3", "H3K27me3"]
+
+
+def _reorder_marks(marks, mat):
+    """Reorder columns of *mat* to match MARKS_ORDER. Unknown marks are appended."""
+    known = [m for m in MARKS_ORDER if m in marks]
+    unknown = [m for m in marks if m not in MARKS_ORDER]
+    new_order = known + unknown
+    idx = [marks.index(m) for m in new_order]
+    return new_order, mat[:, idx]
+
+
 def compute_emissions(segs, inputs, bin_size):
     """Compute state emission matrix (states x marks). Returns (states, marks, matrix)."""
     by_chrom, marks = {}, None
@@ -430,12 +443,15 @@ def compute_emissions(segs, inputs, bin_size):
 
     states = sorted(sums)
     mat = np.array([sums[s] / max(counts[s], 1) for s in states])
+    marks, mat = _reorder_marks(marks, mat)
     return states, marks, mat
 
 
 def save_emissions_table(states, marks, mat, outdir):
-    """Save state_emissions.tsv: rows=states, cols=marks."""
-    path = os.path.join(outdir, "state_emissions.tsv")
+    """Save emissions/state_emissions.tsv: rows=states, cols=marks."""
+    edir = os.path.join(outdir, "emissions")
+    os.makedirs(edir, exist_ok=True)
+    path = os.path.join(edir, "state_emissions.tsv")
     with open(path, "w") as f:
         f.write("state\t" + "\t".join(marks) + "\n")
         for i, st in enumerate(states):
@@ -444,7 +460,9 @@ def save_emissions_table(states, marks, mat, outdir):
 
 
 def plot_emissions(states, marks, mat, outdir):
-    """Plot state_emissions.png heatmap."""
+    """Plot emissions/state_emissions.png heatmap."""
+    edir = os.path.join(outdir, "emissions")
+    os.makedirs(edir, exist_ok=True)
     fig, ax = plt.subplots(figsize=(max(5, 0.7 * len(marks)),
                                     max(4, 0.35 * len(states))))
     im = ax.imshow(mat, cmap="Blues", vmin=0, vmax=1, aspect="auto")
@@ -453,7 +471,7 @@ def plot_emissions(states, marks, mat, outdir):
     ax.set_title("State emissions")
     fig.colorbar(im, ax=ax)
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "state_emissions.png"), dpi=120)
+    fig.savefig(os.path.join(edir, "state_emissions.png"), dpi=120)
     plt.close(fig)
 
 
@@ -510,8 +528,10 @@ def compute_enrichment(segs, annotation_items):
 
 
 def save_enrichment_table(states, labels, mat, outdir):
-    """Save enrichment.tsv: rows=states, cols=annotation labels."""
-    path = os.path.join(outdir, "enrichment.tsv")
+    """Save enrichment/enrichment.tsv: rows=states, cols=annotation labels."""
+    edir = os.path.join(outdir, "enrichment")
+    os.makedirs(edir, exist_ok=True)
+    path = os.path.join(edir, "enrichment.tsv")
     with open(path, "w") as f:
         f.write("state\t" + "\t".join(labels) + "\n")
         for i, st in enumerate(states):
@@ -520,9 +540,11 @@ def save_enrichment_table(states, labels, mat, outdir):
 
 
 def plot_enrichment(states, labels, mat, outdir):
-    """Plot enrichment.png heatmap."""
+    """Plot enrichment/enrichment.png heatmap."""
     if mat.shape[1] == 0:
         return
+    edir = os.path.join(outdir, "enrichment")
+    os.makedirs(edir, exist_ok=True)
     fig, ax = plt.subplots(figsize=(max(6, 0.7 * len(labels)),
                                     max(4, 0.35 * len(states))))
     im = ax.imshow(mat, cmap="Blues", aspect="auto")
@@ -535,49 +557,630 @@ def plot_enrichment(states, labels, mat, outdir):
             ax.text(j, i, f"{mat[i, j]:.2f}", ha="center", va="center",
                     fontsize=6, color="black" if mat[i, j] < 0.5 else "white")
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "enrichment.png"), dpi=120)
+    fig.savefig(os.path.join(edir, "enrichment.png"), dpi=120)
     plt.close(fig)
 
 
-# --- main ----------------------------------------------------------------
+# --- Transition matrix entropy --------------------------------------------
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="Unified analysis for any ChromHMM-style segmentation.")
-    ap.add_argument("--seg", required=True, help="Segmentation BED file")
-    ap.add_argument("--bin", type=int, required=True, help="Bin size in bp")
-    ap.add_argument("--outdir", required=True, help="Output directory")
-    ap.add_argument("--inputs", nargs="*", default=[],
-                    help="ChromHMM binary input files (for emission computation)")
-    ap.add_argument("--annotations", nargs="*", default=[],
-                    help="Annotation BED(.gz) files for enrichment (e.g. COORDS/*.bed.gz)")
-    ap.add_argument("--rnaseq", default=None,
-                    help="ENCODE RNA-seq quantification TSV")
-    ap.add_argument("--gene-info", default=None,
-                    help="NCBI gene_info(.gz) file for Entrez ID -> symbol mapping")
-    ap.add_argument("--gtf", default=None,
-                    help="GENCODE GTF(.gz) gene annotation for coordinates")
-    args = ap.parse_args()
+def build_transition_matrix(segs, bin_size, exclude_states=None):
+    """Build empirical transition count matrix at bin resolution.
+
+    Counts transitions between consecutive *bins* on the same chromosome,
+    so self-transitions within long segments are properly represented.
+    Segments whose state is in *exclude_states* are skipped.
+
+    Returns (states, count_matrix, state_bp) where state_bp[i] = total bp
+    in state i (for computing stationary distribution).
+    """
+    exclude = set(exclude_states or [])
+
+    # Build per-chromosome bin arrays: {chrom: {bin_idx: state}}
+    by_chrom = defaultdict(dict)
+    for chrom, s, e, state in segs:
+        if state in exclude:
+            continue
+        b0 = s // bin_size
+        b1 = e // bin_size
+        for b in range(b0, b1):
+            by_chrom[chrom][b] = state
+
+    all_states = sorted(set(state for _, _, _, state in segs if state not in exclude))
+    state_idx = {s: i for i, s in enumerate(all_states)}
+    n = len(all_states)
+
+    counts = np.zeros((n, n), dtype=np.float64)
+    state_bp = np.zeros(n, dtype=np.float64)
+
+    for chrom, bins in by_chrom.items():
+        sorted_idxs = sorted(bins.keys())
+        for k, b in enumerate(sorted_idxs):
+            st = bins[b]
+            state_bp[state_idx[st]] += bin_size
+            if k > 0 and sorted_idxs[k - 1] == b - 1:
+                prev_st = bins[sorted_idxs[k - 1]]
+                counts[state_idx[prev_st], state_idx[st]] += 1
+
+    return all_states, counts, state_bp
+
+
+def transition_entropy(states, counts, state_bp):
+    """Compute total transition matrix entropy.
+
+    For each state i, per-row entropy:
+        H(i) = -sum_j A[i][j] * log2(A[i][j])
+
+    Total entropy = sum_i pi[i] * H(i)
+    where pi[i] = state_bp[i] / sum(state_bp)  (stationary distribution).
+
+    Returns (total_entropy, per_state_entropy, transition_prob_matrix, stationary_dist).
+    """
+    n = len(states)
+    row_sums = counts.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1
+    A = counts / row_sums
+
+    H = np.zeros(n)
+    for i in range(n):
+        for j in range(n):
+            if A[i, j] > 0:
+                H[i] -= A[i, j] * np.log2(A[i, j])
+
+    total_bp = state_bp.sum()
+    pi = state_bp / total_bp if total_bp > 0 else np.ones(n) / n
+
+    total_H = np.dot(pi, H)
+    return total_H, H, A, pi
+
+
+def _build_seg_to_analysis_map(seg_paths, analysis_dir):
+    """Map segmentation BED paths to their analysis subdirectories.
+
+    Scans *analysis_dir* for subdirectories and matches each segmentation
+    label to the best-matching subdir.  Returns {seg_path: subdir_path}.
+    """
+    if not analysis_dir or not os.path.isdir(analysis_dir):
+        return {}
+    subdirs = sorted([
+        d for d in os.listdir(analysis_dir)
+        if os.path.isdir(os.path.join(analysis_dir, d))
+    ])
+    mapping = {}
+    for seg_path in seg_paths:
+        label = os.path.basename(seg_path).replace(".bed", "")
+        label_core = label.replace("_matched", "")
+        best = None
+        for sd in subdirs:
+            if sd == "ref":
+                if label.startswith("ENCFF"):
+                    best = sd
+                continue
+            if sd in label_core or sd in label:
+                best = sd
+        if best is not None:
+            mapping[seg_path] = os.path.join(analysis_dir, best)
+    return mapping
+
+
+def _compute_and_save_entropy(seg_paths, bin_size, outdir, exclude_states=None,
+                              suffix="", seg_outdirs=None):
+    """Compute transition entropy for each segmentation, save details + summary.
+
+    *suffix* is appended to output filenames (e.g. "_no_quies").
+    *seg_outdirs* maps seg_path → per-segmentation output directory.
+    Returns list of {segmentation, total_entropy} dicts.
+    """
+    os.makedirs(outdir, exist_ok=True)
+    seg_outdirs = seg_outdirs or {}
+    results = []
+    exclude_label = f" (excluding {', '.join(sorted(exclude_states))})" if exclude_states else ""
+
+    for seg_path in seg_paths:
+        segs = load_bed(seg_path)
+        if not segs:
+            print(f"  WARNING: empty segmentation {seg_path}", file=sys.stderr)
+            continue
+
+        states, counts, state_bp = build_transition_matrix(segs, bin_size, exclude_states)
+        if not states:
+            print(f"  WARNING: no states left after exclusion in {seg_path}", file=sys.stderr)
+            continue
+        total_H, H, A, pi = transition_entropy(states, counts, state_bp)
+
+        label = os.path.basename(seg_path).replace(".bed", "")
+        results.append({"segmentation": label, "total_entropy": total_H})
+        print(f"  {label}{exclude_label}: total transition entropy = {total_H:.4f}")
+
+        # Per-segmentation files go to analysis subdir when available
+        seg_dir = seg_outdirs.get(seg_path)
+        if seg_dir:
+            seg_dir = os.path.join(seg_dir, "entropy")
+            os.makedirs(seg_dir, exist_ok=True)
+        else:
+            seg_dir = outdir
+
+        # Save per-state details
+        detail_path = os.path.join(seg_dir, f"transition_entropy{suffix}.tsv")
+        with open(detail_path, "w") as f:
+            f.write("state\tstationary_prob\tentropy\tself_transition_prob\n")
+            idx = {s: i for i, s in enumerate(states)}
+            for s in states:
+                i = idx[s]
+                f.write(f"{s}\t{pi[i]:.6f}\t{H[i]:.4f}\t{A[i, i]:.6f}\n")
+        print(f"  saved {detail_path}")
+
+        # Save transition probability matrix
+        trans_path = os.path.join(seg_dir, f"transition_matrix{suffix}.tsv")
+        df_trans = pd.DataFrame(A, index=states, columns=states)
+        df_trans.to_csv(trans_path, sep="\t", float_format="%.6f")
+        print(f"  saved {trans_path}")
+
+        # Plot transition matrix heatmap
+        fig, ax = plt.subplots(figsize=(max(8, len(states) * 0.6),
+                                        max(6, len(states) * 0.5)))
+        sns.heatmap(A, xticklabels=states, yticklabels=states,
+                    cmap="Blues", vmin=0, vmax=1, ax=ax,
+                    linewidths=0.3, annot=True, fmt=".2f",
+                    annot_kws={"fontsize": 6})
+        ax.set_title(f"Transition matrix — {label}{exclude_label}\n"
+                     f"(total entropy = {total_H:.4f})")
+        ax.set_xlabel("To state")
+        ax.set_ylabel("From state")
+        fig.tight_layout()
+        fig_path = os.path.join(seg_dir, f"transition_matrix{suffix}.png")
+        fig.savefig(fig_path, dpi=150)
+        plt.close(fig)
+        print(f"  saved {fig_path}")
+
+    return results
+
+
+def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
+    """Save summary TSV and bar chart for a set of entropy results."""
+    if not results:
+        return
+    summary_path = os.path.join(outdir, f"entropy_summary{suffix}.tsv")
+    pd.DataFrame(results).to_csv(summary_path, sep="\t", index=False,
+                                  float_format="%.4f")
+    print(f"  saved {summary_path}")
+
+    df = pd.DataFrame(results)
+    fig, ax = plt.subplots(figsize=(max(8, len(df) * 0.8), 5))
+    ax.bar(range(len(df)), df["total_entropy"])
+    ax.set_xticks(range(len(df)))
+    ax.set_xticklabels(df["segmentation"], rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Total transition matrix entropy (bits)")
+    ax.set_title(f"Transition matrix entropy comparison{title_extra}")
+    ax.grid(axis="y", alpha=0.3)
+    for i, v in enumerate(df["total_entropy"]):
+        ax.text(i, v + 0.02, f"{v:.3f}", ha="center", va="bottom", fontsize=7)
+    fig.tight_layout()
+    fig_path = os.path.join(outdir, f"entropy_summary{suffix}.png")
+    fig.savefig(fig_path, dpi=150)
+    plt.close(fig)
+    print(f"  saved {fig_path}")
+
+
+def _save_entropy_combined_plot(results_full, results_active, outdir):
+    """Grouped bar chart comparing all-states vs excluding Quies/Het entropy."""
+    if not results_full:
+        return
+    df_full = pd.DataFrame(results_full)
+    df_active = pd.DataFrame(results_active) if results_active else pd.DataFrame()
+
+    x = np.arange(len(df_full))
+    width = 0.35
+    fig, ax = plt.subplots(figsize=(max(8, len(df_full) * 0.9), 5))
+
+    ax.bar(x - width / 2, df_full["total_entropy"], width,
+           label="All states", color="#4878CF")
+    if not df_active.empty:
+        ax.bar(x + width / 2, df_active["total_entropy"], width,
+               label="Excl. Quies/Het", color="#E8833A")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(df_full["segmentation"], rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Total transition matrix entropy (bits)")
+    ax.set_title("Transition matrix entropy comparison")
+    ax.legend(fontsize=9)
+    ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig_path = os.path.join(outdir, "entropy_summary_combined.png")
+    fig.savefig(fig_path, dpi=150)
+    plt.close(fig)
+    print(f"  saved {fig_path}")
+
+
+QUIESCENT_STATES = {"Quies", "Het"}
+
+
+# --- Cohen's Kappa -------------------------------------------------------
+
+def segmentation_to_bins(segs, bin_size):
+    """Convert a segmentation to a dict: {chrom: {bin_index: state}}."""
+    bins = defaultdict(dict)
+    for chrom, s, e, state in segs:
+        b0 = s // bin_size
+        b1 = e // bin_size
+        for b in range(b0, b1):
+            bins[chrom][b] = state
+    return bins
+
+
+def compute_kappa(bins1, bins2):
+    """Compute Cohen's Kappa between two bin-level segmentations.
+
+    Returns (kappa, po, pe, n_bins, confusion_matrix_df).
+    """
+    common_chroms = set(bins1.keys()) & set(bins2.keys())
+    labels1 = []
+    labels2 = []
+    for chrom in sorted(common_chroms):
+        common_bins = set(bins1[chrom].keys()) & set(bins2[chrom].keys())
+        for b in sorted(common_bins):
+            labels1.append(bins1[chrom][b])
+            labels2.append(bins2[chrom][b])
+
+    n = len(labels1)
+    if n == 0:
+        return 0.0, 0.0, 0.0, 0, pd.DataFrame()
+
+    labels1 = np.array(labels1)
+    labels2 = np.array(labels2)
+
+    all_states = sorted(set(labels1) | set(labels2))
+    state_idx = {s: i for i, s in enumerate(all_states)}
+    k = len(all_states)
+
+    conf = np.zeros((k, k), dtype=np.int64)
+    for l1, l2 in zip(labels1, labels2):
+        conf[state_idx[l1], state_idx[l2]] += 1
+
+    po = np.diag(conf).sum() / n
+    p1 = conf.sum(axis=1) / n
+    p2 = conf.sum(axis=0) / n
+    pe = np.dot(p1, p2)
+
+    kappa = (po - pe) / (1 - pe) if pe < 1.0 else 1.0
+
+    conf_df = pd.DataFrame(conf, index=all_states, columns=all_states)
+    return kappa, po, pe, n, conf_df
+
+
+
+def _seg_label(path):
+    """Short human-readable label from a segmentation path."""
+    return os.path.basename(path).replace(".bed", "")
+
+
+def _load_emissions_tsv(path):
+    """Load state_emissions.tsv → (states, marks, matrix) or None."""
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path, sep="\t")
+    states = df["state"].tolist()
+    marks = [c for c in df.columns if c != "state"]
+    mat = df[marks].values.astype(np.float64)
+    return states, marks, mat
+
+
+def _emission_cosine_similarity(states1, mat1, states2, mat2):
+    """Compute optimal state correspondence by cosine similarity.
+
+    Returns (best_avg_similarity, mapping_dict) where mapping maps
+    states1 → states2 via Hungarian on cosine distance.
+    """
+    from scipy.optimize import linear_sum_assignment
+
+    n1, n2 = len(states1), len(states2)
+    cost = np.zeros((n1, n2))
+    for i in range(n1):
+        for j in range(n2):
+            dot = np.dot(mat1[i], mat2[j])
+            norm1 = np.linalg.norm(mat1[i])
+            norm2 = np.linalg.norm(mat2[j])
+            if norm1 > 0 and norm2 > 0:
+                cost[i, j] = 1.0 - dot / (norm1 * norm2)
+            else:
+                cost[i, j] = 1.0
+
+    row_ind, col_ind = linear_sum_assignment(cost)
+    mapping = {}
+    total_sim = 0.0
+    for r, c in zip(row_ind, col_ind):
+        mapping[states1[r]] = states2[c]
+        total_sim += 1.0 - cost[r, c]
+    avg_sim = total_sim / len(row_ind) if len(row_ind) > 0 else 0.0
+    return avg_sim, mapping
+
+
+def compare_all(args):
+    """Pairwise comparison of all segmentations: kappa, jaccard, emission similarity."""
+    from match import pair_overlap as match_pair_overlap
+    from match import best_mapping as match_best_mapping
+    from match import compare as match_compare
 
     os.makedirs(args.outdir, exist_ok=True)
-    segs = load_bed(args.seg)
+    analysis_dir = getattr(args, "analysis_dir", None)
+    seg_outdirs = _build_seg_to_analysis_map(args.seg, analysis_dir)
 
-    # 1. Report
+    paths = args.seg
+    n = len(paths)
+    labels = [_seg_label(p) for p in paths]
+
+    # Load all segmentations
+    print(f"  Loading {n} segmentations ...", file=sys.stderr)
+    all_segs = []       # list of (chrom, start, end, name) for analyze.py functions
+    all_segs_full = []  # list of (chrom, start, end, name, color) for match.py functions
+    all_bins = []
+    for p in paths:
+        segs = load_bed(p)
+        all_segs.append(segs)
+        # Convert to match.py format (5-tuple with color)
+        segs_full = []
+        with open(p) as f:
+            for line in f:
+                if not line.strip() or line.startswith(("#", "track", "browser")):
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                chrom, s, e = parts[0], int(parts[1]), int(parts[2])
+                name = parts[3] if len(parts) > 3 else "."
+                color = parts[8] if len(parts) >= 9 else "0,0,0"
+                segs_full.append((chrom, s, e, name, color))
+        all_segs_full.append(segs_full)
+        all_bins.append(segmentation_to_bins(segs, args.bin))
+
+    # Load emissions where available
+    emissions = {}
+    for i, p in enumerate(paths):
+        seg_dir = seg_outdirs.get(p)
+        if not seg_dir:
+            continue
+        epath = os.path.join(seg_dir, "emissions", "state_emissions.tsv")
+        result = _load_emissions_tsv(epath)
+        if result is not None:
+            emissions[i] = result
+
+    # Pairwise comparisons
+    kappa_mat = np.ones((n, n), dtype=np.float64)
+    jaccard_mat = np.full((n, n), np.nan)
+    em_sim_mat = np.full((n, n), np.nan)
+    np.fill_diagonal(jaccard_mat, 1.0)
+    np.fill_diagonal(em_sim_mat, 1.0)
+    comparison_rows = []
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            row = {"seg1": labels[i], "seg2": labels[j]}
+
+            # Kappa
+            kappa, po, pe, n_bins, _ = compute_kappa(all_bins[i], all_bins[j])
+            kappa_mat[i, j] = kappa
+            kappa_mat[j, i] = kappa
+            row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
+
+            # Jaccard (via match.py) — produces per-pair heatmap + similarity
+            overlap = match_pair_overlap(all_segs_full[i], all_segs_full[j])
+            work_states = sorted({x[3] for x in all_segs_full[j]})
+            ref_states = sorted({x[3] for x in all_segs_full[i]})
+            mapping = match_best_mapping(overlap, work_states, ref_states)
+            pair_dir = os.path.join(args.outdir, "pairs", f"{labels[i]}_vs_{labels[j]}")
+            match_compare(all_segs_full[i], all_segs_full[j], overlap, mapping, pair_dir)
+
+            # Read back similarity score
+            sim_path = os.path.join(pair_dir, "similarity.txt")
+            sim = 0.0
+            if os.path.exists(sim_path):
+                with open(sim_path) as f:
+                    for line in f:
+                        if "=" in line:
+                            sim = float(line.split("=")[1].strip())
+            jaccard_mat[i, j] = sim
+            jaccard_mat[j, i] = sim
+            row["jaccard_similarity"] = sim
+
+            # Emission correspondence
+            if i in emissions and j in emissions:
+                st1, _, mat1 = emissions[i]
+                st2, _, mat2 = emissions[j]
+                avg_sim, em_mapping = _emission_cosine_similarity(st1, mat1, st2, mat2)
+                em_sim_mat[i, j] = avg_sim
+                em_sim_mat[j, i] = avg_sim
+                row["emission_similarity"] = avg_sim
+                row["emission_mapping"] = "; ".join(
+                    f"{k}->{v}" for k, v in sorted(em_mapping.items()))
+
+            comparison_rows.append(row)
+            print(f"  {labels[i]} vs {labels[j]}: "
+                  f"kappa={kappa:.4f}, jaccard={sim:.4f}"
+                  + (f", emission={row.get('emission_similarity', 'N/A')}"
+                     if 'emission_similarity' in row else ""))
+
+    # Save all-pairs summary
+    summary_path = os.path.join(args.outdir, "comparison_all_pairs.tsv")
+    pd.DataFrame(comparison_rows).to_csv(summary_path, sep="\t", index=False,
+                                          float_format="%.4f")
+    print(f"  saved {summary_path}")
+
+    # Save and plot kappa matrix
+    kappa_df = pd.DataFrame(kappa_mat, index=labels, columns=labels)
+    kappa_df.to_csv(os.path.join(args.outdir, "kappa_matrix.tsv"),
+                     sep="\t", float_format="%.4f")
+    _plot_sim_heatmap(kappa_df, "Pairwise Cohen's Kappa",
+                      os.path.join(args.outdir, "kappa_heatmap.png"),
+                      cmap="YlGnBu", cbar_label="Cohen's Kappa")
+
+    # Save and plot jaccard similarity matrix
+    jaccard_df = pd.DataFrame(jaccard_mat, index=labels, columns=labels)
+    jaccard_df.to_csv(os.path.join(args.outdir, "jaccard_similarity_matrix.tsv"),
+                       sep="\t", float_format="%.4f")
+    _plot_sim_heatmap(jaccard_df, "Pairwise Jaccard similarity (overlap-matched)",
+                      os.path.join(args.outdir, "jaccard_similarity_heatmap.png"),
+                      cmap="YlOrRd", cbar_label="Similarity")
+
+    # Save and plot emission similarity matrix (if available)
+    if len(emissions) >= 2:
+        em_df = pd.DataFrame(em_sim_mat, index=labels, columns=labels)
+        em_df.to_csv(os.path.join(args.outdir, "emission_similarity_matrix.tsv"),
+                      sep="\t", float_format="%.4f")
+        _plot_sim_heatmap(em_df, "Pairwise emission correspondence",
+                          os.path.join(args.outdir, "emission_similarity_heatmap.png"),
+                          cmap="YlOrRd", cbar_label="Avg cosine similarity",
+                          mask=np.isnan(em_sim_mat))
+
+    # Per-segmentation rows saved to analysis subdirs
+    for i, p in enumerate(paths):
+        seg_dir = seg_outdirs.get(p)
+        if not seg_dir:
+            continue
+        comp_dir = os.path.join(seg_dir, "comparison")
+        os.makedirs(comp_dir, exist_ok=True)
+        kappa_df.iloc[[i]].to_csv(
+            os.path.join(comp_dir, "kappa_vs_all.tsv"), sep="\t", float_format="%.4f")
+        jaccard_df.iloc[[i]].to_csv(
+            os.path.join(comp_dir, "jaccard_vs_all.tsv"), sep="\t", float_format="%.4f")
+        if i in emissions and len(emissions) >= 2:
+            em_df.iloc[[i]].dropna(axis=1).to_csv(
+                os.path.join(comp_dir, "emission_similarity_vs_all.tsv"),
+                sep="\t", float_format="%.4f")
+
+
+def _plot_sim_heatmap(df, title, path, cmap="YlGnBu", cbar_label="Value",
+                      mask=None):
+    """Plot an annotated similarity heatmap."""
+    n = len(df)
+    fig, ax = plt.subplots(figsize=(max(10, n * 0.7), max(8, n * 0.6)))
+    sns.heatmap(df, cmap=cmap, vmin=0, vmax=1, ax=ax,
+                mask=mask, linewidths=0.5, annot=True, fmt=".2f",
+                annot_kws={"fontsize": 7}, cbar_kws={"label": cbar_label})
+    ax.set_title(title)
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=8)
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f"  saved {path}")
+
+
+# --- Segment length statistics --------------------------------------------
+
+def compute_segment_stats(segs):
+    """Compute segment length statistics from a segmentation.
+
+    Returns a dict with: n_states, n_segments, min_length, max_length,
+    mean_length, median_length (all in bp).
+    """
+    if not segs:
+        return {}
+    lengths = np.array([e - s for _, s, e, _ in segs])
+    states = set(st for _, _, _, st in segs)
+    return {
+        "n_states": len(states),
+        "n_segments": len(lengths),
+        "min_length": int(np.min(lengths)),
+        "max_length": int(np.max(lengths)),
+        "mean_length": float(np.mean(lengths)),
+        "median_length": float(np.median(lengths)),
+    }
+
+
+def run_segment_stats(args):
+    """Compute and save segment length statistics for each segmentation."""
+    os.makedirs(args.outdir, exist_ok=True)
+    analysis_dir = getattr(args, "analysis_dir", None)
+    seg_outdirs = _build_seg_to_analysis_map(args.seg, analysis_dir)
+    results = []
+
+    for seg_path in args.seg:
+        segs = load_bed(seg_path)
+        if not segs:
+            print(f"  WARNING: empty segmentation {seg_path}", file=sys.stderr)
+            continue
+        stats = compute_segment_stats(segs)
+        label = os.path.basename(seg_path).replace(".bed", "")
+        stats["segmentation"] = label
+        results.append(stats)
+        print(f"  {label}: {stats['n_states']} states, "
+              f"{stats['n_segments']} segments, "
+              f"lengths [{stats['min_length']}, {stats['max_length']}], "
+              f"mean={stats['mean_length']:.0f}, median={stats['median_length']:.0f}")
+
+        # Per-segmentation stats to analysis subdir
+        seg_dir = seg_outdirs.get(seg_path)
+        if seg_dir:
+            stats_dir = os.path.join(seg_dir, "segment_stats")
+            os.makedirs(stats_dir, exist_ok=True)
+            row_df = pd.DataFrame([stats])
+            row_df.to_csv(os.path.join(stats_dir, "segment_stats.tsv"),
+                           sep="\t", index=False, float_format="%.1f")
+            print(f"  saved {stats_dir}/segment_stats.tsv")
+
+    if not results:
+        return
+
+    df = pd.DataFrame(results)
+    col_order = ["segmentation", "n_states", "n_segments",
+                 "min_length", "max_length", "mean_length", "median_length"]
+    df = df[col_order]
+    summary_path = os.path.join(args.outdir, "segment_stats.tsv")
+    df.to_csv(summary_path, sep="\t", index=False, float_format="%.1f")
+    print(f"  saved {summary_path}")
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    x = np.arange(len(df))
+    xlabels = df["segmentation"]
+
+    metrics = [
+        ("n_states", "Total number of states", "Count"),
+        ("n_segments", "Total number of segments", "Count"),
+        ("min_length", "Min segment length", "bp"),
+        ("max_length", "Max segment length", "bp"),
+        ("mean_length", "Mean segment length", "bp"),
+        ("median_length", "Median segment length", "bp"),
+    ]
+
+    for idx, (col, title, ylabel) in enumerate(metrics):
+        ax = axes[idx // 3, idx % 3]
+        vals = df[col].values
+        ax.bar(x, vals, color="#4878CF", edgecolor="white", linewidth=0.5)
+        ax.set_xticks(x)
+        ax.set_xticklabels(xlabels, rotation=55, ha="right", fontsize=7)
+        ax.set_title(title, fontsize=10, fontweight="bold")
+        ax.set_ylabel(ylabel, fontsize=8)
+        ax.grid(axis="y", alpha=0.3)
+        for i, v in enumerate(vals):
+            fmt = f"{v:.0f}" if v == int(v) else f"{v:.1f}"
+            ax.text(i, v + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.01,
+                    fmt, ha="center", va="bottom", fontsize=6)
+
+    fig.suptitle("Segment length statistics", fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig_path = os.path.join(args.outdir, "segment_stats.png")
+    fig.savefig(fig_path, dpi=150)
+    plt.close(fig)
+    print(f"  saved {fig_path}")
+
+
+
+# --- CLI ------------------------------------------------------------------
+
+def _run_single(args):
+    """Per-segmentation analysis: report, segment lengths, emissions, enrichment."""
+    os.makedirs(args.outdir, exist_ok=True)
+    seg_path = args.seg[0]
+    segs = load_bed(seg_path)
+
     save_report(segs, args.outdir)
-
-    # 2. Segment length plot
     plot_segment_lengths(segs, args.outdir)
 
-    # 3. State emissions
-    inputs = expand_globs(args.inputs)
+    inputs = expand_globs(args.inputs or [])
     if inputs:
         states, marks, emission_mat = compute_emissions(segs, inputs, args.bin)
         save_emissions_table(states, marks, emission_mat, args.outdir)
         plot_emissions(states, marks, emission_mat, args.outdir)
 
-    # 4. Enrichment
     annotation_items = []
-    for p in expand_globs(args.annotations):
+    for p in expand_globs(args.annotations or []):
         if os.path.exists(p):
             label = os.path.basename(p).replace(".bed.gz", "").replace(".bed", "")
             annotation_items.append((label, p))
@@ -590,6 +1193,69 @@ def main():
         states, labels, enr_mat = compute_enrichment(segs, annotation_items)
         save_enrichment_table(states, labels, enr_mat, args.outdir)
         plot_enrichment(states, labels, enr_mat, args.outdir)
+
+
+def _run_multi(args):
+    """Cross-segmentation metrics: entropy, kappa, segment stats."""
+    analysis_dir = args.analysis_dir or args.outdir
+
+    # Entropy
+    entropy_dir = os.path.join(args.outdir, "comparison")
+    seg_outdirs = _build_seg_to_analysis_map(args.seg, analysis_dir)
+    results_full = _compute_and_save_entropy(args.seg, args.bin, entropy_dir,
+                                             seg_outdirs=seg_outdirs)
+    _save_entropy_summary(results_full, entropy_dir)
+    excl = QUIESCENT_STATES
+    results_active = _compute_and_save_entropy(
+        args.seg, args.bin, entropy_dir, exclude_states=excl, suffix="_no_quies",
+        seg_outdirs=seg_outdirs)
+    _save_entropy_summary(
+        results_active, entropy_dir, suffix="_no_quies",
+        title_extra=f"\n(excluding {', '.join(sorted(excl))})")
+    _save_entropy_combined_plot(results_full, results_active, entropy_dir)
+
+    # Pairwise comparison (kappa, jaccard, emission correspondence)
+    compare_dir = os.path.join(args.outdir, "comparison")
+    compare_args = types.SimpleNamespace(
+        seg=args.seg, bin=args.bin, outdir=compare_dir,
+        analysis_dir=analysis_dir)
+    compare_all(compare_args)
+
+    # Segment stats
+    stats_dir = os.path.join(args.outdir, "comparison")
+    stats_args = types.SimpleNamespace(
+        seg=args.seg, outdir=stats_dir,
+        analysis_dir=analysis_dir)
+    run_segment_stats(stats_args)
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Segmentation analysis and quality metrics.\n\n"
+                    "Single --seg: per-segmentation report, emissions, enrichment.\n"
+                    "Multiple --seg: cross-segmentation entropy, kappa, segment stats.")
+    ap.add_argument("--seg", nargs="+", required=True,
+                    help="One or more segmentation BED files")
+    ap.add_argument("--bin", type=int, required=True, help="Bin size in bp")
+    ap.add_argument("--outdir", required=True, help="Output directory")
+    ap.add_argument("--inputs", nargs="*",
+                    help="ChromHMM binary input files (for emissions)")
+    ap.add_argument("--annotations", nargs="*",
+                    help="Annotation BED(.gz) files (for enrichment)")
+    ap.add_argument("--rnaseq", default=None,
+                    help="ENCODE RNA-seq quantification TSV")
+    ap.add_argument("--gene-info", default=None, dest="gene_info",
+                    help="NCBI gene_info(.gz) file")
+    ap.add_argument("--gtf", default=None,
+                    help="GENCODE GTF(.gz) gene annotation")
+    ap.add_argument("--analysis-dir", default=None, dest="analysis_dir",
+                    help="Analysis root dir for per-segmentation metric output")
+    args = ap.parse_args()
+
+    if len(args.seg) == 1:
+        _run_single(args)
+    else:
+        _run_multi(args)
 
 
 if __name__ == "__main__":

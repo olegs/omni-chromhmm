@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # Match state IDs in --work to --ref by maximizing total overlap length
-# (PDF: "Matching is better using overlap len vs jaccard"), then rewrite --work
 # with reference names + colors to stdout.
 #
 # With --compare-only DIR: skip rewriting; instead dump jaccard heatmap and

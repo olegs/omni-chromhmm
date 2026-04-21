@@ -8,7 +8,7 @@
 set -euo pipefail
 
 BASE="https://www.encodeproject.org/files"
-OUT_DIR="$(cd "$(dirname "$0")" && pwd)"
+OUT_DIR="${1:-$(cd "$(dirname "$0")" && pwd)}"
 
 # Format: "ACCESSION:Label"  — all GRCh38
 FILES_15=(
