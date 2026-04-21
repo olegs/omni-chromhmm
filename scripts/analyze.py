@@ -19,6 +19,7 @@ import csv
 import glob
 import gzip
 import os
+import re
 import sys
 import types
 from bisect import bisect_left
@@ -122,10 +123,14 @@ def state_color_map(df):
     )
 
 
+def _natural_sort_key(s):
+    """Sort key for natural ordering: 'E1' < 'E2' < 'E10', 'Tss' < 'Tx'."""
+    return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s)]
+
+
 def sorted_states(df):
-    """Sort states by leading numeric prefix, then alphabetically."""
-    return sorted(df["state"].unique(),
-                  key=lambda s: (s.split("_")[0].lstrip("Ee"), s))
+    """Sort states in natural order from a DataFrame."""
+    return sorted(df["state"].unique(), key=_natural_sort_key)
 
 
 # --- multi-sample plots (shared) ----------------------------------------
@@ -136,7 +141,7 @@ def plot_per_state_violin(df, out_path, title=None):
     colors = state_color_map(df)
     n = len(states)
 
-    fig, ax = plt.subplots(figsize=(max(12, n * 0.8), 6))
+    fig, ax = plt.subplots(figsize=(max(6, n * 0.4), 4))
     data = [np.log10(df.loc[df["state"] == s, "length"].values + 1) for s in states]
     parts = ax.violinplot(data, positions=range(n), showmedians=True, showextrema=True)
 
@@ -149,13 +154,13 @@ def plot_per_state_violin(df, out_path, title=None):
             parts[key].set_linewidth(0.8)
 
     ax.set_xticks(range(n))
-    ax.set_xticklabels(states, rotation=60, ha="right", fontsize=8)
+    ax.set_xticklabels(states, rotation=60, ha="right", fontsize=7)
     ax.set_xlabel("Chromatin state")
     ax.set_ylabel("log10(segment length + 1)  [bp]")
     ax.set_ylim(0, 8)
     if title is None:
         title = f"Segment length per state ({df['sample'].nunique()} samples)"
-    ax.set_title(title)
+    ax.set_title(title, fontsize=9)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
@@ -173,7 +178,7 @@ def plot_coverage_per_state(df, out_path, title=None):
                   .reset_index(name="total_bp"))
 
     n = len(states)
-    fig, ax = plt.subplots(figsize=(max(12, n * 0.8), 6))
+    fig, ax = plt.subplots(figsize=(max(6, n * 0.4), 4))
     data = [
         np.log10(coverage.loc[coverage["state"] == s, "total_bp"].values + 1)
         for s in states
@@ -189,13 +194,13 @@ def plot_coverage_per_state(df, out_path, title=None):
             parts[key].set_linewidth(0.8)
 
     ax.set_xticks(range(n))
-    ax.set_xticklabels(states, rotation=60, ha="right", fontsize=8)
+    ax.set_xticklabels(states, rotation=60, ha="right", fontsize=7)
     ax.set_xlabel("Chromatin state")
     ax.set_ylabel("log10(total coverage + 1)  [bp]")
     ax.set_ylim(2, 10)
     if title is None:
         title = f"Total genomic coverage per state ({df['sample'].nunique()} samples)"
-    ax.set_title(title)
+    ax.set_title(title, fontsize=9)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
@@ -208,7 +213,7 @@ def plot_overall_per_sample(df, out_path, title=None, short_names=False):
     samples = sorted(df["sample"].unique())
     n = len(samples)
 
-    fig, ax = plt.subplots(figsize=(max(10, n * 0.6), 5))
+    fig, ax = plt.subplots(figsize=(max(6, n * 0.35), 4))
     data = [np.log10(df.loc[df["sample"] == s, "length"].values + 1) for s in samples]
     parts = ax.violinplot(data, positions=range(n), showmedians=True, showextrema=True)
     for pc in parts["bodies"]:
@@ -222,12 +227,12 @@ def plot_overall_per_sample(df, out_path, title=None, short_names=False):
     if short_names:
         labels = ["/".join(s.split("/")[-2:]) if "/" in s else s for s in samples]
     ax.set_xticks(range(n))
-    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=7 if short_names else 8)
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=6)
     ax.set_xlabel("Sample")
     ax.set_ylabel("log10(segment length + 1)  [bp]")
     if title is None:
         title = "Overall segment length per sample"
-    ax.set_title(title)
+    ax.set_title(title, fontsize=9)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
@@ -247,14 +252,15 @@ def plot_state_heatmap(df, out_path, title=None, short_names=False):
     if short_names:
         pivot.index = ["/".join(s.split("/")[-2:]) if "/" in s else s for s in pivot.index]
 
-    fig, ax = plt.subplots(figsize=(max(12, len(cols) * 0.65),
-                                    max(5, len(pivot) * 0.45)))
+    fig, ax = plt.subplots(figsize=(max(5, len(cols) * 0.35),
+                                    max(3, len(pivot) * 0.3)))
     sns.heatmap(np.log10(pivot + 1), ax=ax, cmap="YlOrRd",
                 linewidths=0.3, annot=True, fmt=".1f",
+                annot_kws={"fontsize": 5},
                 cbar_kws={"label": "log10(median length + 1)"})
     if title is None:
         title = "Median segment length [log10 bp]"
-    ax.set_title(title)
+    ax.set_title(title, fontsize=9)
     ax.set_xlabel("Chromatin state")
     ax.set_ylabel("Sample")
     fig.tight_layout()
@@ -377,7 +383,7 @@ def save_report(segs, outdir):
     lengths = defaultdict(list)
     for _, s, e, name in segs:
         lengths[name].append(e - s)
-    states = sorted(lengths)
+    states = sorted(lengths, key=_natural_sort_key)
 
     path = os.path.join(outdir, "report.tsv")
     with open(path, "w") as f:
@@ -392,10 +398,10 @@ def plot_segment_lengths(segs, outdir):
     lengths = defaultdict(list)
     for _, s, e, name in segs:
         lengths[name].append(e - s)
-    states = sorted(lengths)
+    states = sorted(lengths, key=_natural_sort_key)
     means = [np.mean(lengths[s]) for s in states]
 
-    fig, ax = plt.subplots(figsize=(max(6, 0.4 * len(states)), 4))
+    fig, ax = plt.subplots(figsize=(max(4, 0.3 * len(states)), 3))
     ax.bar(states, means)
     ax.set_xticks(range(len(states)))
     ax.set_xticklabels(states, rotation=90)
@@ -441,7 +447,7 @@ def compute_emissions(segs, inputs, bin_size):
             sums[name] += data[b0:b1].sum(axis=0)
             counts[name] += (b1 - b0)
 
-    states = sorted(sums)
+    states = sorted(sums, key=_natural_sort_key)
     mat = np.array([sums[s] / max(counts[s], 1) for s in states])
     marks, mat = _reorder_marks(marks, mat)
     return states, marks, mat
@@ -463,7 +469,7 @@ def plot_emissions(states, marks, mat, outdir):
     """Plot emissions/state_emissions.png heatmap."""
     edir = os.path.join(outdir, "emissions")
     os.makedirs(edir, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(max(5, 0.7 * len(marks)),
+    fig, ax = plt.subplots(figsize=(max(3, 0.4 * len(marks)),
                                     max(4, 0.35 * len(states))))
     im = ax.imshow(mat, cmap="Blues", vmin=0, vmax=1, aspect="auto")
     ax.set_xticks(range(len(marks))); ax.set_xticklabels(marks, rotation=90)
@@ -475,14 +481,63 @@ def plot_emissions(states, marks, mat, outdir):
     plt.close(fig)
 
 
-def compute_enrichment(segs, annotation_items):
-    """Compute enrichment matrix.
+# Preferred display order for enrichment annotations
+ANNOTATIONS_ORDER = [
+    "Genome %", "CpGIsland", "RefSeqExon", "RefSeqGene",
+    "RefSeqTES", "RefSeqTSS", "RefSeqTSS2kb",
+]
 
-    annotation_items: list of (label, bed_regions_or_path) where bed_regions_or_path
-    is either a file path (str) or a list of (chrom, start, end, name) tuples.
 
-    Returns (states, labels, matrix).
+def _reorder_annotations(labels):
+    """Return sorted label list: known annotations first in ANNOTATIONS_ORDER, then others."""
+    # Strip .hg38 suffix for matching
+    def _base(lbl):
+        return lbl.replace(".hg38", "")
+
+    known = [l for ao in ANNOTATIONS_ORDER
+             for l in labels if _base(l) == ao]
+    unknown = [l for l in labels if _base(l) not in ANNOTATIONS_ORDER]
+    return known + unknown
+
+
+def _compute_overlap_bp(by_chrom, starts, ann_segs):
+    """Compute bp overlap between segmentation states and an annotation.
+
+    Returns dict: state → overlap_bp.
     """
+    state_hit = defaultdict(int)
+    for chrom, s, e, _ in ann_segs:
+        if chrom not in by_chrom:
+            continue
+        arr = by_chrom[chrom]
+        i = max(0, bisect_left(starts[chrom], s) - 1)
+        while i < len(arr) and arr[i][0] < e:
+            ss, se, st = arr[i]
+            ov = min(se, e) - max(ss, s)
+            if ov > 0:
+                state_hit[st] += ov
+            i += 1
+    return state_hit
+
+
+def compute_enrichment(segs, annotation_items):
+    """Fisher enrichment of each state vs each annotation using bp overlaps.
+
+    annotation_items: list of (label, bed_regions_or_path).
+
+    For each (state, annotation):
+        a = bp(state ∩ ann) + 1
+        b = bp(state) - a + 1
+        c = bp(ann ∩ any_state) - a + 1
+        d = total_bp - (a + b + c) + 1
+    Fisher exact test (greater) on [[a, b], [c, d]].
+
+    Returns a long-form DataFrame with columns:
+        state, label, odds_ratio, p_value, q_value
+    """
+    from scipy.stats import fisher_exact
+    from scipy.stats import false_discovery_control
+
     by_chrom = defaultdict(list)
     state_total = defaultdict(int)
     for chrom, s, e, name in segs:
@@ -492,10 +547,10 @@ def compute_enrichment(segs, annotation_items):
         by_chrom[chrom].sort()
     starts = {c: [s for s, _, _ in v] for c, v in by_chrom.items()}
 
-    states = sorted(state_total)
-    labels = []
-    mat_cols = []
+    total_bp = sum(state_total.values())
+    states = sorted(state_total, key=_natural_sort_key)
 
+    rows = []
     for label, bed_data in annotation_items:
         if isinstance(bed_data, str):
             try:
@@ -506,56 +561,79 @@ def compute_enrichment(segs, annotation_items):
         else:
             ann_segs = bed_data
 
-        state_hit = defaultdict(int)
-        for chrom, s, e, _ in ann_segs:
-            if chrom not in by_chrom:
-                continue
-            arr = by_chrom[chrom]
-            i = max(0, bisect_left(starts[chrom], s) - 1)
-            while i < len(arr) and arr[i][0] < e:
-                ss, se, st = arr[i]
-                ov = min(se, e) - max(ss, s)
-                if ov > 0:
-                    state_hit[st] += ov
-                i += 1
+        state_hit = _compute_overlap_bp(by_chrom, starts, ann_segs)
+        ann_total = sum(state_hit.values())
 
-        col = np.array([state_hit[st] / max(state_total[st], 1) for st in states])
-        labels.append(label)
-        mat_cols.append(col)
+        for st in states:
+            a = state_hit.get(st, 0) + 1
+            b = max(0, state_total[st] - a) + 1
+            c = max(0, ann_total - a) + 1
+            d = max(0, total_bp - (a + b + c)) + 1
+            odds, pval = fisher_exact([[a, b], [c, d]], alternative="greater")
+            rows.append({"state": st, "label": label,
+                         "odds_ratio": odds, "p_value": pval})
 
-    mat = np.column_stack(mat_cols) if mat_cols else np.zeros((len(states), 0))
-    return states, labels, mat
+    if not rows:
+        return pd.DataFrame(columns=["state", "label", "odds_ratio", "p_value", "q_value"])
+
+    df = pd.DataFrame(rows)
+    df["q_value"] = false_discovery_control(df["p_value"].values)
+    return df
 
 
-def save_enrichment_table(states, labels, mat, outdir):
-    """Save enrichment/enrichment.tsv: rows=states, cols=annotation labels."""
+def save_enrichment_table(enrich_df, outdir):
+    """Save enrichment/enrichment.tsv (long-form) and pivoted odds_ratio table."""
     edir = os.path.join(outdir, "enrichment")
     os.makedirs(edir, exist_ok=True)
-    path = os.path.join(edir, "enrichment.tsv")
-    with open(path, "w") as f:
-        f.write("state\t" + "\t".join(labels) + "\n")
-        for i, st in enumerate(states):
-            vals = "\t".join(f"{v:.4f}" for v in mat[i])
-            f.write(f"{st}\t{vals}\n")
+    enrich_df.to_csv(os.path.join(edir, "enrichment.tsv"),
+                      sep="\t", index=False, float_format="%.4f")
 
 
-def plot_enrichment(states, labels, mat, outdir):
-    """Plot enrichment/enrichment.png heatmap."""
-    if mat.shape[1] == 0:
+def _column_minmax_scale(mat):
+    """Per-column min-max scaling to [0, 1]."""
+    scaled = mat.copy()
+    for c in scaled.columns:
+        col_range = scaled[c].max() - scaled[c].min()
+        if col_range < 1e-10:
+            scaled[c] = 1.0 / len(scaled[c])
+        else:
+            scaled[c] = (scaled[c] - scaled[c].min()) / col_range
+    return scaled
+
+
+def plot_enrichment(enrich_df, segs, outdir):
+    """Plot enrichment.png: odds ratio heatmap with Genome %, per-column min-max scaled."""
+    if enrich_df.empty:
         return
     edir = os.path.join(outdir, "enrichment")
     os.makedirs(edir, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(max(6, 0.7 * len(labels)),
-                                    max(4, 0.35 * len(states))))
-    im = ax.imshow(mat, cmap="Blues", aspect="auto")
-    ax.set_xticks(range(len(labels))); ax.set_xticklabels(labels, rotation=90)
-    ax.set_yticks(range(len(states))); ax.set_yticklabels(states)
-    ax.set_title("Functional enrichment: overlap fraction")
-    fig.colorbar(im, ax=ax)
-    for i in range(mat.shape[0]):
-        for j in range(mat.shape[1]):
-            ax.text(j, i, f"{mat[i, j]:.2f}", ha="center", va="center",
-                    fontsize=6, color="black" if mat[i, j] < 0.5 else "white")
+
+    sorted_idx = sorted(enrich_df["state"].unique(), key=_natural_sort_key)
+    sorted_cols = _reorder_annotations(sorted(enrich_df["label"].unique()))
+
+    odds_mat = enrich_df.pivot(index="state", columns="label", values="odds_ratio")
+    odds_mat = odds_mat.loc[sorted_idx, sorted_cols]
+
+    # Add Genome % column
+    state_bp = defaultdict(int)
+    for _, s, e, name in segs:
+        state_bp[name] += e - s
+    total_bp = sum(state_bp.values())
+    genome_pct = pd.Series(
+        {st: 100.0 * state_bp.get(st, 0) / total_bp for st in sorted_idx},
+        name="Genome %")
+    odds_mat.insert(0, "Genome %", genome_pct)
+
+    scaled = _column_minmax_scale(odds_mat)
+
+    fig, ax = plt.subplots(figsize=(max(3, 0.4 * len(scaled.columns)),
+                                    max(4, 0.35 * len(scaled))))
+    ax.imshow(scaled.values, cmap="Blues", aspect="auto", vmin=0, vmax=1)
+    ax.set_xticks(range(len(scaled.columns)))
+    ax.set_xticklabels(scaled.columns, rotation=90)
+    ax.set_yticks(range(len(scaled.index)))
+    ax.set_yticklabels(scaled.index)
+    ax.set_title("Functional enrichment")
     fig.tight_layout()
     fig.savefig(os.path.join(edir, "enrichment.png"), dpi=120)
     plt.close(fig)
@@ -585,7 +663,8 @@ def build_transition_matrix(segs, bin_size, exclude_states=None):
         for b in range(b0, b1):
             by_chrom[chrom][b] = state
 
-    all_states = sorted(set(state for _, _, _, state in segs if state not in exclude))
+    all_states = sorted(set(state for _, _, _, state in segs if state not in exclude),
+                        key=_natural_sort_key)
     state_idx = {s: i for i, s in enumerate(all_states)}
     n = len(all_states)
 
@@ -716,8 +795,8 @@ def _compute_and_save_entropy(seg_paths, bin_size, outdir, exclude_states=None,
         print(f"  saved {trans_path}")
 
         # Plot transition matrix heatmap
-        fig, ax = plt.subplots(figsize=(max(8, len(states) * 0.6),
-                                        max(6, len(states) * 0.5)))
+        fig, ax = plt.subplots(figsize=(max(5, len(states) * 0.4),
+                                        max(4, len(states) * 0.35)))
         sns.heatmap(A, xticklabels=states, yticklabels=states,
                     cmap="Blues", vmin=0, vmax=1, ax=ax,
                     linewidths=0.3, annot=True, fmt=".2f",
@@ -745,7 +824,7 @@ def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
     print(f"  saved {summary_path}")
 
     df = pd.DataFrame(results)
-    fig, ax = plt.subplots(figsize=(max(8, len(df) * 0.8), 5))
+    fig, ax = plt.subplots(figsize=(max(5, len(df) * 0.5), 3.5))
     ax.bar(range(len(df)), df["total_entropy"])
     ax.set_xticks(range(len(df)))
     ax.set_xticklabels(df["segmentation"], rotation=45, ha="right", fontsize=8)
@@ -770,7 +849,7 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
 
     x = np.arange(len(df_full))
     width = 0.35
-    fig, ax = plt.subplots(figsize=(max(8, len(df_full) * 0.9), 5))
+    fig, ax = plt.subplots(figsize=(max(5, len(df_full) * 0.5), 3.5))
 
     ax.bar(x - width / 2, df_full["total_entropy"], width,
            label="All states", color="#4878CF")
@@ -828,7 +907,7 @@ def compute_kappa(bins1, bins2):
     labels1 = np.array(labels1)
     labels2 = np.array(labels2)
 
-    all_states = sorted(set(labels1) | set(labels2))
+    all_states = sorted(set(labels1) | set(labels2), key=_natural_sort_key)
     state_idx = {s: i for i, s in enumerate(all_states)}
     k = len(all_states)
 
@@ -961,8 +1040,8 @@ def compare_all(args):
 
             # Jaccard (via match.py) — produces per-pair heatmap + similarity
             overlap = match_pair_overlap(all_segs_full[i], all_segs_full[j])
-            work_states = sorted({x[3] for x in all_segs_full[j]})
-            ref_states = sorted({x[3] for x in all_segs_full[i]})
+            work_states = sorted({x[3] for x in all_segs_full[j]}, key=_natural_sort_key)
+            ref_states = sorted({x[3] for x in all_segs_full[i]}, key=_natural_sort_key)
             mapping = match_best_mapping(overlap, work_states, ref_states)
             pair_dir = os.path.join(args.outdir, "pairs", f"{labels[i]}_vs_{labels[j]}")
             match_compare(all_segs_full[i], all_segs_full[j], overlap, mapping, pair_dir)
@@ -1049,7 +1128,7 @@ def _plot_sim_heatmap(df, title, path, cmap="YlGnBu", cbar_label="Value",
                       mask=None):
     """Plot an annotated similarity heatmap."""
     n = len(df)
-    fig, ax = plt.subplots(figsize=(max(10, n * 0.7), max(8, n * 0.6)))
+    fig, ax = plt.subplots(figsize=(max(6, n * 0.45), max(5, n * 0.4)))
     sns.heatmap(df, cmap=cmap, vmin=0, vmax=1, ax=ax,
                 mask=mask, linewidths=0.5, annot=True, fmt=".2f",
                 annot_kws={"fontsize": 7}, cbar_kws={"label": cbar_label})
@@ -1126,7 +1205,7 @@ def run_segment_stats(args):
     df.to_csv(summary_path, sep="\t", index=False, float_format="%.1f")
     print(f"  saved {summary_path}")
 
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    fig, axes = plt.subplots(2, 3, figsize=(12, 7))
     x = np.arange(len(df))
     xlabels = df["segmentation"]
 
@@ -1170,8 +1249,9 @@ def _run_single(args):
     seg_path = args.seg[0]
     segs = load_bed(seg_path)
 
-    save_report(segs, args.outdir)
-    plot_segment_lengths(segs, args.outdir)
+    if not getattr(args, "emissions_only", False):
+        save_report(segs, args.outdir)
+        plot_segment_lengths(segs, args.outdir)
 
     inputs = expand_globs(args.inputs or [])
     if inputs:
@@ -1190,9 +1270,9 @@ def _run_single(args):
         annotation_items.extend(rna_annotations)
 
     if annotation_items:
-        states, labels, enr_mat = compute_enrichment(segs, annotation_items)
-        save_enrichment_table(states, labels, enr_mat, args.outdir)
-        plot_enrichment(states, labels, enr_mat, args.outdir)
+        enrich_df = compute_enrichment(segs, annotation_items)
+        save_enrichment_table(enrich_df, args.outdir)
+        plot_enrichment(enrich_df, segs, args.outdir)
 
 
 def _run_multi(args):
@@ -1248,6 +1328,8 @@ def main():
                     help="NCBI gene_info(.gz) file")
     ap.add_argument("--gtf", default=None,
                     help="GENCODE GTF(.gz) gene annotation")
+    ap.add_argument("--emissions-only", action="store_true", dest="emissions_only",
+                    help="Only compute emissions and enrichment (skip report/lengths)")
     ap.add_argument("--analysis-dir", default=None, dest="analysis_dir",
                     help="Analysis root dir for per-segmentation metric output")
     args = ap.parse_args()

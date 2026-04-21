@@ -78,7 +78,13 @@ rule analyze_segmentations:
         # Reference
         run_analyze {params.ref} {wildcards.ds}/analysis/ref
 
-        # Default ChromHMM
+        # Default ChromHMM (pre-matching: emissions + enrichment only)
+        run_analyze \
+            {wildcards.ds}/chromhmm_default_result/{params.cell}_{params.n}_dense.bed \
+            {wildcards.ds}/analysis/chromhmm_default_dense \
+            --inputs {wildcards.ds}/chromhmm_default/*.txt --emissions-only
+
+        # Default ChromHMM (post-matching)
         run_analyze \
             {wildcards.ds}/chromhmm_default_result/{params.cell}_{params.n}_chromhmm_default_matched.bed \
             {wildcards.ds}/analysis/chromhmm_default \
@@ -131,7 +137,13 @@ rule analyze_segmentations:
 # --- Segmentation quality metrics ----------------------------------------
 
 def _seg_files(w):
-    """All matched segmentation BEDs for a dataset (for metrics computation)."""
+    """All matched segmentation BEDs for a dataset (for metrics computation).
+
+    Order: reference, default chromhmm,
+           pooled omni (chromhmm, kmeans, gmm),
+           replicated (chromhmm, kmeans, gmm),
+           per-replicate (default chromhmm, chromhmm on omnipeak, kmeans, gmm).
+    """
     ds = w.ds
     cfg = DATASETS[ds]
     cell = cfg["cell"]
@@ -141,14 +153,14 @@ def _seg_files(w):
     ]
     for mode in _modes_for(ds):
         files.append(f"{ds}/{mode}/chromhmm_result/{cell}_{NSTATES}_chromhmm_{mode}_matched.bed")
-        files.append(f"{ds}/{mode}/gmm_{mode}_matched.bed")
         files.append(f"{ds}/{mode}/kmeans_{mode}_matched.bed")
+        files.append(f"{ds}/{mode}/gmm_{mode}_matched.bed")
     if cfg.get("replicates"):
         for rep in ["rep1", "rep2"]:
             files.append(f"{ds}/{rep}/chromhmm_default_result/{cell}_{NSTATES}_chromhmm_default_{rep}_matched.bed")
             files.append(f"{ds}/{rep}/chromhmm_result/{cell}_{NSTATES}_chromhmm_{rep}_matched.bed")
-            files.append(f"{ds}/{rep}/gmm_{rep}_matched.bed")
             files.append(f"{ds}/{rep}/kmeans_{rep}_matched.bed")
+            files.append(f"{ds}/{rep}/gmm_{rep}_matched.bed")
     return files
 
 

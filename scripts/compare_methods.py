@@ -155,12 +155,13 @@ def load_report(analysis_dir, method):
 
 
 def load_enrichment(analysis_dir, method):
-    """Load enrichment.tsv for a method. Returns dict: state → {annotation → value}."""
+    """Load enrichment for a method. Returns dict: state → {annotation → odds_ratio}."""
     path = os.path.join(analysis_dir, method, "enrichment", "enrichment.tsv")
     if not os.path.exists(path):
         return {}
     df = pd.read_csv(path, sep="\t")
-    return df.set_index("state").to_dict("index")
+    pivot = df.pivot(index="state", columns="label", values="odds_ratio")
+    return pivot.to_dict("index")
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +367,7 @@ def plot_comparison(df, outdir):
     if enrich_cols:
         _grouped_bar_panel(axes[4], df_main, enrich_cols, enrich_labels,
                            "E. Functional enrichment (key state-annotation pairs)",
-                           "Overlap fraction")
+                           "Odds ratio")
     else:
         axes[4].text(0.5, 0.5, "No enrichment data", transform=axes[4].transAxes,
                      ha="center", va="center", fontsize=12, color="gray")
