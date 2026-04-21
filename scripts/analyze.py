@@ -288,8 +288,12 @@ def save_stats(df, out_path, extra_groupby=None):
 
 # --- RNA-seq expressed gene annotations ----------------------------------
 
-def load_expressed_entrez_ids(rnaseq_path, tpm_threshold=1.0):
-    """Parse ENCODE RNA-seq quantification TSV; return set of expressed Entrez gene IDs."""
+def load_expressed_gene_ids(rnaseq_path, tpm_threshold=1.0):
+    """Parse ENCODE RNA-seq quantification TSV; return set of expressed gene IDs.
+
+    Gene IDs may be Ensembl (ENSG...) or Entrez (numeric). Version suffixes
+    (e.g. ENSG00000141510.18) are stripped for matching.
+    """
     expressed = set()
     with open(rnaseq_path) as f:
         reader = csv.DictReader(f, delimiter="\t")
@@ -298,30 +302,19 @@ def load_expressed_entrez_ids(rnaseq_path, tpm_threshold=1.0):
                 tpm = float(row["TPM"])
                 gene_id = row["gene_id"].strip()
                 if tpm >= tpm_threshold:
+                    # Store both versioned and unversioned forms
                     expressed.add(gene_id)
+                    if "." in gene_id:
+                        expressed.add(gene_id.split(".")[0])
             except (ValueError, KeyError):
                 continue
     return expressed
 
 
-def load_entrez_to_symbol(gene_info_path):
-    """Parse NCBI gene_info file; return dict mapping Entrez gene ID (str) -> gene symbol."""
-    mapping = {}
-    with open_text(gene_info_path) as f:
-        for line in f:
-            if line.startswith("#"):
-                continue
-            cols = line.rstrip("\n").split("\t")
-            if len(cols) < 3:
-                continue
-            # Columns: tax_id, GeneID, Symbol, ...
-            mapping[cols[1]] = cols[2]
-    return mapping
-
-
-def load_expressed_gene_coords(gtf_path, expressed_symbols):
+def load_expressed_gene_coords(gtf_path, expressed_ids):
     """Parse GENCODE GTF for gene-level entries; return gene bodies and TSS for expressed genes.
 
+    Matches against both gene_id (Ensembl) and gene_name fields in the GTF.
     Returns (gene_bodies, tss_regions) where each is a list of (chrom, start, end, name).
     """
     gene_bodies = []
@@ -334,37 +327,42 @@ def load_expressed_gene_coords(gtf_path, expressed_symbols):
             if len(cols) < 9 or cols[2] != "gene":
                 continue
             attrs = cols[8]
+            gene_id = None
             gene_name = None
             for attr in attrs.split(";"):
                 attr = attr.strip()
-                if attr.startswith("gene_name"):
+                if attr.startswith("gene_id"):
+                    gene_id = attr.split('"')[1] if '"' in attr else attr.split()[-1]
+                elif attr.startswith("gene_name"):
                     gene_name = attr.split('"')[1] if '"' in attr else attr.split()[-1]
-                    break
-            if gene_name is None or gene_name not in expressed_symbols:
+            # Match by Ensembl gene_id (with or without version) or gene_name
+            matched = False
+            if gene_id and (gene_id in expressed_ids or gene_id.split(".")[0] in expressed_ids):
+                matched = True
+            if gene_name and gene_name in expressed_ids:
+                matched = True
+            if not matched:
                 continue
+            label = gene_name or gene_id
             chrom = cols[0]
             start = int(cols[3]) - 1  # GTF is 1-based
             end = int(cols[4])
             strand = cols[6]
-            gene_bodies.append((chrom, start, end, gene_name))
+            gene_bodies.append((chrom, start, end, label))
             tss = start if strand == "+" else end - 1
-            tss_regions.append((chrom, tss, tss + 1, gene_name))
+            tss_regions.append((chrom, tss, tss + 1, label))
     return gene_bodies, tss_regions
 
 
-def make_expressed_annotations(rnaseq_path, gene_info_path, gtf_path):
-    """Build expressed gene body and TSS BED annotations from RNA-seq + gene annotation.
+def make_expressed_annotations(rnaseq_path, gtf_path):
+    """Build expressed gene body and TSS BED annotations from RNA-seq + GTF.
 
     Returns list of (label, bed_regions) pairs.
     """
-    expressed_ids = load_expressed_entrez_ids(rnaseq_path)
-    print(f"  RNA-seq: {len(expressed_ids)} expressed genes (TPM >= 1)", file=sys.stderr)
+    expressed_ids = load_expressed_gene_ids(rnaseq_path)
+    print(f"  RNA-seq: {len(expressed_ids)} expressed gene IDs (TPM >= 1)", file=sys.stderr)
 
-    entrez_to_sym = load_entrez_to_symbol(gene_info_path)
-    expressed_symbols = {entrez_to_sym[gid] for gid in expressed_ids if gid in entrez_to_sym}
-    print(f"  Mapped to {len(expressed_symbols)} gene symbols", file=sys.stderr)
-
-    gene_bodies, tss_regions = load_expressed_gene_coords(gtf_path, expressed_symbols)
+    gene_bodies, tss_regions = load_expressed_gene_coords(gtf_path, expressed_ids)
     print(f"  GTF: {len(gene_bodies)} expressed gene bodies, {len(tss_regions)} TSS regions",
           file=sys.stderr)
 
@@ -1265,8 +1263,8 @@ def _run_single(args):
             label = os.path.basename(p).replace(".bed.gz", "").replace(".bed", "")
             annotation_items.append((label, p))
 
-    if args.rnaseq and args.gene_info and args.gtf:
-        rna_annotations = make_expressed_annotations(args.rnaseq, args.gene_info, args.gtf)
+    if args.rnaseq and args.gtf:
+        rna_annotations = make_expressed_annotations(args.rnaseq, args.gtf)
         annotation_items.extend(rna_annotations)
 
     if annotation_items:
@@ -1324,8 +1322,6 @@ def main():
                     help="Annotation BED(.gz) files (for enrichment)")
     ap.add_argument("--rnaseq", default=None,
                     help="ENCODE RNA-seq quantification TSV")
-    ap.add_argument("--gene-info", default=None, dest="gene_info",
-                    help="NCBI gene_info(.gz) file")
     ap.add_argument("--gtf", default=None,
                     help="GENCODE GTF(.gz) gene annotation")
     ap.add_argument("--emissions-only", action="store_true", dest="emissions_only",

@@ -31,7 +31,6 @@ def _analysis_inputs(w):
     # RNA-seq + gene annotations (when available)
     if cfg.get("rnaseq"):
         files.append(f"{ds}/rnaseq_{cfg['rnaseq']}.tsv")
-        files.append(TOOLS["gene_info"])
         files.append(TOOLS["gencode_gtf"])
     return files
 
@@ -54,7 +53,6 @@ rule analyze_segmentations:
         scripts_dir = SCRIPTS_DIR,
         rnaseq    = lambda w: f"{w.ds}/rnaseq_{DATASETS[w.ds]['rnaseq']}.tsv"
                                if DATASETS[w.ds].get("rnaseq") else "",
-        gene_info = lambda w: TOOLS["gene_info"] if DATASETS[w.ds].get("rnaseq") else "",
         gtf       = lambda w: TOOLS["gencode_gtf"] if DATASETS[w.ds].get("rnaseq") else "",
     shell:
         r"""
@@ -63,7 +61,7 @@ rule analyze_segmentations:
         # Build RNA-seq arguments if available
         RNA_ARGS=""
         if [ -n "{params.rnaseq}" ]; then
-            RNA_ARGS="--rnaseq {params.rnaseq} --gene-info {params.gene_info} --gtf {params.gtf}"
+            RNA_ARGS="--rnaseq {params.rnaseq} --gtf {params.gtf}"
         fi
 
         # Helper: run analyze.py with common args
