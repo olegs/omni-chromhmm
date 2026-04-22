@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
+matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -406,7 +407,7 @@ def plot_segment_lengths(segs, outdir):
     ax.set_xlabel("state")
     ax.set_ylabel("bp")
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "segment_length.png"), dpi=120)
+    fig.savefig(os.path.join(outdir, "segment_length.png"), dpi=300)
     plt.close(fig)
 
 
@@ -474,7 +475,7 @@ def plot_emissions(states, marks, mat, outdir):
     ax.set_title("State emissions")
     fig.colorbar(im, ax=ax)
     fig.tight_layout()
-    fig.savefig(os.path.join(edir, "state_emissions.png"), dpi=120)
+    fig.savefig(os.path.join(edir, "state_emissions.png"), dpi=300)
     plt.close(fig)
 
 
@@ -627,7 +628,7 @@ def plot_enrichment(enrich_df, segs, outdir):
     ax.set_yticklabels(scaled.index)
     ax.set_title("Functional enrichment")
     fig.tight_layout()
-    fig.savefig(os.path.join(edir, "enrichment.png"), dpi=120)
+    fig.savefig(os.path.join(edir, "enrichment.png"), dpi=300)
     plt.close(fig)
 
 

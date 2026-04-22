@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
+matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 
 
