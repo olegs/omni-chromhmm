@@ -30,7 +30,6 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import seaborn as sns
 
 
@@ -1191,7 +1190,7 @@ def compare_all(args):
                       cmap="YlGnBu", cbar_label="Similarity")
 
     # Save and plot emission similarity matrix (if available)
-    if len(emissions) >= 2:
+    if len(emission_paths) >= 2:
         em_df = pd.DataFrame(em_sim_mat, index=labels, columns=labels)
         em_df.to_csv(os.path.join(args.outdir, "emission_similarity_matrix.tsv"),
                       sep="\t", float_format="%.4f")
@@ -1215,7 +1214,7 @@ def compare_all(args):
             os.path.join(comp_dir, "nmi_vs_all.tsv"), sep="\t", float_format="%.4f")
         jaccard_df.iloc[[i]].to_csv(
             os.path.join(comp_dir, "jaccard_vs_all.tsv"), sep="\t", float_format="%.4f")
-        if i in emissions and len(emissions) >= 2:
+        if i in emission_paths and len(emission_paths) >= 2:
             em_df.iloc[[i]].dropna(axis=1).to_csv(
                 os.path.join(comp_dir, "emission_similarity_vs_all.tsv"),
                 sep="\t", float_format="%.4f")
