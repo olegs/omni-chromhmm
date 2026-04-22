@@ -138,6 +138,14 @@ def load_emission_matrix(comparison_dir):
     return _load_matrix(comparison_dir, "emission_similarity_matrix.tsv")
 
 
+def load_ami_matrix(comparison_dir):
+    return _load_matrix(comparison_dir, "ami_matrix.tsv")
+
+
+def load_nmi_matrix(comparison_dir):
+    return _load_matrix(comparison_dir, "nmi_matrix.tsv")
+
+
 def load_segment_stats(segment_stats_dir):
     """Load segment_stats.tsv. Returns dict: seg_name → {n_states, n_segments, ...}."""
     path = os.path.join(segment_stats_dir, "segment_stats.tsv")
@@ -194,13 +202,15 @@ def build_table(analysis_dir, comparison_dir):
     # Load metrics (all from comparison_dir)
     entropy_data = load_entropy(comparison_dir)
     kappa_mat = load_kappa_matrix(comparison_dir)
+    ami_mat = load_ami_matrix(comparison_dir)
+    nmi_mat = load_nmi_matrix(comparison_dir)
     jaccard_mat = load_jaccard_matrix(comparison_dir)
     emission_mat = load_emission_matrix(comparison_dir)
     seg_stats = load_segment_stats(comparison_dir)
 
     # Build mapping from analysis dir → segmentation name in metrics
     seg_names = list(entropy_data.keys())
-    for mat in [kappa_mat, jaccard_mat, emission_mat]:
+    for mat in [kappa_mat, ami_mat, nmi_mat, jaccard_mat, emission_mat]:
         if mat is not None:
             seg_names = list(set(seg_names) | set(mat.index))
     if seg_stats:
@@ -236,6 +246,12 @@ def build_table(analysis_dir, comparison_dir):
         if kappa_mat is not None and seg_name in kappa_mat.index and ref_seg in kappa_mat.columns:
             row["kappa_vs_ref"] = kappa_mat.loc[seg_name, ref_seg]
 
+        # AMI / NMI vs reference
+        if ami_mat is not None and seg_name in ami_mat.index and ref_seg in ami_mat.columns:
+            row["ami_vs_ref"] = ami_mat.loc[seg_name, ref_seg]
+        if nmi_mat is not None and seg_name in nmi_mat.index and ref_seg in nmi_mat.columns:
+            row["nmi_vs_ref"] = nmi_mat.loc[seg_name, ref_seg]
+
         # Rep1 vs rep2 metrics (kappa, jaccard, emission similarity)
         # Only for non-replicate, non-ref methods (pooled or mode-level)
         if method not in ("ref",) and "_rep" not in method:
@@ -250,6 +266,8 @@ def build_table(analysis_dir, comparison_dir):
             rep1_seg = a2s.get(rep1_method, "")
             rep2_seg = a2s.get(rep2_method, "")
             for mat, col_name in [(kappa_mat, "kappa_rep1_vs_rep2"),
+                                   (ami_mat, "ami_rep1_vs_rep2"),
+                                   (nmi_mat, "nmi_rep1_vs_rep2"),
                                    (jaccard_mat, "jaccard_rep1_vs_rep2"),
                                    (emission_mat, "emission_rep1_vs_rep2")]:
                 if mat is not None and rep1_seg in mat.index and rep2_seg in mat.columns:
@@ -396,9 +414,25 @@ def plot_comparison(df, outdir):
                "Cohen's Kappa vs ENCODE reference", "Kappa")
     _save_panel(fig, outdir, "kappa_vs_ref")
 
+    # AMI vs reference
+    if "ami_vs_ref" in df_main.columns and df_main["ami_vs_ref"].notna().any():
+        fig, ax = _make_fig()
+        _bar_panel(ax, df_main, "ami_vs_ref",
+                   "Adjusted Mutual Information vs ENCODE reference", "AMI")
+        _save_panel(fig, outdir, "ami_vs_ref")
+
+    # NMI vs reference
+    if "nmi_vs_ref" in df_main.columns and df_main["nmi_vs_ref"].notna().any():
+        fig, ax = _make_fig()
+        _bar_panel(ax, df_main, "nmi_vs_ref",
+                   "Normalized Mutual Information vs ENCODE reference", "NMI")
+        _save_panel(fig, outdir, "nmi_vs_ref")
+
     # Rep1 vs rep2 reproducibility plots
     for col, title, ylabel, fname in [
         ("kappa_rep1_vs_rep2", "Replicate reproducibility (Kappa)", "Kappa", "kappa_rep1_vs_rep2"),
+        ("ami_rep1_vs_rep2", "Replicate reproducibility (AMI)", "AMI", "ami_rep1_vs_rep2"),
+        ("nmi_rep1_vs_rep2", "Replicate reproducibility (NMI)", "NMI", "nmi_rep1_vs_rep2"),
         ("jaccard_rep1_vs_rep2", "Replicate reproducibility (Jaccard)", "Similarity", "jaccard_rep1_vs_rep2"),
         ("emission_rep1_vs_rep2", "Replicate reproducibility (Emission)", "Cosine similarity", "emission_rep1_vs_rep2"),
     ]:

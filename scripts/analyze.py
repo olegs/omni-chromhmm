@@ -879,6 +879,42 @@ def segmentation_to_bins(segs, bin_size):
     return bins
 
 
+def _aligned_label_arrays(bins1, bins2):
+    """Extract aligned label arrays from two bin-level segmentations.
+
+    Returns (labels1, labels2) as numpy arrays over shared bins.
+    """
+    common_chroms = set(bins1.keys()) & set(bins2.keys())
+    l1, l2 = [], []
+    for chrom in sorted(common_chroms):
+        common_bins = set(bins1[chrom].keys()) & set(bins2[chrom].keys())
+        for b in sorted(common_bins):
+            l1.append(bins1[chrom][b])
+            l2.append(bins2[chrom][b])
+    return np.array(l1), np.array(l2)
+
+
+def compute_ami_nmi(bins1, bins2):
+    """Compute Adjusted Mutual Information and Normalized Mutual Information.
+
+    These are label-agnostic information-theoretic measures that do not
+    require a state-matching step.  AMI is corrected for chance; NMI is
+    normalised by the average entropy of the two segmentations.
+
+    Returns (ami, nmi, n_bins).
+    """
+    from sklearn.metrics import adjusted_mutual_info_score, normalized_mutual_info_score
+
+    labels1, labels2 = _aligned_label_arrays(bins1, bins2)
+    n = len(labels1)
+    if n == 0:
+        return 0.0, 0.0, 0
+
+    ami = adjusted_mutual_info_score(labels1, labels2)
+    nmi = normalized_mutual_info_score(labels1, labels2)
+    return ami, nmi, n
+
+
 def compute_kappa(bins1, bins2):
     """Compute Cohen's Kappa between two bin-level segmentations.
 
@@ -1015,6 +1051,8 @@ def compare_all(args):
 
     # Pairwise comparisons
     kappa_mat = np.ones((n, n), dtype=np.float64)
+    ami_mat = np.ones((n, n), dtype=np.float64)
+    nmi_mat = np.ones((n, n), dtype=np.float64)
     jaccard_mat = np.full((n, n), np.nan)
     em_sim_mat = np.full((n, n), np.nan)
     np.fill_diagonal(jaccard_mat, 1.0)
@@ -1030,6 +1068,15 @@ def compare_all(args):
             kappa_mat[i, j] = kappa
             kappa_mat[j, i] = kappa
             row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
+
+            # AMI / NMI (label-agnostic information-theoretic measures)
+            ami, nmi, _ = compute_ami_nmi(all_bins[i], all_bins[j])
+            ami_mat[i, j] = ami
+            ami_mat[j, i] = ami
+            nmi_mat[i, j] = nmi
+            nmi_mat[j, i] = nmi
+            row["ami"] = ami
+            row["nmi"] = nmi
 
             # Jaccard (via match.py) — produces per-pair heatmap + similarity
             overlap = match_pair_overlap(all_segs_full[i], all_segs_full[j])
@@ -1064,7 +1111,8 @@ def compare_all(args):
 
             comparison_rows.append(row)
             print(f"  {labels[i]} vs {labels[j]}: "
-                  f"kappa={kappa:.4f}, jaccard={sim:.4f}"
+                  f"kappa={kappa:.4f}, ami={ami:.4f}, nmi={nmi:.4f}, "
+                  f"jaccard={sim:.4f}"
                   + (f", emission={row.get('emission_similarity', 'N/A')}"
                      if 'emission_similarity' in row else ""))
 
@@ -1081,6 +1129,22 @@ def compare_all(args):
     _plot_sim_heatmap(kappa_df, "Pairwise Cohen's Kappa",
                       os.path.join(args.outdir, "kappa_heatmap.png"),
                       cmap="YlGnBu", cbar_label="Cohen's Kappa")
+
+    # Save and plot AMI matrix
+    ami_df = pd.DataFrame(ami_mat, index=labels, columns=labels)
+    ami_df.to_csv(os.path.join(args.outdir, "ami_matrix.tsv"),
+                   sep="\t", float_format="%.4f")
+    _plot_sim_heatmap(ami_df, "Pairwise Adjusted Mutual Information",
+                      os.path.join(args.outdir, "ami_heatmap.png"),
+                      cmap="YlGnBu", cbar_label="AMI")
+
+    # Save and plot NMI matrix
+    nmi_df = pd.DataFrame(nmi_mat, index=labels, columns=labels)
+    nmi_df.to_csv(os.path.join(args.outdir, "nmi_matrix.tsv"),
+                   sep="\t", float_format="%.4f")
+    _plot_sim_heatmap(nmi_df, "Pairwise Normalized Mutual Information",
+                      os.path.join(args.outdir, "nmi_heatmap.png"),
+                      cmap="YlGnBu", cbar_label="NMI")
 
     # Save and plot jaccard similarity matrix
     jaccard_df = pd.DataFrame(jaccard_mat, index=labels, columns=labels)
@@ -1109,6 +1173,10 @@ def compare_all(args):
         os.makedirs(comp_dir, exist_ok=True)
         kappa_df.iloc[[i]].to_csv(
             os.path.join(comp_dir, "kappa_vs_all.tsv"), sep="\t", float_format="%.4f")
+        ami_df.iloc[[i]].to_csv(
+            os.path.join(comp_dir, "ami_vs_all.tsv"), sep="\t", float_format="%.4f")
+        nmi_df.iloc[[i]].to_csv(
+            os.path.join(comp_dir, "nmi_vs_all.tsv"), sep="\t", float_format="%.4f")
         jaccard_df.iloc[[i]].to_csv(
             os.path.join(comp_dir, "jaccard_vs_all.tsv"), sep="\t", float_format="%.4f")
         if i in emissions and len(emissions) >= 2:
@@ -1286,6 +1354,8 @@ def _replot_multi(args):
     # Comparison heatmaps
     for name, title, cbar in [
         ("kappa_matrix", "Pairwise Cohen's Kappa", "Cohen's Kappa"),
+        ("ami_matrix", "Pairwise Adjusted Mutual Information", "AMI"),
+        ("nmi_matrix", "Pairwise Normalized Mutual Information", "NMI"),
         ("jaccard_similarity_matrix", "Pairwise Jaccard similarity", "Similarity"),
         ("emission_similarity_matrix", "Pairwise emission correspondence", "Avg cosine similarity"),
     ]:
