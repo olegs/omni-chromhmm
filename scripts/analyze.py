@@ -163,7 +163,7 @@ def plot_per_state_violin(df, out_path, title=None):
     ax.set_title(title, fontsize=9)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path)
     plt.close(fig)
     print(f"  saved {out_path}")
 
@@ -203,7 +203,7 @@ def plot_coverage_per_state(df, out_path, title=None):
     ax.set_title(title, fontsize=9)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path)
     plt.close(fig)
     print(f"  saved {out_path}")
 
@@ -235,7 +235,7 @@ def plot_overall_per_sample(df, out_path, title=None, short_names=False):
     ax.set_title(title, fontsize=9)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path)
     plt.close(fig)
     print(f"  saved {out_path}")
 
@@ -264,7 +264,7 @@ def plot_state_heatmap(df, out_path, title=None, short_names=False):
     ax.set_xlabel("Chromatin state")
     ax.set_ylabel("Sample")
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path)
     plt.close(fig)
     print(f"  saved {out_path}")
 
@@ -800,7 +800,7 @@ def _compute_and_save_entropy(seg_paths, bin_size, outdir, exclude_states=None,
         ax.set_ylabel("From state")
         fig.tight_layout()
         fig_path = os.path.join(seg_dir, f"transition_matrix{suffix}.png")
-        fig.savefig(fig_path, dpi=150)
+        fig.savefig(fig_path)
         plt.close(fig)
         print(f"  saved {fig_path}")
 
@@ -828,7 +828,7 @@ def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
         ax.text(i, v + 0.02, f"{v:.3f}", ha="center", va="bottom", fontsize=7)
     fig.tight_layout()
     fig_path = os.path.join(outdir, f"entropy_summary{suffix}.png")
-    fig.savefig(fig_path, dpi=150)
+    fig.savefig(fig_path)
     plt.close(fig)
     print(f"  saved {fig_path}")
 
@@ -858,7 +858,7 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     fig_path = os.path.join(outdir, "entropy_summary_combined.png")
-    fig.savefig(fig_path, dpi=150)
+    fig.savefig(fig_path)
     plt.close(fig)
     print(f"  saved {fig_path}")
 
@@ -1002,11 +1002,93 @@ def _emission_cosine_similarity(states1, mat1, states2, mat2):
     return avg_sim, mapping
 
 
-def compare_all(args):
-    """Pairwise comparison of all segmentations: kappa, jaccard, emission similarity."""
+def _load_seg_full(path):
+    """Load a segmentation BED file as 5-tuples (chrom, start, end, name, color)."""
+    segs_full = []
+    with open(path) as f:
+        for line in f:
+            if not line.strip() or line.startswith(("#", "track", "browser")):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 3:
+                continue
+            chrom, s, e = parts[0], int(parts[1]), int(parts[2])
+            name = parts[3] if len(parts) > 3 else "."
+            color = parts[8] if len(parts) >= 9 else "0,0,0"
+            segs_full.append((chrom, s, e, name, color))
+    return segs_full
+
+
+def _compare_pair(i, j, path_i, path_j, label_i, label_j,
+                  emission_path_i, emission_path_j, bin_size, outdir):
+    """Compare a single pair of segmentations. Loads data from disk.
+
+    Designed for ProcessPoolExecutor — each worker loads its own data
+    to avoid pickling large arrays across processes.
+    """
     from match import pair_overlap as match_pair_overlap
     from match import best_mapping as match_best_mapping
     from match import compare as match_compare
+
+    # Load segmentations from disk in this worker
+    segs_i = load_bed(path_i)
+    segs_j = load_bed(path_j)
+    bins_i = segmentation_to_bins(segs_i, bin_size)
+    bins_j = segmentation_to_bins(segs_j, bin_size)
+    segs_full_i = _load_seg_full(path_i)
+    segs_full_j = _load_seg_full(path_j)
+
+    row = {"seg1": label_i, "seg2": label_j, "_i": i, "_j": j}
+
+    # Kappa
+    kappa, po, pe, n_bins, _ = compute_kappa(bins_i, bins_j)
+    row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
+
+    # AMI / NMI (label-agnostic information-theoretic measures)
+    ami, nmi, _ = compute_ami_nmi(bins_i, bins_j)
+    row["ami"] = ami
+    row["nmi"] = nmi
+
+    # Jaccard (via match.py) — produces per-pair heatmap + similarity
+    overlap = match_pair_overlap(segs_full_i, segs_full_j)
+    work_states = sorted({x[3] for x in segs_full_j}, key=_natural_sort_key)
+    ref_states = sorted({x[3] for x in segs_full_i}, key=_natural_sort_key)
+    mapping = match_best_mapping(overlap, work_states, ref_states)
+    pair_dir = os.path.join(outdir, "pairs", f"{label_i}_vs_{label_j}")
+    match_compare(segs_full_i, segs_full_j, overlap, mapping, pair_dir)
+
+    # Read back similarity score
+    sim_path = os.path.join(pair_dir, "similarity.txt")
+    sim = 0.0
+    if os.path.exists(sim_path):
+        with open(sim_path) as f:
+            for line in f:
+                if "=" in line:
+                    sim = float(line.split("=")[1].strip())
+    row["jaccard_similarity"] = sim
+
+    # Emission correspondence
+    em_i = _load_emissions_tsv(emission_path_i) if emission_path_i else None
+    em_j = _load_emissions_tsv(emission_path_j) if emission_path_j else None
+    if em_i is not None and em_j is not None:
+        st1, _, mat1 = em_i
+        st2, _, mat2 = em_j
+        avg_sim, em_mapping = _emission_cosine_similarity(st1, mat1, st2, mat2)
+        row["emission_similarity"] = avg_sim
+        row["emission_mapping"] = "; ".join(
+            f"{k}->{v}" for k, v in sorted(em_mapping.items()))
+
+    print(f"  {label_i} vs {label_j}: "
+          f"kappa={kappa:.4f}, ami={ami:.4f}, nmi={nmi:.4f}, "
+          f"jaccard={sim:.4f}"
+          + (f", emission={row.get('emission_similarity', 'N/A')}"
+             if 'emission_similarity' in row else ""))
+    return row
+
+
+def compare_all(args):
+    """Pairwise comparison of all segmentations"""
+    from concurrent.futures import ProcessPoolExecutor, as_completed
 
     os.makedirs(args.outdir, exist_ok=True)
     analysis_dir = getattr(args, "analysis_dir", None)
@@ -1016,40 +1098,16 @@ def compare_all(args):
     n = len(paths)
     labels = [_seg_label(p) for p in paths]
 
-    # Load all segmentations
-    print(f"  Loading {n} segmentations ...", file=sys.stderr)
-    all_segs = []       # list of (chrom, start, end, name) for analyze.py functions
-    all_segs_full = []  # list of (chrom, start, end, name, color) for match.py functions
-    all_bins = []
-    for p in paths:
-        segs = load_bed(p)
-        all_segs.append(segs)
-        # Convert to match.py format (5-tuple with color)
-        segs_full = []
-        with open(p) as f:
-            for line in f:
-                if not line.strip() or line.startswith(("#", "track", "browser")):
-                    continue
-                parts = line.rstrip("\n").split("\t")
-                chrom, s, e = parts[0], int(parts[1]), int(parts[2])
-                name = parts[3] if len(parts) > 3 else "."
-                color = parts[8] if len(parts) >= 9 else "0,0,0"
-                segs_full.append((chrom, s, e, name, color))
-        all_segs_full.append(segs_full)
-        all_bins.append(segmentation_to_bins(segs, args.bin))
-
-    # Load emissions where available
-    emissions = {}
+    # Resolve emission paths (small strings — safe to pass to workers)
+    emission_paths = {}
     for i, p in enumerate(paths):
         seg_dir = seg_outdirs.get(p)
-        if not seg_dir:
-            continue
-        epath = os.path.join(seg_dir, "emissions", "state_emissions.tsv")
-        result = _load_emissions_tsv(epath)
-        if result is not None:
-            emissions[i] = result
+        if seg_dir:
+            epath = os.path.join(seg_dir, "emissions", "state_emissions.tsv")
+            if os.path.exists(epath):
+                emission_paths[i] = epath
 
-    # Pairwise comparisons
+    # Pairwise comparisons (parallelised with ProcessPoolExecutor)
     kappa_mat = np.ones((n, n), dtype=np.float64)
     ami_mat = np.ones((n, n), dtype=np.float64)
     nmi_mat = np.ones((n, n), dtype=np.float64)
@@ -1057,64 +1115,42 @@ def compare_all(args):
     em_sim_mat = np.full((n, n), np.nan)
     np.fill_diagonal(jaccard_mat, 1.0)
     np.fill_diagonal(em_sim_mat, 1.0)
-    comparison_rows = []
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            row = {"seg1": labels[i], "seg2": labels[j]}
+    pair_order = [(i, j) for i in range(n) for j in range(i + 1, n)]
+    n_pairs = len(pair_order)
+    threads = getattr(args, "threads", None) or os.cpu_count() or 4
+    max_workers = min(n_pairs, threads)
+    print(f"  Comparing {n_pairs} pairs with {max_workers} processes ...",
+          file=sys.stderr)
 
-            # Kappa
-            kappa, po, pe, n_bins, _ = compute_kappa(all_bins[i], all_bins[j])
-            kappa_mat[i, j] = kappa
-            kappa_mat[j, i] = kappa
-            row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+        for i, j in pair_order:
+            fut = executor.submit(
+                _compare_pair, i, j,
+                paths[i], paths[j], labels[i], labels[j],
+                emission_paths.get(i), emission_paths.get(j),
+                args.bin, args.outdir)
+            futures[fut] = (i, j)
 
-            # AMI / NMI (label-agnostic information-theoretic measures)
-            ami, nmi, _ = compute_ami_nmi(all_bins[i], all_bins[j])
-            ami_mat[i, j] = ami
-            ami_mat[j, i] = ami
-            nmi_mat[i, j] = nmi
-            nmi_mat[j, i] = nmi
-            row["ami"] = ami
-            row["nmi"] = nmi
+        pair_to_idx = {p: k for k, p in enumerate(pair_order)}
+        comparison_rows = [None] * n_pairs
 
-            # Jaccard (via match.py) — produces per-pair heatmap + similarity
-            overlap = match_pair_overlap(all_segs_full[i], all_segs_full[j])
-            work_states = sorted({x[3] for x in all_segs_full[j]}, key=_natural_sort_key)
-            ref_states = sorted({x[3] for x in all_segs_full[i]}, key=_natural_sort_key)
-            mapping = match_best_mapping(overlap, work_states, ref_states)
-            pair_dir = os.path.join(args.outdir, "pairs", f"{labels[i]}_vs_{labels[j]}")
-            match_compare(all_segs_full[i], all_segs_full[j], overlap, mapping, pair_dir)
+        for fut in as_completed(futures):
+            row = fut.result()
+            i, j = row.pop("_i"), row.pop("_j")
 
-            # Read back similarity score
-            sim_path = os.path.join(pair_dir, "similarity.txt")
-            sim = 0.0
-            if os.path.exists(sim_path):
-                with open(sim_path) as f:
-                    for line in f:
-                        if "=" in line:
-                            sim = float(line.split("=")[1].strip())
-            jaccard_mat[i, j] = sim
-            jaccard_mat[j, i] = sim
-            row["jaccard_similarity"] = sim
+            kappa_mat[i, j] = kappa_mat[j, i] = row["kappa"]
+            ami_mat[i, j] = ami_mat[j, i] = row["ami"]
+            nmi_mat[i, j] = nmi_mat[j, i] = row["nmi"]
+            jaccard_mat[i, j] = jaccard_mat[j, i] = row["jaccard_similarity"]
+            if "emission_similarity" in row:
+                em_sim_mat[i, j] = em_sim_mat[j, i] = row["emission_similarity"]
 
-            # Emission correspondence
-            if i in emissions and j in emissions:
-                st1, _, mat1 = emissions[i]
-                st2, _, mat2 = emissions[j]
-                avg_sim, em_mapping = _emission_cosine_similarity(st1, mat1, st2, mat2)
-                em_sim_mat[i, j] = avg_sim
-                em_sim_mat[j, i] = avg_sim
-                row["emission_similarity"] = avg_sim
-                row["emission_mapping"] = "; ".join(
-                    f"{k}->{v}" for k, v in sorted(em_mapping.items()))
+            comparison_rows[pair_to_idx[(i, j)]] = row
 
-            comparison_rows.append(row)
-            print(f"  {labels[i]} vs {labels[j]}: "
-                  f"kappa={kappa:.4f}, ami={ami:.4f}, nmi={nmi:.4f}, "
-                  f"jaccard={sim:.4f}"
-                  + (f", emission={row.get('emission_similarity', 'N/A')}"
-                     if 'emission_similarity' in row else ""))
+    # Remove any None entries (shouldn't happen, but defensive)
+    comparison_rows = [r for r in comparison_rows if r is not None]
 
     # Save all-pairs summary
     summary_path = os.path.join(args.outdir, "comparison_all_pairs.tsv")
@@ -1198,7 +1234,7 @@ def _plot_sim_heatmap(df, title, path, cmap="YlGnBu", cbar_label="Value",
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=fontsize)
     ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=fontsize)
     fig.tight_layout()
-    fig.savefig(path, dpi=150)
+    fig.savefig(path)
     plt.close(fig)
     print(f"  saved {path}")
 
@@ -1294,7 +1330,7 @@ def run_segment_stats(args):
                     fmt, ha="center", va="bottom", fontsize=6)
         fig.tight_layout()
         fig_path = os.path.join(args.outdir, f"{col}.png")
-        fig.savefig(fig_path, dpi=150)
+        fig.savefig(fig_path)
         plt.close(fig)
         print(f"  saved {fig_path}")
 
@@ -1389,7 +1425,7 @@ def _replot_multi(args):
             ax.set_ylabel(ylabel, fontsize=8)
             ax.grid(axis="y", alpha=0.3)
             fig.tight_layout()
-            fig.savefig(os.path.join(comp_dir, f"{col}.png"), dpi=150)
+            fig.savefig(os.path.join(comp_dir, f"{col}.png"))
             plt.close(fig)
 
     print("  Plot-only mode: regenerated all plots from existing TSVs")
@@ -1421,7 +1457,8 @@ def _run_multi(args):
     compare_dir = os.path.join(args.outdir, "comparison")
     compare_args = types.SimpleNamespace(
         seg=args.seg, bin=args.bin, outdir=compare_dir,
-        analysis_dir=analysis_dir)
+        analysis_dir=analysis_dir,
+        threads=getattr(args, "threads", None))
     compare_all(compare_args)
 
     # Segment stats
@@ -1455,6 +1492,8 @@ def main():
                     help="Analysis root dir for per-segmentation metric output")
     ap.add_argument("--plot-only", action="store_true", dest="plot_only",
                     help="Regenerate plots from existing TSVs (no recomputation)")
+    ap.add_argument("--threads", type=int, default=None,
+                    help="Max parallel workers for pairwise comparisons (default: cpu_count)")
     args = ap.parse_args()
 
     if len(args.seg) == 1:

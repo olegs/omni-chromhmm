@@ -168,7 +168,11 @@ rule compute_metrics:
     output:
         entropy = "{ds}/analysis/comparison/entropy_summary.tsv",
         kappa   = "{ds}/analysis/comparison/kappa_matrix.tsv",
+        ami     = "{ds}/analysis/comparison/ami_matrix.tsv",
+        nmi     = "{ds}/analysis/comparison/nmi_matrix.tsv",
+        jaccard = "{ds}/analysis/comparison/jaccard_similarity_matrix.tsv",
         stats   = "{ds}/analysis/comparison/segment_stats.tsv",
+    threads: workflow.cores
     conda: "../envs/python.yaml"
     params:
         scripts_dir = SCRIPTS_DIR,
@@ -179,7 +183,8 @@ rule compute_metrics:
             --seg {input} \
             --bin {params.bin} \
             --outdir {wildcards.ds}/analysis \
-            --analysis-dir {wildcards.ds}/analysis
+            --analysis-dir {wildcards.ds}/analysis \
+            --threads {threads}
         """
 
 
@@ -188,6 +193,9 @@ rule compare_methods:
     input:
         entropy   = "{ds}/analysis/comparison/entropy_summary.tsv",
         kappa     = "{ds}/analysis/comparison/kappa_matrix.tsv",
+        ami       = "{ds}/analysis/comparison/ami_matrix.tsv",
+        nmi       = "{ds}/analysis/comparison/nmi_matrix.tsv",
+        jaccard   = "{ds}/analysis/comparison/jaccard_similarity_matrix.tsv",
         stats     = "{ds}/analysis/comparison/segment_stats.tsv",
         analysis  = "{ds}/analysis/ref/report.tsv",
     output: "{ds}/analysis/methods/comparison_table.tsv"

@@ -385,7 +385,7 @@ def _save_panel(fig, outdir, name):
     """Save a single comparison panel figure."""
     fig.tight_layout()
     path = os.path.join(outdir, f"{name}.png")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    fig.savefig(path, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {path}")
 

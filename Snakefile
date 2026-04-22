@@ -140,6 +140,9 @@ rule dataset_done:
                      f"{w.ds}/matched_stats_all.tsv",
                      f"{w.ds}/analysis/comparison/entropy_summary.tsv",
                      f"{w.ds}/analysis/comparison/kappa_matrix.tsv",
+                     f"{w.ds}/analysis/comparison/ami_matrix.tsv",
+                     f"{w.ds}/analysis/comparison/nmi_matrix.tsv",
+                     f"{w.ds}/analysis/comparison/jaccard_similarity_matrix.tsv",
                      f"{w.ds}/analysis/comparison/segment_stats.tsv",
                      f"{w.ds}/analysis/methods/comparison_table.tsv"],
     output: touch("{ds}/.done")
