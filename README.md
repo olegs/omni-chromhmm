@@ -52,30 +52,17 @@ Useful flags: `-p` (echo commands), `-r` (reasons), `--dag | dot -Tpng > dag.png
 
 ### `analyze.py` -- unified analysis and metrics
 
-Sub-commands:
-
-| Command | Description |
-|---------|-------------|
-| `analyze` | Per-segmentation report, emissions, enrichment |
-| `entropy` | Transition matrix entropy |
-| `kappa` | Cohen's Kappa between two segmentations |
-| `kappa-all` | Pairwise Kappa between all segmentations |
-| `segment-stats` | Segment length statistics (n_states, min/max/mean/median) |
+Single `--seg`: per-segmentation report, emissions, enrichment.
+Multiple `--seg`: cross-segmentation entropy, kappa, jaccard, emission similarity, segment stats.
 
 ```bash
 # Per-segmentation analysis
-python scripts/analyze.py analyze --seg seg.bed --bin 200 --outdir out/ \
+python scripts/analyze.py --seg seg.bed --bin 200 --outdir out/ \
   --inputs chromhmm_default/*.txt \
   --annotations ChromHMM/COORDS/hg38/*.bed.gz
 
-# Transition entropy
-python scripts/analyze.py entropy --seg seg1.bed seg2.bed --bin 200 --outdir out/
-
-# Pairwise Kappa
-python scripts/analyze.py kappa-all --seg *.bed --bin 200 --outdir out/
-
-# Segment length statistics
-python scripts/analyze.py segment-stats --seg *.bed --outdir out/
+# Cross-segmentation metrics
+python scripts/analyze.py --seg seg1.bed seg2.bed ... --bin 200 --outdir out/
 ```
 
 ### `match.py` -- segmentation comparison
@@ -90,11 +77,28 @@ python scripts/match.py --ref seg_a.bed --work seg_b.bed --compare-only outdir/
 
 ### `compare_methods.py` -- unified method comparison
 
-Aggregates entropy, kappa, segment stats, and per-method enrichment into a single comparison table and multi-panel figure.
+Aggregates entropy, kappa, segment stats, and per-method enrichment into a comparison table and individual bar chart figures.
 
 ### `analyze_downloaded.py` / `analyze_matched.py`
 
 Cross-cell-type and per-dataset violin plots, coverage, heatmaps, and summary statistics.
+
+## Rebuilding plots only
+
+To regenerate plots without recomputing metrics (e.g. after tweaking plot styles):
+
+```bash
+# Cross-segmentation comparison plots (entropy, kappa, jaccard, segment stats heatmaps)
+python scripts/analyze.py --seg imr90/analysis/comparison/*.bed --bin 200 \
+  --outdir imr90/analysis --plot-only
+
+# Method comparison bar charts
+python scripts/compare_methods.py --analysis-dir imr90/analysis \
+  --comparison-dir imr90/analysis/comparison \
+  --outdir imr90/analysis/methods --plot-only
+```
+
+Both `--plot-only` flags read existing TSVs and regenerate only the PNG files.
 
 ## Replicates
 

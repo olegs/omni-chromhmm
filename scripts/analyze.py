@@ -1088,7 +1088,7 @@ def compare_all(args):
                        sep="\t", float_format="%.4f")
     _plot_sim_heatmap(jaccard_df, "Pairwise Jaccard similarity (overlap-matched)",
                       os.path.join(args.outdir, "jaccard_similarity_heatmap.png"),
-                      cmap="YlOrRd", cbar_label="Similarity")
+                      cmap="YlGnBu", cbar_label="Similarity")
 
     # Save and plot emission similarity matrix (if available)
     if len(emissions) >= 2:
@@ -1097,7 +1097,7 @@ def compare_all(args):
                       sep="\t", float_format="%.4f")
         _plot_sim_heatmap(em_df, "Pairwise emission correspondence",
                           os.path.join(args.outdir, "emission_similarity_heatmap.png"),
-                          cmap="YlOrRd", cbar_label="Avg cosine similarity",
+                          cmap="YlGnBu", cbar_label="Avg cosine similarity",
                           mask=np.isnan(em_sim_mat))
 
     # Per-segmentation rows saved to analysis subdirs
@@ -1122,12 +1122,13 @@ def _plot_sim_heatmap(df, title, path, cmap="YlGnBu", cbar_label="Value",
     """Plot an annotated similarity heatmap."""
     n = len(df)
     fig, ax = plt.subplots(figsize=(max(6, n * 0.45), max(5, n * 0.4)))
+    fontsize = max(4, min(7, 70 // max(n, 1)))
     sns.heatmap(df, cmap=cmap, vmin=0, vmax=1, ax=ax,
                 mask=mask, linewidths=0.5, annot=True, fmt=".2f",
-                annot_kws={"fontsize": 7}, cbar_kws={"label": cbar_label})
-    ax.set_title(title)
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=8)
-    ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=8)
+                annot_kws={"fontsize": fontsize}, cbar_kws={"label": cbar_label})
+    ax.set_title(title, fontsize=9)
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=fontsize)
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=fontsize)
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -1198,7 +1199,6 @@ def run_segment_stats(args):
     df.to_csv(summary_path, sep="\t", index=False, float_format="%.1f")
     print(f"  saved {summary_path}")
 
-    fig, axes = plt.subplots(2, 3, figsize=(12, 7))
     x = np.arange(len(df))
     xlabels = df["segmentation"]
 
@@ -1211,8 +1211,8 @@ def run_segment_stats(args):
         ("median_length", "Median segment length", "bp"),
     ]
 
-    for idx, (col, title, ylabel) in enumerate(metrics):
-        ax = axes[idx // 3, idx % 3]
+    for col, title, ylabel in metrics:
+        fig, ax = plt.subplots(figsize=(max(4, len(df) * 0.5), 3.5))
         vals = df[col].values
         ax.bar(x, vals, color="#4878CF", edgecolor="white", linewidth=0.5)
         ax.set_xticks(x)
@@ -1224,13 +1224,11 @@ def run_segment_stats(args):
             fmt = f"{v:.0f}" if v == int(v) else f"{v:.1f}"
             ax.text(i, v + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.01,
                     fmt, ha="center", va="bottom", fontsize=6)
-
-    fig.suptitle("Segment length statistics", fontsize=13, fontweight="bold")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
-    fig_path = os.path.join(args.outdir, "segment_stats.png")
-    fig.savefig(fig_path, dpi=150)
-    plt.close(fig)
-    print(f"  saved {fig_path}")
+        fig.tight_layout()
+        fig_path = os.path.join(args.outdir, f"{col}.png")
+        fig.savefig(fig_path, dpi=150)
+        plt.close(fig)
+        print(f"  saved {fig_path}")
 
 
 
@@ -1268,8 +1266,70 @@ def _run_single(args):
         plot_enrichment(enrich_df, segs, args.outdir)
 
 
+def _replot_multi(args):
+    """Re-generate plots from existing TSVs (no recomputation)."""
+    comp_dir = os.path.join(args.outdir, "comparison")
+
+    # Entropy plots
+    ent_path = os.path.join(comp_dir, "entropy_summary.tsv")
+    ent_nq_path = os.path.join(comp_dir, "entropy_summary_no_quies.tsv")
+    if os.path.exists(ent_path):
+        results_full = pd.read_csv(ent_path, sep="\t").to_dict("records")
+        results_active = []
+        if os.path.exists(ent_nq_path):
+            results_active = pd.read_csv(ent_nq_path, sep="\t").to_dict("records")
+        _save_entropy_summary(results_full, comp_dir)
+        _save_entropy_summary(results_active, comp_dir, suffix="_no_quies",
+                              title_extra=f"\n(excluding {', '.join(sorted(QUIESCENT_STATES))})")
+        _save_entropy_combined_plot(results_full, results_active, comp_dir)
+
+    # Comparison heatmaps
+    for name, title, cbar in [
+        ("kappa_matrix", "Pairwise Cohen's Kappa", "Cohen's Kappa"),
+        ("jaccard_similarity_matrix", "Pairwise Jaccard similarity", "Similarity"),
+        ("emission_similarity_matrix", "Pairwise emission correspondence", "Avg cosine similarity"),
+    ]:
+        path = os.path.join(comp_dir, f"{name}.tsv")
+        if os.path.exists(path):
+            mat = pd.read_csv(path, sep="\t", index_col=0)
+            mask = mat.isna().values if name == "emission_similarity_matrix" else None
+            _plot_sim_heatmap(mat, title,
+                              os.path.join(comp_dir, f"{name.replace('_matrix', '_heatmap')}.png"),
+                              cmap="YlGnBu", cbar_label=cbar, mask=mask)
+
+    # Segment stats plots
+    stats_path = os.path.join(comp_dir, "segment_stats.tsv")
+    if os.path.exists(stats_path):
+        df = pd.read_csv(stats_path, sep="\t")
+        x = np.arange(len(df))
+        xlabels = df["segmentation"]
+        for col, title, ylabel in [
+            ("n_states", "Total number of states", "Count"),
+            ("n_segments", "Total number of segments", "Count"),
+            ("min_length", "Min segment length", "bp"),
+            ("max_length", "Max segment length", "bp"),
+            ("mean_length", "Mean segment length", "bp"),
+            ("median_length", "Median segment length", "bp"),
+        ]:
+            fig, ax = plt.subplots(figsize=(max(4, len(df) * 0.5), 3.5))
+            ax.bar(x, df[col].values, color="#4878CF", edgecolor="white", linewidth=0.5)
+            ax.set_xticks(x)
+            ax.set_xticklabels(xlabels, rotation=55, ha="right", fontsize=7)
+            ax.set_title(title, fontsize=10, fontweight="bold")
+            ax.set_ylabel(ylabel, fontsize=8)
+            ax.grid(axis="y", alpha=0.3)
+            fig.tight_layout()
+            fig.savefig(os.path.join(comp_dir, f"{col}.png"), dpi=150)
+            plt.close(fig)
+
+    print("  Plot-only mode: regenerated all plots from existing TSVs")
+
+
 def _run_multi(args):
     """Cross-segmentation metrics: entropy, kappa, segment stats."""
+    if getattr(args, "plot_only", False):
+        return _replot_multi(args)
+
     analysis_dir = args.analysis_dir or args.outdir
 
     # Entropy
@@ -1323,6 +1383,8 @@ def main():
                     help="Only compute emissions and enrichment (skip report/lengths)")
     ap.add_argument("--analysis-dir", default=None, dest="analysis_dir",
                     help="Analysis root dir for per-segmentation metric output")
+    ap.add_argument("--plot-only", action="store_true", dest="plot_only",
+                    help="Regenerate plots from existing TSVs (no recomputation)")
     args = ap.parse_args()
 
     if len(args.seg) == 1:

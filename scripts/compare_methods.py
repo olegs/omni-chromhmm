@@ -118,12 +118,24 @@ def load_entropy(entropy_dir):
     return result
 
 
-def load_kappa_matrix(kappa_dir):
-    """Load kappa matrix as a DataFrame (seg x seg)."""
-    path = os.path.join(kappa_dir, "kappa_matrix.tsv")
+def _load_matrix(directory, filename):
+    """Load a seg x seg matrix TSV as a DataFrame, or None."""
+    path = os.path.join(directory, filename)
     if not os.path.exists(path):
         return None
     return pd.read_csv(path, sep="\t", index_col=0)
+
+
+def load_kappa_matrix(kappa_dir):
+    return _load_matrix(kappa_dir, "kappa_matrix.tsv")
+
+
+def load_jaccard_matrix(comparison_dir):
+    return _load_matrix(comparison_dir, "jaccard_similarity_matrix.tsv")
+
+
+def load_emission_matrix(comparison_dir):
+    return _load_matrix(comparison_dir, "emission_similarity_matrix.tsv")
 
 
 def load_segment_stats(segment_stats_dir):
@@ -170,21 +182,27 @@ def load_enrichment(analysis_dir, method):
 
 def build_table(analysis_dir, comparison_dir):
     """Build the unified comparison DataFrame."""
-    # Discover analysis methods
+    # Discover analysis methods (must contain report.tsv or emissions/)
     methods = sorted([
         d for d in os.listdir(analysis_dir)
         if os.path.isdir(os.path.join(analysis_dir, d))
-    ])
+        and (os.path.exists(os.path.join(analysis_dir, d, "report.tsv"))
+             or os.path.isdir(os.path.join(analysis_dir, d, "emissions")))
+        and not d.endswith("_dense")
+    ], key=lambda m: (_METHOD_IDX.get(m, 999), m))
 
     # Load metrics (all from comparison_dir)
     entropy_data = load_entropy(comparison_dir)
     kappa_mat = load_kappa_matrix(comparison_dir)
+    jaccard_mat = load_jaccard_matrix(comparison_dir)
+    emission_mat = load_emission_matrix(comparison_dir)
     seg_stats = load_segment_stats(comparison_dir)
 
     # Build mapping from analysis dir → segmentation name in metrics
     seg_names = list(entropy_data.keys())
-    if kappa_mat is not None:
-        seg_names = list(set(seg_names) | set(kappa_mat.index))
+    for mat in [kappa_mat, jaccard_mat, emission_mat]:
+        if mat is not None:
+            seg_names = list(set(seg_names) | set(mat.index))
     if seg_stats:
         seg_names = list(set(seg_names) | set(seg_stats.keys()))
     a2s = _build_analysis_to_seg_map(methods, seg_names)
@@ -218,15 +236,11 @@ def build_table(analysis_dir, comparison_dir):
         if kappa_mat is not None and seg_name in kappa_mat.index and ref_seg in kappa_mat.columns:
             row["kappa_vs_ref"] = kappa_mat.loc[seg_name, ref_seg]
 
-        # Kappa rep1 vs rep2 (find matching rep pair)
+        # Rep1 vs rep2 metrics (kappa, jaccard, emission similarity)
         # Only for non-replicate, non-ref methods (pooled or mode-level)
-        if kappa_mat is not None and method not in ("ref",) and "_rep" not in method:
-            # Derive the model prefix (chromhmm, gmm, kmeans)
-            # chromhmm_default → chromhmm_default_rep{1,2}
-            # chromhmm_omni / chromhmm_replicated → chromhmm_rep{1,2}
-            # gmm_omni / gmm_replicated → gmm_rep{1,2}
+        if method not in ("ref",) and "_rep" not in method:
             parts = method.split("_")
-            model_prefix = parts[0]  # chromhmm / gmm / kmeans
+            model_prefix = parts[0]
             if model_prefix == "chromhmm" and len(parts) > 1 and parts[1] == "default":
                 rep1_method = "chromhmm_default_rep1"
                 rep2_method = "chromhmm_default_rep2"
@@ -235,8 +249,11 @@ def build_table(analysis_dir, comparison_dir):
                 rep2_method = f"{model_prefix}_rep2"
             rep1_seg = a2s.get(rep1_method, "")
             rep2_seg = a2s.get(rep2_method, "")
-            if rep1_seg in kappa_mat.index and rep2_seg in kappa_mat.columns:
-                row["kappa_rep1_vs_rep2"] = kappa_mat.loc[rep1_seg, rep2_seg]
+            for mat, col_name in [(kappa_mat, "kappa_rep1_vs_rep2"),
+                                   (jaccard_mat, "jaccard_rep1_vs_rep2"),
+                                   (emission_mat, "emission_rep1_vs_rep2")]:
+                if mat is not None and rep1_seg in mat.index and rep2_seg in mat.columns:
+                    row[col_name] = mat.loc[rep1_seg, rep2_seg]
 
         # Report: median lengths for key states
         report = load_report(analysis_dir, method)
@@ -268,6 +285,25 @@ def build_table(analysis_dir, comparison_dir):
 # Plotting
 # ---------------------------------------------------------------------------
 
+# Canonical method display order
+METHOD_ORDER = [
+    "ref", "chromhmm_default",
+    "chromhmm_omni", "gmm_omni", "kmeans_omni",
+    "chromhmm_replicated", "gmm_replicated", "kmeans_replicated",
+    "chromhmm_default_rep1", "chromhmm_rep1", "kmeans_rep1", "gmm_rep1",
+    "chromhmm_default_rep2", "chromhmm_rep2", "kmeans_rep2", "gmm_rep2",
+]
+_METHOD_IDX = {m: i for i, m in enumerate(METHOD_ORDER)}
+
+
+def _order_methods(df):
+    """Sort DataFrame rows by METHOD_ORDER, exclude _dense entries."""
+    df = df[~df["method"].str.endswith("_dense")].copy()
+    df["_sort"] = df["method"].map(lambda m: (_METHOD_IDX.get(m, 999), m))
+    df = df.sort_values("_sort").drop(columns="_sort").reset_index(drop=True)
+    return df
+
+
 # Colors by binarization type
 BIN_COLORS = {"default": "#4878CF", "omnipeak": "#E8833A", "reference": "#888888"}
 
@@ -277,8 +313,19 @@ def _method_colors(df):
     return [BIN_COLORS.get(b, "#888888") for b in df["binarization"]]
 
 
+def _filter_valid(df, cols):
+    """Filter to rows where at least one of *cols* has a non-NaN value."""
+    if isinstance(cols, str):
+        cols = [cols]
+    existing = [c for c in cols if c in df.columns]
+    if not existing:
+        return df
+    return df.dropna(subset=existing, how="all").reset_index(drop=True)
+
+
 def _bar_panel(ax, df, col, title, ylabel=None):
     """Draw a bar chart for one column of the comparison table."""
+    df = _filter_valid(df, col)
     vals = df[col].values if col in df.columns else np.full(len(df), np.nan)
     colors = _method_colors(df)
     x = np.arange(len(df))
@@ -289,7 +336,6 @@ def _bar_panel(ax, df, col, title, ylabel=None):
     if ylabel:
         ax.set_ylabel(ylabel, fontsize=8)
     ax.grid(axis="y", alpha=0.3)
-    # Value labels
     for i, v in enumerate(vals):
         if not np.isnan(v):
             ax.text(i, v + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.01,
@@ -298,13 +344,13 @@ def _bar_panel(ax, df, col, title, ylabel=None):
 
 def _grouped_bar_panel(ax, df, cols, labels, title, ylabel=None):
     """Draw grouped bar chart for multiple columns."""
+    df = _filter_valid(df, cols)
     x = np.arange(len(df))
     width = 0.8 / len(cols)
     colors_base = _method_colors(df)
     for j, (col, label) in enumerate(zip(cols, labels)):
         vals = df[col].values if col in df.columns else np.full(len(df), np.nan)
         offsets = x + (j - len(cols) / 2 + 0.5) * width
-        # Darken/lighten colors for groups
         alpha = 0.6 + 0.4 * j / max(len(cols) - 1, 1)
         ax.bar(offsets, vals, width, color=colors_base, alpha=alpha, label=label,
                edgecolor="white", linewidth=0.3)
@@ -313,97 +359,86 @@ def _grouped_bar_panel(ax, df, cols, labels, title, ylabel=None):
     ax.set_title(title, fontsize=10, fontweight="bold")
     if ylabel:
         ax.set_ylabel(ylabel, fontsize=8)
-    ax.legend(fontsize=7, loc="upper right")
+    ax.legend(fontsize=6, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
     ax.grid(axis="y", alpha=0.3)
 
 
+def _save_panel(fig, outdir, name):
+    """Save a single comparison panel figure."""
+    fig.tight_layout()
+    path = os.path.join(outdir, f"{name}.png")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved {path}")
+
+
 def plot_comparison(df, outdir):
-    """Create multi-panel comparison figure."""
-    # Filter to non-replicate methods for cleaner view
-    # (keep ref, pooled default, pooled omni variants)
+    """Create individual comparison plots."""
+    from matplotlib.patches import Patch
+
     mask = ~df["method"].str.contains("rep[12]", regex=True)
     df_main = df[mask].reset_index(drop=True)
+    w = max(5, len(df_main) * 0.6)
 
-    n_panels = 8
-    fig, axes = plt.subplots(n_panels, 1, figsize=(max(10, len(df_main) * 0.9), n_panels * 4))
-
-    # Panel A: Kappa vs reference
-    _bar_panel(axes[0], df_main, "kappa_vs_ref",
-               "A. Cohen's Kappa vs ENCODE reference", "Kappa")
-
-    # Panel B: Kappa rep1 vs rep2
-    has_rep_kappa = "kappa_rep1_vs_rep2" in df_main.columns and df_main["kappa_rep1_vs_rep2"].notna().any()
-    if has_rep_kappa:
-        _bar_panel(axes[1], df_main, "kappa_rep1_vs_rep2",
-                   "B. Replicate reproducibility (Kappa rep1 vs rep2)", "Kappa")
-    else:
-        axes[1].text(0.5, 0.5, "No replicate data available",
-                     transform=axes[1].transAxes, ha="center", va="center",
-                     fontsize=12, color="gray")
-        axes[1].set_title("B. Replicate reproducibility", fontsize=10, fontweight="bold")
-
-    # Panel C: Total number of states
-    _bar_panel(axes[2], df_main, "n_states",
-               "C. Total number of states", "Count")
-
-    # Panel D: Segment length statistics (min, max, mean, median)
-    len_cols = [c for c in ["min_length", "max_length", "mean_length", "median_length_all"]
-                if c in df_main.columns and df_main[c].notna().any()]
-    len_labels = [c.replace("_length", "").replace("_all", "").replace("_", " ").capitalize()
-                  for c in len_cols]
-    if len_cols:
-        _grouped_bar_panel(axes[3], df_main, len_cols, len_labels,
-                           "D. Segment length statistics", "bp")
-    else:
-        axes[3].text(0.5, 0.5, "No segment stats data", transform=axes[3].transAxes,
-                     ha="center", va="center", fontsize=12, color="gray")
-        axes[3].set_title("D. Segment length statistics", fontsize=10, fontweight="bold")
-
-    # Panel E: Key enrichments
-    enrich_cols = [c for c in ["enrich_Tx_RefSeqGene", "enrich_Tss_RefSeqTSS",
-                               "enrich_Tx_ExpressedGeneBodies"]
-                   if c in df_main.columns and df_main[c].notna().any()]
-    enrich_labels = [c.replace("enrich_", "").replace("_", " → ") for c in enrich_cols]
-    if enrich_cols:
-        _grouped_bar_panel(axes[4], df_main, enrich_cols, enrich_labels,
-                           "E. Functional enrichment (key state-annotation pairs)",
-                           "Fold enrichment")
-    else:
-        axes[4].text(0.5, 0.5, "No enrichment data", transform=axes[4].transAxes,
-                     ha="center", va="center", fontsize=12, color="gray")
-        axes[4].set_title("E. Functional enrichment", fontsize=10, fontweight="bold")
-
-    # Panel F: Median Tx segment length
-    _bar_panel(axes[5], df_main, "median_Tx_length",
-               "F. Median Tx (transcription) segment length", "bp")
-
-    # Panel G: Entropy comparison
-    ent_cols = [c for c in ["entropy", "entropy_no_quies"]
-                if c in df_main.columns and df_main[c].notna().any()]
-    ent_labels = ["All states", "Excl. Quies/Het"][:len(ent_cols)]
-    if ent_cols:
-        _grouped_bar_panel(axes[6], df_main, ent_cols, ent_labels,
-                           "G. Transition matrix entropy", "bits")
-    else:
-        axes[6].set_title("G. Transition matrix entropy", fontsize=10, fontweight="bold")
-
-    # Panel H: Median segment length (all states)
-    _bar_panel(axes[7], df_main, "median_length_all",
-               "H. Median segment length (all states)", "bp")
-
-    # Legend for binarization colors
-    from matplotlib.patches import Patch
     legend_elements = [Patch(facecolor=BIN_COLORS["default"], label="Default binarization"),
                        Patch(facecolor=BIN_COLORS["omnipeak"], label="Omnipeak binarization"),
                        Patch(facecolor=BIN_COLORS["reference"], label="ENCODE reference")]
-    fig.legend(handles=legend_elements, loc="upper center", ncol=3,
-               fontsize=9, frameon=True, bbox_to_anchor=(0.5, 1.0))
 
-    fig.tight_layout(rect=[0, 0, 1, 0.97])
-    fig_path = os.path.join(outdir, "comparison_figure.png")
-    fig.savefig(fig_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {fig_path}")
+    def _make_fig():
+        fig, ax = plt.subplots(figsize=(w, 3.5))
+        ax.legend(handles=legend_elements, fontsize=6,
+                  bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
+        return fig, ax
+
+    # Kappa vs reference
+    fig, ax = _make_fig()
+    _bar_panel(ax, df_main, "kappa_vs_ref",
+               "Cohen's Kappa vs ENCODE reference", "Kappa")
+    _save_panel(fig, outdir, "kappa_vs_ref")
+
+    # Rep1 vs rep2 reproducibility plots
+    for col, title, ylabel, fname in [
+        ("kappa_rep1_vs_rep2", "Replicate reproducibility (Kappa)", "Kappa", "kappa_rep1_vs_rep2"),
+        ("jaccard_rep1_vs_rep2", "Replicate reproducibility (Jaccard)", "Similarity", "jaccard_rep1_vs_rep2"),
+        ("emission_rep1_vs_rep2", "Replicate reproducibility (Emission)", "Cosine similarity", "emission_rep1_vs_rep2"),
+    ]:
+        if col in df_main.columns and df_main[col].notna().any():
+            fig, ax = _make_fig()
+            _bar_panel(ax, df_main, col, title, ylabel)
+            _save_panel(fig, outdir, fname)
+
+    # Total number of states
+    fig, ax = _make_fig()
+    _bar_panel(ax, df_main, "n_states", "Total number of states", "Count")
+    _save_panel(fig, outdir, "n_states")
+
+    # Key enrichments
+    enrich_cols = [c for c in ["enrich_Tx_RefSeqGene", "enrich_Tss_RefSeqTSS",
+                               "enrich_Tx_ExpressedGeneBodies"]
+                   if c in df_main.columns and df_main[c].notna().any()]
+    if enrich_cols:
+        enrich_labels = [c.replace("enrich_", "").replace("_", " → ") for c in enrich_cols]
+        fig, ax = _make_fig()
+        _grouped_bar_panel(ax, df_main, enrich_cols, enrich_labels,
+                           "Functional enrichment (key state-annotation pairs)",
+                           "Fold enrichment")
+        _save_panel(fig, outdir, "enrichment")
+
+    # Median Tx segment length
+    fig, ax = _make_fig()
+    _bar_panel(ax, df_main, "median_Tx_length",
+               "Median Tx (transcription) segment length", "bp")
+    _save_panel(fig, outdir, "median_Tx_length")
+
+    # Entropy comparison
+    ent_cols = [c for c in ["entropy", "entropy_no_quies"]
+                if c in df_main.columns and df_main[c].notna().any()]
+    if ent_cols:
+        ent_labels = ["All states", "Excl. Quies/Het"][:len(ent_cols)]
+        fig, ax = _make_fig()
+        _grouped_bar_panel(ax, df_main, ent_cols, ent_labels,
+                           "Transition matrix entropy", "bits")
+        _save_panel(fig, outdir, "entropy")
 
 
 # ---------------------------------------------------------------------------
@@ -417,19 +452,27 @@ def main():
     ap.add_argument("--comparison-dir", required=True,
                     help="Directory with entropy, kappa, segment_stats TSVs")
     ap.add_argument("--outdir", required=True, help="Output directory")
+    ap.add_argument("--plot-only", action="store_true", dest="plot_only",
+                    help="Regenerate plots from existing comparison_table.tsv")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    df = build_table(args.analysis_dir, args.comparison_dir)
+    if args.plot_only:
+        table_path = os.path.join(args.outdir, "comparison_table.tsv")
+        if not os.path.exists(table_path):
+            sys.exit(f"--plot-only: {table_path} not found")
+        df = pd.read_csv(table_path, sep="\t")
+        print(f"  Plot-only mode: reading {table_path}")
+    else:
+        df = build_table(args.analysis_dir, args.comparison_dir)
+        table_path = os.path.join(args.outdir, "comparison_table.tsv")
+        df.to_csv(table_path, sep="\t", index=False, float_format="%.4f")
+        print(f"  saved {table_path}")
+        print(df.to_string(index=False))
 
-    # Save table
-    table_path = os.path.join(args.outdir, "comparison_table.tsv")
-    df.to_csv(table_path, sep="\t", index=False, float_format="%.4f")
-    print(f"  saved {table_path}")
-    print(df.to_string(index=False))
-
-    # Plot
+    # Apply canonical ordering
+    df = _order_methods(df)
     plot_comparison(df, args.outdir)
 
 
