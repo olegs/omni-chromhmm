@@ -3,14 +3,20 @@
 Analyze ChromHMM state lengths from all *_matched.bed files found
 recursively under a root directory.
 
+Samples are grouped by binarization type (default | omnipeak | homer | reference)
+using the structured method key derived from each file path.
+
 Usage:
     python analyze_matched.py [--dir ~/data/2026_omni_chromhmm]
 
-Produces in <dir>/plots/:
-  - matched_state_length_violin.png   per-state violin (RGB-coloured, all samples)
-  - matched_overall_per_sample.png    overall length distribution per sample
-  - matched_median_heatmap.png        median segment length heatmap sample × state
-  - matched_stats.tsv                 summary statistics
+Produces in <dir>/plots/ (one file per group + one for "all"):
+  - matched_state_length_violin_{group}.png   per-state violin (RGB-coloured)
+  - matched_state_coverage_{group}.png        total coverage per state
+  - matched_overall_per_sample_{group}.png    overall length distribution per sample
+  - matched_median_heatmap_{group}.png        median segment length heatmap sample × state
+
+Produces in <dir>/:
+  - matched_stats_{group}.tsv                 summary statistics per group
 """
 
 import argparse
@@ -27,18 +33,25 @@ from analyze import (
     plot_state_heatmap,
     save_stats,
 )
+from utils import seg_label, parse_method
 
 
-GROUP_DEFAULT = "chromhmm_default_result"
-GROUP_OTHER   = "other"
+def _method_group(label):
+    """Group label: binarization type derived from the structured method key."""
+    if label.startswith("ENCFF"):
+        return "reference"
+    try:
+        binarization, _, _ = parse_method(label)
+        return binarization
+    except Exception:
+        return "other"
 
 
 def load_all(root):
     """Recursively find all *_matched.bed files and load them.
 
-    Assigns a 'group' column:
-      - GROUP_DEFAULT  if 'chromhmm_default_result' appears anywhere in the path
-      - GROUP_OTHER    otherwise
+    Assigns a 'sample' column (structured method key from seg_label) and a
+    'group' column (binarization type: default | omnipeak | homer | reference).
     """
     files = sorted(root.rglob("*_matched.bed"))
     if not files:
@@ -47,9 +60,9 @@ def load_all(root):
     frames = []
     for f in files:
         rel = f.relative_to(root)
-        sample = str(rel.parent / rel.name.replace("_matched.bed", ""))
-        group = GROUP_DEFAULT if GROUP_DEFAULT in str(rel) else GROUP_OTHER
-        print(f"  [{group}]  {rel}")
+        sample = seg_label(str(f))
+        group  = _method_group(sample)
+        print(f"  [{group}]  {rel}  →  {sample}")
         df = load_bed_df(f, sample=sample)
         df["group"] = group
         frames.append(df)
@@ -82,11 +95,8 @@ def main():
           f"{df['sample'].nunique()} samples | "
           f"{df['group'].nunique()} groups")
 
-    groups = [
-        (GROUP_DEFAULT, df[df["group"] == GROUP_DEFAULT]),
-        (GROUP_OTHER,   df[df["group"] == GROUP_OTHER]),
-        ("all",         df),
-    ]
+    all_groups = sorted(df["group"].unique())
+    groups = [(g, df[df["group"] == g]) for g in all_groups] + [("all", df)]
 
     for tag, sub in groups:
         if sub.empty:

@@ -1,9 +1,34 @@
 #!/usr/bin/env python3
-# Match state IDs in --work to --ref by maximizing total overlap length
-# with reference names + colors to stdout.
-#
-# With --compare-only DIR: skip rewriting; instead dump jaccard heatmap and
-# overall similarity into DIR.
+"""State matching: relabel segmentation states to a reference.
+
+Sub-commands:
+
+  compute  – Compute mean RPKM signal per state from bigwig files and save to .npz.
+
+  match    – Match work segmentation to reference.
+
+             When --ref-emissions and --work-emissions are provided, uses a combined
+             score of Jaccard overlap and cosine emission similarity:
+               combined = alpha * jaccard_overlap + (1 - alpha) * cosine_emission
+             With alpha=1.0: overlap-only (Hungarian on raw total overlap bp).
+             With alpha=0.0: emission-only (Hungarian on cosine matrix).
+             With alpha=0.8 (default): overlap-weighted combined (comb).
+
+             When no emission files are provided, falls back to overlap-only matching.
+
+             Hungarian algorithm maximizes the combined similarity score.
+
+Usage:
+    match.py compute --bed SEG.bed \\
+        --bigwigs H3K36me3.bw H3K9me3.bw ... \\
+        --marks   H3K36me3    H3K9me3    ... \\
+        [--bin 100] --output emissions.npz
+
+    match.py match \\
+        --ref REF.bed --work WORK.bed \\
+        [--ref-emissions ref.npz --work-emissions work.npz] \\
+        [--alpha 0.8] > MATCHED.bed
+"""
 
 import argparse
 import os
@@ -11,6 +36,12 @@ import sys
 from bisect import bisect_left
 from collections import defaultdict
 
+import numpy as np
+
+
+# ---------------------------------------------------------------------------
+# BED I/O
+# ---------------------------------------------------------------------------
 
 def load_bed(path):
     """Return list of (chrom, start, end, name, color)."""
@@ -26,6 +57,10 @@ def load_bed(path):
             out.append((chrom, s, e, name, color))
     return out
 
+
+# ---------------------------------------------------------------------------
+# Overlap helpers (also used by compare.py)
+# ---------------------------------------------------------------------------
 
 def build_index(segs):
     """Group segs by chrom and sort; return (by_chr, starts_by_chr)."""
@@ -67,30 +102,6 @@ def state_lengths(segs):
     return out
 
 
-def best_mapping(overlap, work_states, ref_states):
-    """One-to-one mapping from work states to ref states via the Hungarian
-    algorithm, maximizing total overlap length while preserving the number
-    of distinct states."""
-    import numpy as np
-    from scipy.optimize import linear_sum_assignment
-
-    n_w, n_r = len(work_states), len(ref_states)
-    # Build cost matrix (negative overlap for minimization)
-    cost = np.zeros((n_w, n_r))
-    for i, w in enumerate(work_states):
-        for j, r in enumerate(ref_states):
-            cost[i, j] = -overlap.get((w, r), 0)
-    row_ind, col_ind = linear_sum_assignment(cost)
-    mapping = {}
-    for i, j in zip(row_ind, col_ind):
-        mapping[work_states[i]] = ref_states[j]
-    # Any leftover work states (more work than ref) keep their name
-    for w in work_states:
-        if w not in mapping:
-            mapping[w] = w
-    return mapping
-
-
 def state_colors(ref_segs):
     out = {}
     for _, _, _, name, color in ref_segs:
@@ -98,23 +109,69 @@ def state_colors(ref_segs):
     return out
 
 
+def best_mapping(overlap, work_states, ref_states):
+    """One-to-one mapping work→ref via Hungarian algorithm on raw overlap length."""
+    from scipy.optimize import linear_sum_assignment
+
+    n_r = len(ref_states)
+    cost = np.zeros((len(work_states), n_r))
+    for i, w in enumerate(work_states):
+        for j, r in enumerate(ref_states):
+            cost[i, j] = -overlap.get((w, r), 0)
+    row_ind, col_ind = linear_sum_assignment(cost)
+    mapping = {work_states[i]: ref_states[j] for i, j in zip(row_ind, col_ind)}
+    for w in work_states:
+        if w not in mapping:
+            mapping[w] = w
+    return mapping
+
+
+def remap_bins(bins, mapping):
+    """Apply a state mapping to a bins dict {chrom: {pos: state}}.
+
+    Any state not in mapping is left unchanged.
+    """
+    return {chrom: {pos: mapping.get(state, state) for pos, state in positions.items()}
+            for chrom, positions in bins.items()}
+
+
+def emission_cosine_mapping(states1, mat1, states2, mat2):
+    """One-to-one mapping states1→states2 via cosine similarity (Hungarian).
+
+    Returns (avg_similarity, mapping_dict).
+    Both mat1 and mat2 are (n_states, n_marks) float arrays.
+    """
+    from scipy.optimize import linear_sum_assignment
+    n1, n2 = len(states1), len(states2)
+    cost = np.zeros((n1, n2))
+    for i in range(n1):
+        for j in range(n2):
+            norm1 = np.linalg.norm(mat1[i])
+            norm2 = np.linalg.norm(mat2[j])
+            cost[i, j] = (1.0 - np.dot(mat1[i], mat2[j]) / (norm1 * norm2)
+                          if norm1 > 0 and norm2 > 0 else 1.0)
+    row_ind, col_ind = linear_sum_assignment(cost)
+    mapping = {states1[r]: states2[c] for r, c in zip(row_ind, col_ind)}
+    avg_sim = sum(1.0 - cost[r, c] for r, c in zip(row_ind, col_ind)) / max(len(row_ind), 1)
+    return avg_sim, mapping
+
+
 def compare(ref_segs, work_segs, overlap, mapping, outdir):
-    """Write jaccard heatmap + similarity.txt to outdir."""
-    import numpy as np
+    """Write Jaccard heatmap and similarity.txt to outdir."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     os.makedirs(outdir, exist_ok=True)
-    ref_states = sorted({x[3] for x in ref_segs})
+    ref_states  = sorted({x[3] for x in ref_segs})
     work_states = sorted({x[3] for x in work_segs})
-    ref_len = state_lengths(ref_segs)
+    ref_len  = state_lengths(ref_segs)
     work_len = state_lengths(work_segs)
 
     mat = np.zeros((len(work_states), len(ref_states)))
     for i, w in enumerate(work_states):
         for j, r in enumerate(ref_states):
-            ov = overlap.get((w, r), 0)
+            ov    = overlap.get((w, r), 0)
             union = ref_len[r] + work_len[w] - ov
             if union > 0:
                 mat[i, j] = ov / union
@@ -122,8 +179,10 @@ def compare(ref_segs, work_segs, overlap, mapping, outdir):
     fig, ax = plt.subplots(figsize=(max(6, len(ref_states) * 0.5),
                                     max(6, len(work_states) * 0.4)))
     im = ax.imshow(mat, cmap="Blues", vmin=0, vmax=1, aspect="auto")
-    ax.set_xticks(range(len(ref_states))); ax.set_xticklabels(ref_states, rotation=90)
-    ax.set_yticks(range(len(work_states))); ax.set_yticklabels(work_states)
+    ax.set_xticks(range(len(ref_states)))
+    ax.set_xticklabels(ref_states, rotation=90)
+    ax.set_yticks(range(len(work_states)))
+    ax.set_yticklabels(work_states)
     ax.set_title("Jaccard similarity")
     for i in range(mat.shape[0]):
         for j in range(mat.shape[1]):
@@ -134,8 +193,6 @@ def compare(ref_segs, work_segs, overlap, mapping, outdir):
     fig.savefig(os.path.join(outdir, "jaccard.png"), dpi=120)
     plt.close(fig)
 
-    # Overall similarity: fraction of work length whose state, once relabelled,
-    # falls into the same ref state on the overlap.
     total_hit = sum(overlap.get((w, mapping[w]), 0) for w in work_states)
     total = sum(work_len.values())
     sim = total_hit / total if total else 0.0
@@ -144,31 +201,243 @@ def compare(ref_segs, work_segs, overlap, mapping, outdir):
     print(f"similarity = {sim:.4f}", file=sys.stderr)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ref", required=True)
-    ap.add_argument("--work", required=True)
-    ap.add_argument("--compare-only", default=None,
-                    help="Write plots into this directory instead of rewriting bed")
-    args = ap.parse_args()
+# ---------------------------------------------------------------------------
+# Emissions helpers
+# ---------------------------------------------------------------------------
 
-    ref = load_bed(args.ref)
-    work = load_bed(args.work)
-    work_states = sorted({x[3] for x in work})
-    ref_states = sorted({x[3] for x in ref})
+def compute_emissions_from_bigwigs(segs, bigwig_paths, mark_names, bin_size):
+    """Compute mean signal per state per mark from bigwig files.
 
-    overlap = pair_overlap(ref, work)
-    mapping = best_mapping(overlap, work_states, ref_states)
+    Returns (sorted_states, marks, matrix) where matrix is (n_states, n_marks).
+    """
+    import pyBigWig
+
+    n_marks = len(mark_names)
+    bws = [pyBigWig.open(p) for p in bigwig_paths]
+
+    sums   = defaultdict(lambda: np.zeros(n_marks, dtype=np.float64))
+    counts = defaultdict(int)
+    chrom_sizes = [bw.chroms() for bw in bws]
+
+    for chrom, s, e, name, _ in segs:
+        n_bins = (e - s) // bin_size
+        if n_bins == 0:
+            continue
+        for mi, bw in enumerate(bws):
+            if chrom not in chrom_sizes[mi]:
+                continue
+            e_c = min(e, chrom_sizes[mi][chrom])
+            if s >= e_c:
+                continue
+            val = bw.stats(chrom, s, e_c, type='mean', nBins=1)[0]
+            if val is None:
+                continue
+            sums[name][mi] += val * (e - s)
+        counts[name] += n_bins * bin_size
+
+    for bw in bws:
+        bw.close()
+
+    states = sorted(sums.keys())
+    mat = np.zeros((len(states), n_marks), dtype=np.float64)
+    for i, st in enumerate(states):
+        if counts[st] > 0:
+            mat[i] = sums[st] / counts[st]
+    return states, mark_names, mat
+
+
+def _save_emissions_npz(path, states, marks, mat):
+    np.savez_compressed(path, states=np.array(states), marks=np.array(marks), mat=mat)
+
+
+def _load_emissions_npz(path):
+    data = np.load(path, allow_pickle=False)
+    return list(data["states"]), list(data["marks"]), data["mat"]
+
+
+# ---------------------------------------------------------------------------
+# Unified matching
+# ---------------------------------------------------------------------------
+
+def match_states(ref_segs, work_segs,
+                 states_ref=None, mat_ref=None,
+                 states_work=None, mat_work=None,
+                 alpha=0.8):
+    """Match work states to ref states using overlap and/or cosine emission.
+
+    alpha=1.0 (overlap-only): maximizes total overlapping bp directly (Hungarian
+      on raw bp matrix — no normalization, consistent with best_mapping).
+
+    0 < alpha < 1 (combined): Jaccard similarity is used as the normalized overlap
+      signal so it can be linearly combined with cosine emission in [0,1]:
+        combined[i,j] = alpha * jaccard(work_i, ref_j)
+                      + (1 - alpha) * cosine(emission_work_i, emission_ref_j)
+
+    alpha=0.0 (emission-only): cosine emission similarity only.
+
+    Hungarian algorithm maximizes the total combined score.
+    Returns dict mapping work_state -> ref_state.
+    """
+    from scipy.optimize import linear_sum_assignment
+
+    work_states_sorted = sorted({x[3] for x in work_segs})
+    ref_states_sorted  = sorted({x[3] for x in ref_segs})
+    n_w = len(work_states_sorted)
+    n_r = len(ref_states_sorted)
+
+    overlap  = pair_overlap(ref_segs, work_segs)
+    ref_len  = state_lengths(ref_segs)
+    work_len = state_lengths(work_segs)
+
+    use_emissions = (mat_ref is not None and mat_work is not None
+                     and states_ref is not None and states_work is not None
+                     and alpha < 1.0)
+
+    if alpha >= 1.0:
+        # Overlap-only: normalize by genome length so scores are in [0, 1].
+        genome_len = sum(ref_len.values()) or 1
+        raw_overlap = np.zeros((n_w, n_r))
+        for i, w in enumerate(work_states_sorted):
+            for j, r in enumerate(ref_states_sorted):
+                raw_overlap[i, j] = overlap.get((w, r), 0) / genome_len
+        combined = raw_overlap
+        jaccard  = None
+        cosine   = None
+    else:
+        # Combined or emission-only: normalize overlap to [0,1] via Jaccard.
+        jaccard = np.zeros((n_w, n_r))
+        for i, w in enumerate(work_states_sorted):
+            for j, r in enumerate(ref_states_sorted):
+                ov    = overlap.get((w, r), 0)
+                union = ref_len.get(r, 0) + work_len.get(w, 0) - ov
+                jaccard[i, j] = ov / union if union > 0 else 0.0
+
+        if use_emissions:
+            ref_idx  = {s: i for i, s in enumerate(states_ref)}
+            work_idx = {s: i for i, s in enumerate(states_work)}
+
+            cosine = np.zeros((n_w, n_r))
+            for i, w in enumerate(work_states_sorted):
+                for j, r in enumerate(ref_states_sorted):
+                    wi = work_idx.get(w)
+                    ri = ref_idx.get(r)
+                    if wi is None or ri is None:
+                        continue
+                    norm_w = np.linalg.norm(mat_work[wi])
+                    norm_r = np.linalg.norm(mat_ref[ri])
+                    if norm_w > 0 and norm_r > 0:
+                        cosine[i, j] = np.dot(mat_work[wi], mat_ref[ri]) / (norm_w * norm_r)
+
+            combined = alpha * jaccard + (1.0 - alpha) * cosine
+        else:
+            combined = jaccard
+            cosine   = None
+
+    row_ind, col_ind = linear_sum_assignment(-combined)  # maximize
+    mapping = {work_states_sorted[r]: ref_states_sorted[c]
+               for r, c in zip(row_ind, col_ind)}
+
+    # Logging
+    avg  = combined[row_ind, col_ind].mean() if len(row_ind) > 0 else 0.0
+    mode = ("overlap-only" if alpha >= 1.0
+            else "emission-only" if alpha == 0.0
+            else f"combined alpha={alpha}")
+    print(f"avg_similarity = {avg:.4f}  ({mode})", file=sys.stderr)
+    w_idx = {s: i for i, s in enumerate(work_states_sorted)}
+    r_idx = {s: i for i, s in enumerate(ref_states_sorted)}
+    for w, r in sorted(mapping.items()):
+        wi, ri = w_idx[w], r_idx[r]
+        if jaccard is not None:
+            msg = f"  {w} -> {r}  (jaccard={jaccard[wi, ri]:.4f}"
+            if cosine is not None:
+                msg += f", cosine={cosine[wi, ri]:.4f}"
+            msg += f", combined={combined[wi, ri]:.4f})"
+        else:
+            msg = f"  {w} -> {r}  (overlap={combined[wi, ri]:.4f})"
+        print(msg, file=sys.stderr)
+
+    for w in work_states_sorted:
+        if w not in mapping:
+            mapping[w] = w
+    return mapping
+
+
+# ---------------------------------------------------------------------------
+# Sub-commands
+# ---------------------------------------------------------------------------
+
+def cmd_compute(args):
+    segs = load_bed(args.bed)
+    states, marks, mat = compute_emissions_from_bigwigs(
+        segs, args.bigwigs, args.marks, args.bin)
+    _save_emissions_npz(args.output, states, marks, mat)
+
+
+def cmd_match(args):
+    ref_segs  = load_bed(args.ref)
+    work_segs = load_bed(args.work)
+
+    states_ref = mat_ref = states_work = mat_work = None
+    if args.ref_emissions and args.work_emissions:
+        states_ref,  _, mat_ref  = _load_emissions_npz(args.ref_emissions)
+        states_work, _, mat_work = _load_emissions_npz(args.work_emissions)
+
+    work_states = sorted({x[3] for x in work_segs})
+    ref_states  = sorted({x[3] for x in ref_segs})
 
     if args.compare_only:
-        compare(ref, work, overlap, mapping, args.compare_only)
+        overlap = pair_overlap(ref_segs, work_segs)
+        mapping = best_mapping(overlap, work_states, ref_states)
+        compare(ref_segs, work_segs, overlap, mapping, args.compare_only)
         return
 
-    colors = state_colors(ref)
-    for chrom, s, e, name, color in work:
-        new_name = mapping.get(name, name)
+    mapping = match_states(ref_segs, work_segs,
+                           states_ref, mat_ref,
+                           states_work, mat_work,
+                           alpha=args.alpha)
+
+    colors = state_colors(ref_segs)
+    for chrom, s, e, name, color in work_segs:
+        new_name  = mapping.get(name, name)
         new_color = colors.get(new_name, color)
         print(f"{chrom}\t{s}\t{e}\t{new_name}\t0\t.\t{s}\t{e}\t{new_color}")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    cp = sub.add_parser("compute", help="Compute per-state bigwig emissions and save to .npz")
+    cp.add_argument("--bed",     required=True, help="Segmentation BED file")
+    cp.add_argument("--bigwigs", nargs="+", required=True,
+                    help="Bigwig files (one per mark, same order as --marks)")
+    cp.add_argument("--marks",   nargs="+", required=True,
+                    help="Mark names corresponding to bigwig files")
+    cp.add_argument("--bin",     type=int, default=100, help="Bin size (default: 100)")
+    cp.add_argument("--output",  required=True, help="Output .npz file")
+
+    mp = sub.add_parser("match", help="Match work segmentation to reference")
+    mp.add_argument("--ref",            required=True, help="Reference segmentation BED")
+    mp.add_argument("--work",           required=True, help="Work segmentation BED to relabel")
+    mp.add_argument("--ref-emissions",  default=None, dest="ref_emissions",
+                    help="Pre-computed reference emissions .npz (enables combined/bwem matching)")
+    mp.add_argument("--work-emissions", default=None, dest="work_emissions",
+                    help="Pre-computed work emissions .npz (enables combined/bwem matching)")
+    mp.add_argument("--alpha",          type=float, default=0.8,
+                    help="Overlap weight: 1.0=overlap-only, 0.0=emission-only, 0.8=combined/comb (default)")
+    mp.add_argument("--compare-only",   default=None, dest="compare_only",
+                    help="Write Jaccard heatmap to this directory instead of rewriting BED")
+
+    args = ap.parse_args()
+    if args.cmd == "compute":
+        cmd_compute(args)
+    else:
+        cmd_match(args)
 
 
 if __name__ == "__main__":

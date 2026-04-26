@@ -1,15 +1,21 @@
 # Standard ChromHMM pipeline rules.
 #
-# Top-level default pipeline uses pooled BAMs at {ds}/bams_pooled/.
-# Per-replicate pipelines (rep1, rep2) use {ds}/{mode}/bams_pooled/.
+# All rules are parameterised by a {folder} wildcard that can be either the
+# dataset root ({ds}) for pooled BAMs or a replicate subdirectory ({ds}/rep1,
+# {ds}/rep2) for per-replicate runs.  The BAM source is always {folder}/bams/.
 
+# All rules are parameterised by a {folder} wildcard (dataset root or replicate
+# subdir) and a {caller} wildcard (omni | homer).
+# This file owns:
+#   - Peak -> binary matrix:  {folder}/{caller}/chromhmm_peaks/
+#   - ChromHMM LearnModel over peaks:  {folder}/{caller}/chromhmm_result/
+#   - KMeans segmentation:    {folder}/{caller}/kmeans_states.bed
 
-# --- Top-level default ChromHMM (pooled BAMs) ----------------------------
 
 rule make_cellmark_table:
-    input:  lambda w: [f"{w.ds}/bams_pooled/{m}.bam" for m in MARKS]
-    output: "{ds}/chromhmm_default/cellmarkfiletable.tsv"
-    params: cell = lambda w: DATASETS[w.ds]["cell"]
+    input:  lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS]
+    output: "{folder}/chromhmm_default/cellmarkfiletable.tsv"
+    params: cell = lambda w: DATASETS[ds_of(w.folder)]["cell"]
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
         with open(output[0], "w") as f:
@@ -17,38 +23,32 @@ rule make_cellmark_table:
                 f.write(f"{params.cell}\t{m}\t{m}.bam\n")
 
 
-def _default_binary_files(w):
-    cell = DATASETS[w.ds]["cell"]
-    return [f"{w.ds}/chromhmm_default/{cell}_{c}_binary.txt" for c in CHROMS]
-
-
 rule chromhmm_binarize_bam:
     input:
-        table = "{ds}/chromhmm_default/cellmarkfiletable.tsv",
-        bams  = lambda w: [f"{w.ds}/bams_pooled/{m}.bam" for m in MARKS],
+        table = "{folder}/chromhmm_default/cellmarkfiletable.tsv",
+        bams  = lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS],
     output:
-        bins = expand("{{ds}}/chromhmm_default/{{cell}}_{chr}_binary.txt", chr=CHROMS)
+        bins = expand("{{folder}}/chromhmm_default/{{cell}}_{chr}_binary.txt", chr=CHROMS)
     params:
-        bin = BIN,
-        cs = TOOLS["chromsizes"],
-        bamdir = "{ds}/bams_pooled",
-        outdir = "{ds}/chromhmm_default",
+        bin    = CHROMHMM_BIN,
+        cs     = TOOLS["chromsizes"],
+        bamdir = "{folder}/bams",
+        outdir = "{folder}/chromhmm_default",
     shell:
         "mkdir -p {params.outdir} && "
         "{CHROMHMM} BinarizeBam -b {params.bin} {params.cs} "
         "{params.bamdir} {input.table} {params.outdir}"
 
 
-
 rule chromhmm_learn_default:
     input:  _default_binary_files
     output:
-        dense = "{ds}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_dense.bed",
+        dense = "{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_dense.bed",
     params:
-        indir  = "{ds}/chromhmm_default",
-        outdir = "{ds}/chromhmm_default_result",
-        bin = BIN,
-        n = NSTATES,
+        indir  = "{folder}/chromhmm_default",
+        outdir = "{folder}/chromhmm_default_result",
+        bin    = CHROMHMM_BIN,
+        n      = NSTATES,
         genome = GENOME,
     shell:
         "mkdir -p {params.outdir} && "
@@ -59,81 +59,75 @@ rule chromhmm_learn_default:
 rule chromhmm_default_mark_beds:
     """Extract per-mark BED files from default binarized per-chromosome files."""
     input:  _default_binary_files
-    output: expand("{{ds}}/chromhmm_default_result/{mark}.bed", mark=MARKS)
+    output: expand("{{folder}}/chromhmm_default_result/{mark}.bed", mark=MARKS)
     params:
-        bin = BIN,
-        indir = "{ds}/chromhmm_default",
-        outdir = "{ds}/chromhmm_default_result",
+        bin    = CHROMHMM_BIN,
+        indir  = "{folder}/chromhmm_default",
+        outdir = "{folder}/chromhmm_default_result",
     conda: "../envs/python.yaml"
     shell:
         "python {SCRIPTS_DIR}/binarized_to_bed.py --bin {params.bin} "
         "--outdir {params.outdir} {params.indir}/*_binary.txt"
 
 
-# --- Per-replicate ChromHMM (rep1, rep2) ----------------------------------
+# --- Peak -> ChromHMM binary matrix --------------------------------------
 
-rule rep_make_cellmark_table:
-    input:  lambda w: [f"{w.ds}/{w.mode}/bams_pooled/{m}.bam" for m in MARKS]
-    output: "{ds}/{mode}/bams_pooled/cellmarkfiletable.tsv"
-    wildcard_constraints: mode = "rep[12]"
-    params: cell = lambda w: DATASETS[w.ds]["cell"]
-    run:
-        os.makedirs(os.path.dirname(output[0]), exist_ok=True)
-        with open(output[0], "w") as f:
-            for m in MARKS:
-                f.write(f"{params.cell}\t{m}\t{m}.bam\n")
+rule cat_peaks_per_mark:
+    """Sort peaks for a given folder+caller and mark into the binary matrix input."""
+    input:  lambda w: peak_file(w.folder, w.caller, w.mark)
+    output: "{folder}/{caller}/chromhmm_peaks/{mark}"
+    shell:  "sort -k1,1 -k2,2n {input} > {output}"
 
 
-def _rep_default_binary_files(w):
-    cell = DATASETS[w.ds]["cell"]
-    return [f"{w.ds}/{w.mode}/chromhmm_default/{cell}_{c}_binary.txt" for c in CHROMS]
-
-
-rule rep_chromhmm_binarize_bam:
+rule multiinter:
     input:
-        table = "{ds}/{mode}/bams_pooled/cellmarkfiletable.tsv",
-        bams  = lambda w: [f"{w.ds}/{w.mode}/bams_pooled/{m}.bam" for m in MARKS],
+        bins  = lambda w: f"bins{CALLER_BIN[w.caller]}.bed",
+        peaks = lambda w: [f"{w.folder}/{w.caller}/chromhmm_peaks/{m}" for m in MARKS],
+    output: "{folder}/{caller}/chromhmm_peaks/multiinter.tsv"
+    conda: "../envs/bio.yaml"
+    shell:
+        "bash {SCRIPTS_DIR}/multiinter.sh {output} {input.bins} {input.peaks}"
+
+
+rule binarize_per_chr:
+    """Extract per-chromosome binary matrix (mark columns) and gzip."""
+    input:  "{folder}/{caller}/chromhmm_peaks/multiinter.tsv"
+    output: "{folder}/{caller}/chromhmm_peaks/{cell}_{chr}_binary.txt.gz"
+    shell:
+        "bash {SCRIPTS_DIR}/binarize_per_chr.sh {input} {wildcards.cell} {wildcards.chr} {output}"
+
+# --- Segmentations over peak binarization --------------------------------
+
+rule chromhmm_learn_over_peaks:
+    input:  _peaks_binary_files
     output:
-        bins = expand("{{ds}}/{{mode}}/chromhmm_default/{{cell}}_{chr}_binary.txt", chr=CHROMS)
-    wildcard_constraints: mode = "rep[12]"
+        dense = "{folder}/{caller}/chromhmm_result/{cell}_" + str(NSTATES) + "_dense.bed",
+    log: "{folder}/{caller}/chromhmm_result/{cell}_learn.log"
     params:
-        bin = BIN,
-        cs = TOOLS["chromsizes"],
-        bamdir = "{ds}/{mode}/bams_pooled",
-        outdir = "{ds}/{mode}/chromhmm_default",
+        indir      = "{folder}/{caller}/chromhmm_peaks",
+        outdir     = "{folder}/{caller}/chromhmm_result",
+        bin        = lambda w: CALLER_BIN[w.caller],
+        n          = NSTATES,
+        genome     = GENOME,
+        chromsizes = TOOLS["chromsizes"],
     shell:
         "mkdir -p {params.outdir} && "
-        "{CHROMHMM} BinarizeBam -b {params.bin} {params.cs} "
-        "{params.bamdir} {input.table} {params.outdir}"
+        "{CHROMHMM} LearnModel -b {params.bin} -l {params.chromsizes} "
+        "{params.indir} {params.outdir} "
+        "{params.n} {params.genome} "
+        "&> {log}"
 
 
-rule rep_chromhmm_default_mark_beds:
-    """Extract per-mark BED files from replicate default binarized files."""
-    input:  _rep_default_binary_files
-    output: expand("{{ds}}/{{mode}}/chromhmm_default_result/{mark}.bed", mark=MARKS)
-    wildcard_constraints: mode = "rep[12]"
-    params:
-        bin = BIN,
-        indir = "{ds}/{mode}/chromhmm_default",
-        outdir = "{ds}/{mode}/chromhmm_default_result",
+rule kmeans_states:
+    input:  _peaks_binary_files
+    output: "{folder}/{caller}/kmeans_states.bed"
+    log:    "{folder}/{caller}/kmeans_states.log"
     conda: "../envs/python.yaml"
-    shell:
-        "python {SCRIPTS_DIR}/binarized_to_bed.py --bin {params.bin} "
-        "--outdir {params.outdir} {params.indir}/*_binary.txt"
-
-
-rule rep_chromhmm_learn_default:
-    input:  _rep_default_binary_files
-    output:
-        dense = "{ds}/{mode}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_dense.bed",
-    wildcard_constraints: mode = "rep[12]"
     params:
-        indir  = "{ds}/{mode}/chromhmm_default",
-        outdir = "{ds}/{mode}/chromhmm_default_result",
-        bin = BIN,
-        n = NSTATES,
-        genome = GENOME,
+        bin   = lambda w: CALLER_BIN[w.caller],
+        n     = NSTATES,
+        indir = "{folder}/{caller}/chromhmm_peaks",
     shell:
-        "mkdir -p {params.outdir} && "
-        "{CHROMHMM} LearnModel -b {params.bin} {params.indir} {params.outdir} "
-        "{params.n} {params.genome}"
+        "python {SCRIPTS_DIR}/states.py --bin {params.bin} --states {params.n} "
+        "--inputs {params.indir}/*.gz > {output} "
+        "2> {log}"

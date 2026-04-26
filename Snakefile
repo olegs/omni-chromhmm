@@ -8,31 +8,56 @@ workdir: os.path.expanduser(config.get("workdir", "."))
 
 TOOLS =     config["tools"]
 P =         config["params"]
-MARKS  =    P["marks"]
-BIN =       P["bin"]
-NSTATES =   P["n_states"]
-GENOME  =   P["genome"]
+MARKS      =  P["marks"]
+CHROMHMM_BIN =  P["chromhmm_bin"]
+OMNI_BIN   =  P["omni_bin"]
+HOMER_BIN  =  P["homer_bin"]
+NSTATES    =  P["n_states"]
+GENOME     =  P["genome"]
+
+# Per-caller binarization bin sizes.
+CALLER_BIN = {"omni": OMNI_BIN, "homer": HOMER_BIN}
+def _flag(key, default=True):
+    """Read a boolean flag from --config key=... (top-level) or params.key (yaml).
+
+    CLI values arrive as strings ('True'/'False'), so handle both.
+    """
+    val = config.get(key, P.get(key, default))
+    if isinstance(val, str):
+        return val.lower() not in ("false", "0", "no", "")
+    return bool(val)
+
+DO_ANALYZE = _flag("analyze")
+DO_COMPARE = _flag("compare")
 
 CHROMHMM = f"java {TOOLS['java_opts']} -jar {TOOLS['chromhmm_jar']}"
-OMNIPEAK = f"java {TOOLS['java_opts']} --add-modules=jdk.incubator.vector -jar {TOOLS['omnipeak_jar']}"
+OMNIPEAK = f"java -Xmx8G --add-modules=jdk.incubator.vector -jar {TOOLS['omnipeak_jar']}"
 
 DATASETS = config["datasets"]
 
 SCRIPTS_DIR = os.path.join(workflow.basedir, "scripts")
 
-# Global wildcard constraints — keep wildcards from swallowing path separators
-# or colliding with similarly named directories (e.g. omni vs pooled_omni).
+# Global wildcard constraints.
+# {folder} covers both the pooled root ({ds}) and per-replicate subdirs ({ds}/rep1,
+# {ds}/rep2), so it may contain a single path separator.
+# {caller} is the peak-calling algorithm: omni or homer.
 wildcard_constraints:
-    ds    = r"[A-Za-z0-9_]+",
-    acc   = r"ENCFF[A-Z0-9]+",
-    mark  = r"H3K[0-9]+(me[0-9]|ac)",
-    mode  = r"omni|replicated|rep[12]",
-    chr   = r"chr[0-9XYM]+",
-    cell  = r"[A-Za-z0-9]+",
-    name  = r"[A-Za-z0-9_.]+",
+    ds     = r"[A-Za-z0-9_]+",
+    acc    = r"ENCFF[A-Z0-9]+",
+    mark   = r"H3K[0-9]+(me[0-9]|ac)",
+    caller = r"omni|homer",
+    rep    = r"rep[12]",
+    folder = r"[A-Za-z0-9_]+(/rep[12])?",
+    chr    = r"chr[0-9XYM]+",
+    cell   = r"[A-Za-z0-9]+",
 
 
 # --- helpers shared by every included rules/*.smk ------------------------
+
+def ds_of(folder):
+    """Extract dataset name from a folder path ('imr90' or 'imr90/rep1')."""
+    return folder.split("/")[0]
+
 
 def accs_of(ds, mark=None, rep=None):
     """Return accessions for a dataset filtered by mark/rep."""
@@ -48,7 +73,7 @@ def accs_of(ds, mark=None, rep=None):
 
 def bam_path(ds, acc):
     mark = DATASETS[ds]["bams"][acc]["mark"]
-    return f"{ds}/bams/{acc}_{mark}.bam"
+    return f"{ds}/downloaded/{acc}_{mark}.bam"
 
 
 def bams_for_mark(ds, mark, rep=None):
@@ -74,55 +99,58 @@ CHROMS = read_chromsizes(TOOLS["chromsizes"]) or (
 )
 
 
-def _modes_for(ds):
-    """Derive Omnipeak modes from dataset config: always omni, plus replicated if replicates."""
-    return ["omni", "replicated"] if DATASETS[ds].get("replicates") else ["omni"]
-
-
 def _ref_bed(ds):
     """Path of the ENCODE ChromHMM reference bed for a dataset."""
     return f"{ds}/{DATASETS[ds]['ref_chromhmm']}_chromhmm.bed"
 
 
-def _mode_peak(ds, mode, mark):
-    """Path of the Omnipeak .peak file for a given (dataset, mode, mark)."""
-    prefix = "pooled" if mode == "omni" else mode
-    return f"{ds}/{prefix}_omni/{mark}_{prefix}_{BIN}.peak"
+def _folders(ds):
+    """All processing folders for a dataset: pooled root + per-replicate subdirs."""
+    folders = [ds]
+    if DATASETS[ds].get("replicates"):
+        folders += [f"{ds}/rep1", f"{ds}/rep2"]
+    return folders
 
 
-def _mode_binary_files(w):
-    """Per-chromosome ChromHMM binary inputs for a dataset+mode."""
-    cell = DATASETS[w.ds]["cell"]
-    return [f"{w.ds}/{w.mode}/chromhmm_peaks/{cell}_{c}_binary.txt.gz" for c in CHROMS]
+def peak_file(folder, caller, mark):
+    """Peak file path produced by a given caller for a mark inside folder."""
+    if caller == "omni":
+        return f"{folder}/omni/{mark}_{OMNI_BIN}.peak"
+    else:  # homer
+        return f"{folder}/homer/{mark}.bed"
+
+
+def _peaks_binary_files(w):
+    """Per-chromosome gz binary inputs for ChromHMM/KMeans over peaks."""
+    cell = DATASETS[ds_of(w.folder)]["cell"]
+    return [f"{w.folder}/{w.caller}/chromhmm_peaks/{cell}_{c}_binary.txt.gz"
+            for c in CHROMS]
+
+
+def _default_binary_files(w):
+    """Per-chromosome binary inputs for default ChromHMM binarization."""
+    cell = DATASETS[ds_of(w.folder)]["cell"]
+    return [f"{w.folder}/chromhmm_default/{cell}_{c}_binary.txt" for c in CHROMS]
 
 
 def all_results(ds):
     cfg = DATASETS[ds]
     cell = cfg["cell"]
-    t = []
+    t = [f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bed"]
 
-    # Reference ChromHMM annotation
-    t.append(f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bed")
-
-    # Default ChromHMM pipeline result on pooled BAMs (matched to reference)
-    t.append(f"{ds}/chromhmm_default_result/{cell}_{NSTATES}_chromhmm_default_matched.bed")
-
-    # Each Omnipeak mode: ChromHMM-over-Omnipeak + GMM/KMeans states, both matched
-    for mode in _modes_for(ds):
-        t.append(f"{ds}/{mode}/chromhmm_result/{cell}_{NSTATES}_chromhmm_{mode}_matched.bed")
-        t.append(f"{ds}/{mode}/gmm_{mode}_matched.bed")
-        t.append(f"{ds}/{mode}/kmeans_{mode}_matched.bed")
-
-    # Per-replicate: repeat steps 1-4 for each replicate under {ds}/{rep}/
-    if cfg.get("replicates"):
-        for rep in ["rep1", "rep2"]:
-            # Default ChromHMM on replicate BAMs
-            t.append(f"{ds}/{rep}/chromhmm_default_result/{cell}_{NSTATES}_chromhmm_default_{rep}_matched.bed")
-            # ChromHMM over Omnipeak on replicate BAMs
-            t.append(f"{ds}/{rep}/chromhmm_result/{cell}_{NSTATES}_chromhmm_{rep}_matched.bed")
-            # GMM and KMeans states on replicate Omnipeak binarization
-            t.append(f"{ds}/{rep}/gmm_{rep}_matched.bed")
-            t.append(f"{ds}/{rep}/kmeans_{rep}_matched.bed")
+    for folder in _folders(ds):
+        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_comb_matched.bed")
+        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
+        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
+        for mark in MARKS:
+            t.append(f"{folder}/chromhmm_default_result/{mark}.bed")
+        for caller in ["omni", "homer"]:
+            t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed")
+            t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
+            t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
+            t.append(f"{folder}/{caller}/kmeans_states_comb_matched.bed")
+            t.append(f"{folder}/{caller}/kmeans_states_bwem_matched.bed")
+            t.append(f"{folder}/{caller}/kmeans_states_ovlp_matched.bed")
 
     return t
 
@@ -132,25 +160,42 @@ rule all:
         [f"{ds}/.done" for ds in DATASETS],
 
 
+def _dataset_analysis_outputs(ds):
+    """Per-folder analysis + dataset-level comparison sentinels, gated by config flags."""
+    t = []
+    if DO_ANALYZE:
+        for folder in _folders(ds):
+            t.append(f"{folder}/analysis/ref/report.tsv")
+    if DO_COMPARE:
+        t.append(f"{ds}/matched_stats_all.tsv")
+        for variant in ["comb", "bwem", "ovlp"]:
+            t += [
+                f"{ds}/comparison/{variant}/entropy_summary.tsv",
+                f"{ds}/comparison/{variant}/kappa_matrix.tsv",
+                f"{ds}/comparison/{variant}/ami_matrix.tsv",
+                f"{ds}/comparison/{variant}/jaccard_similarity_matrix.tsv",
+                f"{ds}/comparison/{variant}/overlap_matrix.tsv",
+                f"{ds}/comparison/{variant}/segment_stats.tsv",
+                f"{ds}/methods/{variant}/comparison_table.tsv",
+            ]
+        if DATASETS[ds].get("replicates"):
+            for rematch in ["ovlp", "binem", "bwem"]:
+                t.append(f"{ds}/methods/rematched_{rematch}/comparison_table.tsv")
+    return t
+
+
 rule dataset_done:
-    """Per-dataset sentinel: all segmentations + analysis + matched plots + metrics."""
+    """Per-dataset sentinel: all segmentations + per-folder analysis + metrics."""
     input:
-        lambda w: all_results(w.ds)
-                  + [f"{w.ds}/analysis/ref/report.tsv",
-                     f"{w.ds}/matched_stats_all.tsv",
-                     f"{w.ds}/analysis/comparison/entropy_summary.tsv",
-                     f"{w.ds}/analysis/comparison/kappa_matrix.tsv",
-                     f"{w.ds}/analysis/comparison/ami_matrix.tsv",
-                     f"{w.ds}/analysis/comparison/nmi_matrix.tsv",
-                     f"{w.ds}/analysis/comparison/jaccard_similarity_matrix.tsv",
-                     f"{w.ds}/analysis/comparison/segment_stats.tsv",
-                     f"{w.ds}/analysis/methods/comparison_table.tsv"],
+        lambda w: all_results(w.ds) + _dataset_analysis_outputs(w.ds),
     output: touch("{ds}/.done")
 
 
 include: "rules/data.smk"
 include: "rules/chromhmm.smk"
 include: "rules/omni.smk"
+include: "rules/homer.smk"
 include: "rules/match.smk"
 include: "rules/analyze.smk"
+include: "rules/compare.smk"
 include: "rules/markups.smk"

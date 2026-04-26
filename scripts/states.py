@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-# Cluster binary ChromHMM inputs into N states using GMM or MiniBatch KMeans.
-# Emits BED to stdout; logs go to stderr. See slides "Compute states from
-# Omnipeak binarization" and "KMeansMiniBatch < 1min / sample, states ~ GMM".
+# Cluster binary ChromHMM inputs into N states using KMeans.
+# Emits BED to stdout; logs go to stderr.
 
 import argparse
 import gzip
@@ -41,7 +40,6 @@ def main():
     ap.add_argument("--bin", type=int, required=True, help="Bin size in bp")
     ap.add_argument("--states", type=int, required=True, help="Number of clusters")
     ap.add_argument("--inputs", nargs="+", required=True, help="Binary ChromHMM .txt(.gz) files")
-    ap.add_argument("--method", default="kmeans", choices=["kmeans", "gmm"])
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
@@ -61,18 +59,10 @@ def main():
     X = np.vstack([d for _, d in per_chrom])
     print(f"Total length {X.shape[0]}", file=sys.stderr)
 
-    if args.method == "gmm":
-        from sklearn.mixture import GaussianMixture
-        print("Fitting GaussianMixture", file=sys.stderr)
-        model = GaussianMixture(n_components=args.states,
-                                random_state=args.seed, covariance_type="diag")
-        model.fit(X)
-        labels = model.predict(X)
-    else:
-        from sklearn.cluster import KMeans
-        print("Fitting KMeans", file=sys.stderr)
-        model = KMeans(n_clusters=args.states, random_state=args.seed)
-        labels = model.fit_predict(X)
+    from sklearn.cluster import KMeans
+    print("Fitting KMeans", file=sys.stderr)
+    model = KMeans(n_clusters=args.states, random_state=args.seed)
+    labels = model.fit_predict(X)
 
     detected = len(set(labels.tolist()))
     print(f"Detected states {detected}!", file=sys.stderr)
