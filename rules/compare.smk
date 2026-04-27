@@ -39,7 +39,7 @@ def _compare_beds_for_folder(folder, variant):
     suffix = _VARIANT_SUFFIX[variant]
     cell = DATASETS[ds_of(folder)]["cell"]
     beds = [f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_{suffix}.bed"]
-    for caller in ["omni", "homer"]:
+    for caller in ["omni", "homer", "macs2"]:
         beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_{suffix}.bed")
         beds.append(f"{folder}/{caller}/kmeans_states_{suffix}.bed")
     return beds
@@ -91,11 +91,15 @@ rule compute_metrics:
         kappa_noqh           = "{ds}/comparison/{variant}/kappa_noqh_matrix.tsv",
         ami_noqh             = "{ds}/comparison/{variant}/ami_noqh_matrix.tsv",
         overlap_noqh         = "{ds}/comparison/{variant}/overlap_noqh_matrix.tsv",
+        jaccard_noqh         = "{ds}/comparison/{variant}/jaccard_noqh_matrix.tsv",
         kappa_rematch_ovlp_noqh   = "{ds}/comparison/{variant}/kappa_rematch_ovlp_noqh_matrix.tsv",
+        jaccard_rematch_ovlp_noqh = "{ds}/comparison/{variant}/jaccard_rematch_ovlp_noqh_matrix.tsv",
         overlap_rematch_ovlp_noqh = "{ds}/comparison/{variant}/overlap_rematch_ovlp_noqh_matrix.tsv",
         kappa_rematch_binem_noqh   = "{ds}/comparison/{variant}/kappa_rematch_binem_noqh_matrix.tsv",
+        jaccard_rematch_binem_noqh = "{ds}/comparison/{variant}/jaccard_rematch_binem_noqh_matrix.tsv",
         overlap_rematch_binem_noqh = "{ds}/comparison/{variant}/overlap_rematch_binem_noqh_matrix.tsv",
         kappa_rematch_bwem_noqh   = "{ds}/comparison/{variant}/kappa_rematch_bwem_noqh_matrix.tsv",
+        jaccard_rematch_bwem_noqh = "{ds}/comparison/{variant}/jaccard_rematch_bwem_noqh_matrix.tsv",
         overlap_rematch_bwem_noqh = "{ds}/comparison/{variant}/overlap_rematch_bwem_noqh_matrix.tsv",
     wildcard_constraints:
         ds      = r"[A-Za-z0-9_]+",

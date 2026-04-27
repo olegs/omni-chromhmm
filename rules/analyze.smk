@@ -23,7 +23,7 @@ def _folder_seg_files(w):
         f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_bwem_matched.bed",
         f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed",
     ]
-    for caller in ["omni", "homer"]:
+    for caller in ["omni", "homer", "macs2"]:
         beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed")
         beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
         beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
@@ -48,7 +48,7 @@ def _folder_analysis_inputs(w):
     # Explicit binary-input files so Snakemake guarantees they exist before
     # analyze.py runs its binarized-track emission computation.
     files += [f"{folder}/chromhmm_default/{cell}_{c}_binary.txt" for c in CHROMS]
-    for caller in ["omni", "homer"]:
+    for caller in ["omni", "homer", "macs2"]:
         files += [f"{folder}/{caller}/chromhmm_peaks/{cell}_{c}_binary.txt.gz"
                   for c in CHROMS]
 
@@ -69,7 +69,7 @@ def _analysis_inputs(w):
         files.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_comb_matched.bed")
         files.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
         files.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
-        for caller in ["omni", "homer"]:
+        for caller in ["omni", "homer", "macs2"]:
             files.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed")
             files.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
             files.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
@@ -94,6 +94,7 @@ rule analyze_segmentations:
         bin         = CHROMHMM_BIN,
         omni_bin    = OMNI_BIN,
         homer_bin   = HOMER_BIN,
+        macs2_bin   = MACS2_BIN,
         n           = NSTATES,
         scripts_dir = SCRIPTS_DIR,
         rnaseq      = lambda w: (
@@ -161,6 +162,16 @@ rule analyze_segmentations:
             {wildcards.folder}/analysis/comb/kmeans_homer \
             --inputs {wildcards.folder}/homer/chromhmm_peaks/*.txt.gz
 
+        run_analyze {params.macs2_bin} \
+            {wildcards.folder}/macs2/chromhmm_result/{params.cell}_{params.n}_dense_comb_matched.bed \
+            {wildcards.folder}/analysis/comb/chromhmm_macs2 \
+            --inputs {wildcards.folder}/macs2/chromhmm_peaks/*.txt.gz
+
+        run_analyze {params.macs2_bin} \
+            {wildcards.folder}/macs2/kmeans_states_comb_matched.bed \
+            {wildcards.folder}/analysis/comb/kmeans_macs2 \
+            --inputs {wildcards.folder}/macs2/chromhmm_peaks/*.txt.gz
+
         # bwem/ — bigwig-emission-only matched segmentations
         run_analyze {params.bin} \
             {wildcards.folder}/chromhmm_default_result/{params.cell}_{params.n}_dense_bwem_matched.bed \
@@ -187,6 +198,16 @@ rule analyze_segmentations:
             {wildcards.folder}/analysis/bwem/kmeans_homer \
             --inputs {wildcards.folder}/homer/chromhmm_peaks/*.txt.gz
 
+        run_analyze {params.macs2_bin} \
+            {wildcards.folder}/macs2/chromhmm_result/{params.cell}_{params.n}_dense_bwem_matched.bed \
+            {wildcards.folder}/analysis/bwem/chromhmm_macs2 \
+            --inputs {wildcards.folder}/macs2/chromhmm_peaks/*.txt.gz
+
+        run_analyze {params.macs2_bin} \
+            {wildcards.folder}/macs2/kmeans_states_bwem_matched.bed \
+            {wildcards.folder}/analysis/bwem/kmeans_macs2 \
+            --inputs {wildcards.folder}/macs2/chromhmm_peaks/*.txt.gz
+
         # ovlp/ — overlap-only matched segmentations
         run_analyze {params.bin} \
             {wildcards.folder}/chromhmm_default_result/{params.cell}_{params.n}_dense_ovlp_matched.bed \
@@ -212,4 +233,14 @@ rule analyze_segmentations:
             {wildcards.folder}/homer/kmeans_states_ovlp_matched.bed \
             {wildcards.folder}/analysis/ovlp/kmeans_homer \
             --inputs {wildcards.folder}/homer/chromhmm_peaks/*.txt.gz
+
+        run_analyze {params.macs2_bin} \
+            {wildcards.folder}/macs2/chromhmm_result/{params.cell}_{params.n}_dense_ovlp_matched.bed \
+            {wildcards.folder}/analysis/ovlp/chromhmm_macs2 \
+            --inputs {wildcards.folder}/macs2/chromhmm_peaks/*.txt.gz
+
+        run_analyze {params.macs2_bin} \
+            {wildcards.folder}/macs2/kmeans_states_ovlp_matched.bed \
+            {wildcards.folder}/analysis/ovlp/kmeans_macs2 \
+            --inputs {wildcards.folder}/macs2/chromhmm_peaks/*.txt.gz
         """

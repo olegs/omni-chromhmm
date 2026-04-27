@@ -14,6 +14,7 @@ params:
   chromhmm_bin: 200
   omni_bin: 100
   homer_bin: 200
+  macs2_bin: 100
   n_states: 15
   genome: "hg38"
   marks: [H3K36me3, H3K9me3, H3K4me1, H3K27ac, H3K27me3, H3K4me3]

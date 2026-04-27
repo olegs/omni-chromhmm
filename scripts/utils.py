@@ -36,12 +36,15 @@ METHOD_ORDER = [
     "chromhmm_default",
     "chromhmm_omni",   "kmeans_omni",
     "chromhmm_homer",  "kmeans_homer",
+    "chromhmm_macs2",  "kmeans_macs2",
     "chromhmm_default_rep1",
     "chromhmm_omni_rep1",  "kmeans_omni_rep1",
     "chromhmm_homer_rep1", "kmeans_homer_rep1",
+    "chromhmm_macs2_rep1", "kmeans_macs2_rep1",
     "chromhmm_default_rep2",
     "chromhmm_omni_rep2",  "kmeans_omni_rep2",
     "chromhmm_homer_rep2", "kmeans_homer_rep2",
+    "chromhmm_macs2_rep2", "kmeans_macs2_rep2",
 ]
 
 # {method: rank} — for deterministic sorting.
@@ -55,16 +58,22 @@ DISPLAY_NAMES = {
     "chromhmm_homer":        "Homer ChromHMM",
     "kmeans_omni":           "OmniPeak KMeans",
     "kmeans_homer":          "Homer KMeans",
+    "chromhmm_macs2":        "MACS2 ChromHMM",
+    "kmeans_macs2":          "MACS2 KMeans",
     "chromhmm_default_rep1": "Default ChromHMM (rep1)",
     "chromhmm_omni_rep1":    "OmniPeak ChromHMM (rep1)",
     "chromhmm_homer_rep1":   "Homer ChromHMM (rep1)",
     "kmeans_omni_rep1":      "OmniPeak KMeans (rep1)",
     "kmeans_homer_rep1":     "Homer KMeans (rep1)",
+    "chromhmm_macs2_rep1":   "MACS2 ChromHMM (rep1)",
+    "kmeans_macs2_rep1":     "MACS2 KMeans (rep1)",
     "chromhmm_default_rep2": "Default ChromHMM (rep2)",
     "chromhmm_omni_rep2":    "OmniPeak ChromHMM (rep2)",
     "chromhmm_homer_rep2":   "Homer ChromHMM (rep2)",
     "kmeans_omni_rep2":      "OmniPeak KMeans (rep2)",
     "kmeans_homer_rep2":     "Homer KMeans (rep2)",
+    "chromhmm_macs2_rep2":   "MACS2 ChromHMM (rep2)",
+    "kmeans_macs2_rep2":     "MACS2 KMeans (rep2)",
 }
 
 # Colors keyed by binarization type.
@@ -72,6 +81,7 @@ BIN_COLORS = {
     "default":   "#4878CF",
     "omnipeak":  "#E8833A",
     "homer":     "#2CA02C",
+    "macs2":     "#9467BD",
     "reference": "#888888",
 }
 
@@ -102,6 +112,8 @@ def parse_method(name):
         binarization = "omnipeak"
     elif binarization_key == "homer":
         binarization = "homer"
+    elif binarization_key == "macs2":
+        binarization = "macs2"
     else:
         binarization = "default"
     return binarization, state_model, rep
@@ -137,7 +149,7 @@ def seg_label(path):
     if basename.startswith("ENCFF"):
         return basename.replace(".bed", "")
 
-    caller = next((p for p in parts if p in ("omni", "homer")), None)
+    caller = next((p for p in parts if p in ("omni", "homer", "macs2")), None)
     rep    = next((p for p in parts if p in ("rep1", "rep2")), None)
 
     if "kmeans_states" in basename:

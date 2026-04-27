@@ -181,10 +181,11 @@ def jaccard(a, b):
 
 PALETTE = {
     "OmniPeak": "#2196F3",
-    "HOMER": "#FF9800",
-    "Default": "#9E9E9E",
+    "HOMER":    "#FF9800",
+    "MACS2":    "#4CAF50",
+    "Default":  "#9E9E9E",
 }
-METHOD_ORDER = ["OmniPeak", "HOMER", "Default"]
+METHOD_ORDER = ["OmniPeak", "HOMER", "MACS2", "Default"]
 
 
 def _bar_plot(df, value_col, ylabel, title, outpath):
@@ -231,7 +232,7 @@ def main():
     # Collect regions per method / mark / replicate
     # -----------------------------------------------------------------------
     # Structure: regions[method][mark][folder_key] = list of (chrom, s, e)
-    regions = {m: {mk: {} for mk in marks} for m in ["OmniPeak", "HOMER", "Default"]}
+    regions = {m: {mk: {} for mk in marks} for m in ["OmniPeak", "HOMER", "MACS2", "Default"]}
 
     folders = {"pooled": args.ds}
     if has_replicates:
@@ -255,6 +256,14 @@ def main():
             else:
                 print(f"  missing: {path}", file=sys.stderr)
 
+        # MACS2
+        for mark in marks:
+            path = os.path.join(folder_path, "macs2", f"{mark}.bed")
+            if os.path.exists(path):
+                regions["MACS2"][mark][folder_key] = load_bed_regions(path)
+            else:
+                print(f"  missing: {path}", file=sys.stderr)
+
         # ChromHMM default — parse binary files
         binary_dir = os.path.join(folder_path, "chromhmm_default")
         if os.path.isdir(binary_dir):
@@ -270,7 +279,7 @@ def main():
     # Build stats table
     # -----------------------------------------------------------------------
     rows = []
-    for method in ["OmniPeak", "HOMER", "Default"]:
+    for method in ["OmniPeak", "HOMER", "MACS2", "Default"]:
         for mark in marks:
             row = {"method": method, "mark": mark}
             # pooled stats
