@@ -28,7 +28,7 @@ rule chromhmm_binarize_bam:
         table = "{folder}/chromhmm_default/cellmarkfiletable.tsv",
         bams  = lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS],
     output:
-        bins = expand("{{folder}}/chromhmm_default/{{cell}}_{chr}_binary.txt", chr=CHROMS)
+        bins = temp(expand("{{folder}}/chromhmm_default/{{cell}}_{chr}_binary.txt", chr=CHROMS))
     params:
         bin    = CHROMHMM_BIN,
         cs     = TOOLS["chromsizes"],
@@ -92,7 +92,7 @@ rule multiinter:
 rule binarize_per_chr:
     """Extract per-chromosome binary matrix (mark columns) and gzip."""
     input:  "{folder}/{caller}/chromhmm_peaks/multiinter.tsv"
-    output: "{folder}/{caller}/chromhmm_peaks/{cell}_{chr}_binary.txt.gz"
+    output: temp("{folder}/{caller}/chromhmm_peaks/{cell}_{chr}_binary.txt.gz")
     shell:
         "bash {SCRIPTS_DIR}/binarize_per_chr.sh {input} {wildcards.cell} {wildcards.chr} {output}"
 
