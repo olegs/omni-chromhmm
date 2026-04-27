@@ -432,7 +432,7 @@ def save_transition_entropy(segs, bin_size, outdir):
     edir = os.path.join(outdir, "entropy")
     os.makedirs(edir, exist_ok=True)
 
-    for suffix, excl in [("", None), ("_no_quies", QUIESCENT_STATES)]:
+    for suffix, excl in [("", None), ("_noqh", QUIESCENT_STATES)]:
         states, counts, state_bp = build_transition_matrix(segs, bin_size, excl)
         if not states:
             continue

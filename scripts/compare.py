@@ -159,6 +159,12 @@ def segmentation_to_bins(segs, bin_size):
     return bins
 
 
+def _filter_bins(bins, exclude_states):
+    """Return bins with entries whose state is in exclude_states removed."""
+    return {chrom: {b: s for b, s in bmap.items() if s not in exclude_states}
+            for chrom, bmap in bins.items()}
+
+
 def _aligned_label_arrays(bins1, bins2):
     """Aligned label arrays from two bin-level segmentations (shared bins only)."""
     common_chroms = set(bins1.keys()) & set(bins2.keys())
@@ -350,6 +356,35 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
         row["jaccard_rematch_bwem"] = compute_jaccard(bins_i, remapped_bins_j_bw)
         row["overlap_rematch_bwem"] = po_rematch_bwem
 
+    # No-Quies/Het variants: recompute metrics excluding bins where either
+    # segmentation assigns Quies or Het (uses the same state mappings as above).
+    bins_i_noqh = _filter_bins(bins_i, _EXCLUDE_STATES)
+    bins_j_noqh = _filter_bins(bins_j, _EXCLUDE_STATES)
+    kappa_noqh, po_noqh, _, _, _ = compute_kappa(bins_i_noqh, bins_j_noqh)
+    row["kappa_noqh"]   = kappa_noqh
+    row["overlap_noqh"] = po_noqh
+    row["ami_noqh"]     = compute_ami(bins_i_noqh, bins_j_noqh)[0]
+
+    remapped_bins_j_ovlp_noqh = _filter_bins(remapped_bins_j_ovlp, _EXCLUDE_STATES)
+    kappa_rematch_ovlp_noqh, po_rematch_ovlp_noqh, _, _, _ = compute_kappa(
+        bins_i_noqh, remapped_bins_j_ovlp_noqh)
+    row["kappa_rematch_ovlp_noqh"]   = kappa_rematch_ovlp_noqh
+    row["overlap_rematch_ovlp_noqh"] = po_rematch_ovlp_noqh
+
+    if "kappa_rematch_binem" in row:
+        remapped_bins_j_em_noqh = _filter_bins(remapped_bins_j_em, _EXCLUDE_STATES)
+        kappa_rematch_binem_noqh, po_rematch_binem_noqh, _, _, _ = compute_kappa(
+            bins_i_noqh, remapped_bins_j_em_noqh)
+        row["kappa_rematch_binem_noqh"]   = kappa_rematch_binem_noqh
+        row["overlap_rematch_binem_noqh"] = po_rematch_binem_noqh
+
+    if "kappa_rematch_bwem" in row:
+        remapped_bins_j_bw_noqh = _filter_bins(remapped_bins_j_bw, _EXCLUDE_STATES)
+        kappa_rematch_bwem_noqh, po_rematch_bwem_noqh, _, _, _ = compute_kappa(
+            bins_i_noqh, remapped_bins_j_bw_noqh)
+        row["kappa_rematch_bwem_noqh"]   = kappa_rematch_bwem_noqh
+        row["overlap_rematch_bwem_noqh"] = po_rematch_bwem_noqh
+
     print(f"  {label_i} vs {label_j}: kappa={kappa:.4f}, ami={ami:.4f}, "
           f"jaccard={sim:.4f}, overlap={row['overlap_fraction']:.4f}"
           + (f", emission={row['emission_similarity']:.4f}"
@@ -389,34 +424,30 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None):
         if os.path.exists(p.replace(".bed", ".bw_emissions.npz"))
     }
 
-    kappa_mat            = np.ones((n, n), dtype=np.float64)
-    ami_mat              = np.ones((n, n), dtype=np.float64)
-    jaccard_mat          = np.full((n, n), np.nan)
-    overlap_mat          = np.full((n, n), np.nan)
-    kappa_rematch_ovlp_mat   = np.full((n, n), np.nan)
-    jaccard_rematch_ovlp_mat = np.full((n, n), np.nan)
-    overlap_rematch_ovlp_mat = np.full((n, n), np.nan)
-    kappa_rematch_binem_mat     = np.full((n, n), np.nan)
-    jaccard_rematch_binem_mat   = np.full((n, n), np.nan)
-    overlap_rematch_binem_mat   = np.full((n, n), np.nan)
-    em_sim_mat               = np.full((n, n), np.nan)
-    kappa_rematch_bwem_mat     = np.full((n, n), np.nan)
-    jaccard_rematch_bwem_mat   = np.full((n, n), np.nan)
-    overlap_rematch_bwem_mat   = np.full((n, n), np.nan)
-    bw_sim_mat               = np.full((n, n), np.nan)
-    np.fill_diagonal(jaccard_mat, 1.0)
-    np.fill_diagonal(overlap_mat, 1.0)
-    np.fill_diagonal(kappa_rematch_ovlp_mat,   1.0)
-    np.fill_diagonal(jaccard_rematch_ovlp_mat, 1.0)
-    np.fill_diagonal(overlap_rematch_ovlp_mat, 1.0)
-    np.fill_diagonal(kappa_rematch_binem_mat,     1.0)
-    np.fill_diagonal(jaccard_rematch_binem_mat,   1.0)
-    np.fill_diagonal(overlap_rematch_binem_mat,   1.0)
-    np.fill_diagonal(em_sim_mat,  1.0)
-    np.fill_diagonal(kappa_rematch_bwem_mat,     1.0)
-    np.fill_diagonal(jaccard_rematch_bwem_mat,   1.0)
-    np.fill_diagonal(overlap_rematch_bwem_mat,   1.0)
-    np.fill_diagonal(bw_sim_mat,  1.0)
+    kappa_mat            = np.zeros((n, n))
+    ami_mat              = np.zeros((n, n))
+    jaccard_mat          = np.zeros((n, n))
+    overlap_mat          = np.zeros((n, n))
+    kappa_noqh_mat       = np.zeros((n, n))
+    ami_noqh_mat         = np.zeros((n, n))
+    overlap_noqh_mat     = np.zeros((n, n))
+    kappa_rematch_ovlp_mat   = np.zeros((n, n))
+    jaccard_rematch_ovlp_mat = np.zeros((n, n))
+    overlap_rematch_ovlp_mat = np.zeros((n, n))
+    kappa_rematch_binem_mat     = np.zeros((n, n))
+    jaccard_rematch_binem_mat   = np.zeros((n, n))
+    overlap_rematch_binem_mat   = np.zeros((n, n))
+    em_sim_mat               = np.zeros((n, n))
+    kappa_rematch_bwem_mat     = np.zeros((n, n))
+    jaccard_rematch_bwem_mat   = np.zeros((n, n))
+    overlap_rematch_bwem_mat   = np.zeros((n, n))
+    bw_sim_mat               = np.zeros((n, n))
+    kappa_rematch_ovlp_noqh_mat  = np.zeros((n, n))
+    overlap_rematch_ovlp_noqh_mat = np.zeros((n, n))
+    kappa_rematch_binem_noqh_mat = np.zeros((n, n))
+    overlap_rematch_binem_noqh_mat = np.zeros((n, n))
+    kappa_rematch_bwem_noqh_mat  = np.zeros((n, n))
+    overlap_rematch_bwem_noqh_mat = np.zeros((n, n))
 
     pair_order = [
         (i, j)
@@ -460,6 +491,17 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None):
                 overlap_rematch_bwem_mat[i, j] = overlap_rematch_bwem_mat[j, i] = row["overlap_rematch_bwem"]
             if "bw_emission_similarity" in row:
                 bw_sim_mat[i, j] = bw_sim_mat[j, i] = row["bw_emission_similarity"]
+            kappa_noqh_mat[i, j]   = kappa_noqh_mat[j, i]   = row["kappa_noqh"]
+            ami_noqh_mat[i, j]     = ami_noqh_mat[j, i]     = row["ami_noqh"]
+            overlap_noqh_mat[i, j] = overlap_noqh_mat[j, i] = row["overlap_noqh"]
+            kappa_rematch_ovlp_noqh_mat[i, j] = kappa_rematch_ovlp_noqh_mat[j, i] = row["kappa_rematch_ovlp_noqh"]
+            overlap_rematch_ovlp_noqh_mat[i, j] = overlap_rematch_ovlp_noqh_mat[j, i] = row["overlap_rematch_ovlp_noqh"]
+            if "kappa_rematch_binem_noqh" in row:
+                kappa_rematch_binem_noqh_mat[i, j] = kappa_rematch_binem_noqh_mat[j, i] = row["kappa_rematch_binem_noqh"]
+                overlap_rematch_binem_noqh_mat[i, j] = overlap_rematch_binem_noqh_mat[j, i] = row["overlap_rematch_binem_noqh"]
+            if "kappa_rematch_bwem_noqh" in row:
+                kappa_rematch_bwem_noqh_mat[i, j] = kappa_rematch_bwem_noqh_mat[j, i] = row["kappa_rematch_bwem_noqh"]
+                overlap_rematch_bwem_noqh_mat[i, j] = overlap_rematch_bwem_noqh_mat[j, i] = row["overlap_rematch_bwem_noqh"]
             comparison_rows.append(row)
 
     # Per-state kappa vs reference
@@ -524,6 +566,15 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None):
     _save_matrix(jaccard_rematch_bwem_mat, "jaccard_rematch_bwem")
     _save_matrix(overlap_rematch_bwem_mat, "overlap_rematch_bwem")
     _save_matrix(bw_sim_mat, "bw_emission_similarity")
+    _save_matrix(kappa_noqh_mat,   "kappa_noqh")
+    _save_matrix(ami_noqh_mat,     "ami_noqh")
+    _save_matrix(overlap_noqh_mat, "overlap_noqh")
+    _save_matrix(kappa_rematch_ovlp_noqh_mat,   "kappa_rematch_ovlp_noqh")
+    _save_matrix(overlap_rematch_ovlp_noqh_mat, "overlap_rematch_ovlp_noqh")
+    _save_matrix(kappa_rematch_binem_noqh_mat,   "kappa_rematch_binem_noqh")
+    _save_matrix(overlap_rematch_binem_noqh_mat, "overlap_rematch_binem_noqh")
+    _save_matrix(kappa_rematch_bwem_noqh_mat,    "kappa_rematch_bwem_noqh")
+    _save_matrix(overlap_rematch_bwem_noqh_mat,  "overlap_rematch_bwem_noqh")
 
     # Per-seg comparison rows in analysis dirs
     for i, p in enumerate(seg_paths):
@@ -670,7 +721,7 @@ def main():
     _save_entropy_summary(results_full, comparison_dir)
 
     results_active = _compute_entropy(args.seg, bin_sizes, exclude_states=_EXCLUDE_STATES)
-    _save_entropy_summary(results_active, comparison_dir, suffix="_no_quies",
+    _save_entropy_summary(results_active, comparison_dir, suffix="_noqh",
                           title_extra=f"\n(excluding {', '.join(sorted(_EXCLUDE_STATES))})")
     _save_entropy_combined_plot(results_full, results_active, comparison_dir)
 

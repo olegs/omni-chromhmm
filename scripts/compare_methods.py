@@ -74,9 +74,9 @@ def _load_matrix(directory, filename):
 
 
 def load_entropy(comparison_dir):
-    """Returns dict: seg_name → {entropy, entropy_no_quies}."""
+    """Returns dict: seg_name → {entropy, entropy_noqh}."""
     result = {}
-    for suffix, col in [("", "entropy"), ("_no_quies", "entropy_no_quies")]:
+    for suffix, col in [("", "entropy"), ("_noqh", "entropy_noqh")]:
         path = os.path.join(comparison_dir, f"entropy_summary{suffix}.tsv")
         if not os.path.exists(path):
             continue
@@ -187,6 +187,15 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
     jaccard_rematch_bwem_mat   = _load_matrix(comparison_dir, "jaccard_rematch_bwem_matrix.tsv")
     overlap_rematch_bwem_mat   = _load_matrix(comparison_dir, "overlap_rematch_bwem_matrix.tsv")
     bw_emission_mat          = _load_matrix(comparison_dir, "bw_emission_similarity_matrix.tsv")
+    kappa_noqh_mat           = _load_matrix(comparison_dir, "kappa_noqh_matrix.tsv")
+    ami_noqh_mat             = _load_matrix(comparison_dir, "ami_noqh_matrix.tsv")
+    overlap_noqh_mat         = _load_matrix(comparison_dir, "overlap_noqh_matrix.tsv")
+    kappa_rematch_ovlp_noqh_mat  = _load_matrix(comparison_dir, "kappa_rematch_ovlp_noqh_matrix.tsv")
+    overlap_rematch_ovlp_noqh_mat = _load_matrix(comparison_dir, "overlap_rematch_ovlp_noqh_matrix.tsv")
+    kappa_rematch_binem_noqh_mat = _load_matrix(comparison_dir, "kappa_rematch_binem_noqh_matrix.tsv")
+    overlap_rematch_binem_noqh_mat = _load_matrix(comparison_dir, "overlap_rematch_binem_noqh_matrix.tsv")
+    kappa_rematch_bwem_noqh_mat  = _load_matrix(comparison_dir, "kappa_rematch_bwem_noqh_matrix.tsv")
+    overlap_rematch_bwem_noqh_mat = _load_matrix(comparison_dir, "overlap_rematch_bwem_noqh_matrix.tsv")
     seg_stats    = load_segment_stats(comparison_dir)
 
     # seg_names = union of all labels seen across every metric source
@@ -196,7 +205,11 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
                 kappa_rematch_binem_mat, jaccard_rematch_binem_mat, overlap_rematch_binem_mat,
                 emission_mat,
                 kappa_rematch_bwem_mat, jaccard_rematch_bwem_mat, overlap_rematch_bwem_mat,
-                bw_emission_mat):
+                bw_emission_mat,
+                kappa_noqh_mat, ami_noqh_mat, overlap_noqh_mat,
+                kappa_rematch_ovlp_noqh_mat, overlap_rematch_ovlp_noqh_mat,
+                kappa_rematch_binem_noqh_mat, overlap_rematch_binem_noqh_mat,
+                kappa_rematch_bwem_noqh_mat, overlap_rematch_bwem_noqh_mat):
         if mat is not None:
             seg_names |= set(mat.index)
     a2s = _build_analysis_to_seg_map(methods, seg_names)
@@ -219,7 +232,7 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
             # Entropy
             if seg_name in entropy_data:
                 row["entropy"]          = entropy_data[seg_name].get("entropy", np.nan)
-                row["entropy_no_quies"] = entropy_data[seg_name].get("entropy_no_quies", np.nan)
+                row["entropy_noqh"] = entropy_data[seg_name].get("entropy_noqh", np.nan)
 
             # Segment stats
             if seg_name in seg_stats:
@@ -228,8 +241,9 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
             # vs reference (base metrics only; rematch vs-ref cols live in rematched_*/)
             if seg_name and ref_seg:
                 for mat, col in [
-                    (kappa_mat, "kappa_vs_ref"),
-                    (ami_mat,   "ami_vs_ref"),
+                    (kappa_mat,     "kappa_vs_ref"),
+                    (ami_mat,       "ami_vs_ref"),
+                    (kappa_noqh_mat, "kappa_noqh_vs_ref"),
                 ]:
                     if mat is not None and seg_name in mat.index and ref_seg in mat.columns:
                         val = mat.loc[seg_name, ref_seg]
@@ -242,29 +256,38 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
             rep2_seg = f"{seg_name}_rep2"
             # Base as-is replicate columns (always included).
             base_rep_cols = [
-                (kappa_mat,   "kappa_rep1_vs_rep2"),
-                (ami_mat,     "ami_rep1_vs_rep2"),
-                (jaccard_mat, "jaccard_rep1_vs_rep2"),
-                (overlap_mat, "overlap_rep1_vs_rep2"),
+                (kappa_mat,      "kappa_rep1_vs_rep2"),
+                (ami_mat,        "ami_rep1_vs_rep2"),
+                (jaccard_mat,    "jaccard_rep1_vs_rep2"),
+                (overlap_mat,    "overlap_rep1_vs_rep2"),
+                (kappa_noqh_mat, "kappa_noqh_rep1_vs_rep2"),
+                (ami_noqh_mat,   "ami_noqh_rep1_vs_rep2"),
+                (overlap_noqh_mat, "overlap_noqh_rep1_vs_rep2"),
             ]
             # Rematch replicate columns, grouped by method.
             rematch_rep_cols = {
                 "ovlp": [
-                    (kappa_rematch_ovlp_mat,   "kappa_rematch_ovlp_rep1_vs_rep2"),
-                    (jaccard_rematch_ovlp_mat, "jaccard_rematch_ovlp_rep1_vs_rep2"),
-                    (overlap_rematch_ovlp_mat, "overlap_rematch_ovlp_rep1_vs_rep2"),
+                    (kappa_rematch_ovlp_mat,          "kappa_rematch_ovlp_rep1_vs_rep2"),
+                    (jaccard_rematch_ovlp_mat,         "jaccard_rematch_ovlp_rep1_vs_rep2"),
+                    (overlap_rematch_ovlp_mat,         "overlap_rematch_ovlp_rep1_vs_rep2"),
+                    (kappa_rematch_ovlp_noqh_mat,      "kappa_rematch_ovlp_noqh_rep1_vs_rep2"),
+                    (overlap_rematch_ovlp_noqh_mat,    "overlap_rematch_ovlp_noqh_rep1_vs_rep2"),
                 ],
                 "binem": [
-                    (kappa_rematch_binem_mat,   "kappa_rematch_binem_rep1_vs_rep2"),
-                    (jaccard_rematch_binem_mat, "jaccard_rematch_binem_rep1_vs_rep2"),
-                    (overlap_rematch_binem_mat, "overlap_rematch_binem_rep1_vs_rep2"),
-                    (emission_mat,           "emission_rep1_vs_rep2"),
+                    (kappa_rematch_binem_mat,          "kappa_rematch_binem_rep1_vs_rep2"),
+                    (jaccard_rematch_binem_mat,         "jaccard_rematch_binem_rep1_vs_rep2"),
+                    (overlap_rematch_binem_mat,         "overlap_rematch_binem_rep1_vs_rep2"),
+                    (emission_mat,                     "emission_rep1_vs_rep2"),
+                    (kappa_rematch_binem_noqh_mat,     "kappa_rematch_binem_noqh_rep1_vs_rep2"),
+                    (overlap_rematch_binem_noqh_mat,   "overlap_rematch_binem_noqh_rep1_vs_rep2"),
                 ],
                 "bwem": [
-                    (kappa_rematch_bwem_mat,   "kappa_rematch_bwem_rep1_vs_rep2"),
-                    (jaccard_rematch_bwem_mat, "jaccard_rematch_bwem_rep1_vs_rep2"),
-                    (overlap_rematch_bwem_mat, "overlap_rematch_bwem_rep1_vs_rep2"),
-                    (bw_emission_mat,        "bw_emission_rep1_vs_rep2"),
+                    (kappa_rematch_bwem_mat,           "kappa_rematch_bwem_rep1_vs_rep2"),
+                    (jaccard_rematch_bwem_mat,          "jaccard_rematch_bwem_rep1_vs_rep2"),
+                    (overlap_rematch_bwem_mat,          "overlap_rematch_bwem_rep1_vs_rep2"),
+                    (bw_emission_mat,                  "bw_emission_rep1_vs_rep2"),
+                    (kappa_rematch_bwem_noqh_mat,      "kappa_rematch_bwem_noqh_rep1_vs_rep2"),
+                    (overlap_rematch_bwem_noqh_mat,    "overlap_rematch_bwem_noqh_rep1_vs_rep2"),
                 ],
             }
             # When rematch is given include only that method's cols;
@@ -386,36 +409,48 @@ def plot_comparison(df, outdir, rematch=None):
     # Replicate consistency plots — filtered by rematch when specified.
     _REMATCH_REP_COLS = {
         None: [
-            ("kappa_rep1_vs_rep2",   "Replicate reproducibility (Kappa)",    "Kappa"),
-            ("ami_rep1_vs_rep2",     "Replicate reproducibility (AMI)",      "AMI"),
-            ("jaccard_rep1_vs_rep2", "Replicate reproducibility (Jaccard)",  "Similarity"),
-            ("overlap_rep1_vs_rep2", "Replicate reproducibility (Overlap)",  "Overlap fraction"),
+            ("kappa_rep1_vs_rep2",        "Replicate reproducibility (Kappa)",             "Kappa"),
+            ("ami_rep1_vs_rep2",          "Replicate reproducibility (AMI)",               "AMI"),
+            ("jaccard_rep1_vs_rep2",      "Replicate reproducibility (Jaccard)",           "Similarity"),
+            ("overlap_rep1_vs_rep2",      "Replicate reproducibility (Overlap)",           "Overlap fraction"),
+            ("kappa_noqh_rep1_vs_rep2",   "Replicate reproducibility (Kappa excl. Quies/Het)",   "Kappa"),
+            ("ami_noqh_rep1_vs_rep2",     "Replicate reproducibility (AMI excl. Quies/Het)",     "AMI"),
+            ("overlap_noqh_rep1_vs_rep2", "Replicate reproducibility (Overlap excl. Quies/Het)", "Overlap fraction"),
         ],
         "ovlp": [
-            ("kappa_rep1_vs_rep2",                "Replicate reproducibility (Kappa)",                 "Kappa"),
-            ("jaccard_rep1_vs_rep2",              "Replicate reproducibility (Jaccard)",               "Similarity"),
-            ("overlap_rep1_vs_rep2",              "Replicate reproducibility (Overlap)",               "Overlap fraction"),
-            ("kappa_rematch_ovlp_rep1_vs_rep2",   "Replicate reproducibility (Kappa re-match ovlp)",   "Kappa"),
-            ("jaccard_rematch_ovlp_rep1_vs_rep2", "Replicate reproducibility (Jaccard re-match ovlp)", "Jaccard"),
-            ("overlap_rematch_ovlp_rep1_vs_rep2", "Replicate reproducibility (Overlap re-match ovlp)", "Overlap fraction"),
+            ("kappa_rep1_vs_rep2",                     "Replicate reproducibility (Kappa)",                          "Kappa"),
+            ("jaccard_rep1_vs_rep2",                   "Replicate reproducibility (Jaccard)",                        "Similarity"),
+            ("overlap_rep1_vs_rep2",                   "Replicate reproducibility (Overlap)",                        "Overlap fraction"),
+            ("kappa_rematch_ovlp_rep1_vs_rep2",        "Replicate reproducibility (Kappa re-match ovlp)",            "Kappa"),
+            ("jaccard_rematch_ovlp_rep1_vs_rep2",      "Replicate reproducibility (Jaccard re-match ovlp)",          "Jaccard"),
+            ("overlap_rematch_ovlp_rep1_vs_rep2",      "Replicate reproducibility (Overlap re-match ovlp)",          "Overlap fraction"),
+            ("kappa_noqh_rep1_vs_rep2",                "Replicate reproducibility (Kappa excl. Quies/Het)",          "Kappa"),
+            ("kappa_rematch_ovlp_noqh_rep1_vs_rep2",   "Replicate reproducibility (Kappa re-match ovlp excl. Quies/Het)", "Kappa"),
+            ("overlap_rematch_ovlp_noqh_rep1_vs_rep2", "Replicate reproducibility (Overlap re-match ovlp excl. Quies/Het)", "Overlap fraction"),
         ],
         "binem": [
-            ("kappa_rep1_vs_rep2",                "Replicate reproducibility (Kappa)",                  "Kappa"),
-            ("jaccard_rep1_vs_rep2",              "Replicate reproducibility (Jaccard)",                "Similarity"),
-            ("overlap_rep1_vs_rep2",              "Replicate reproducibility (Overlap)",                "Overlap fraction"),
-            ("kappa_rematch_binem_rep1_vs_rep2",   "Replicate reproducibility (Kappa re-match binem)",   "Kappa"),
-            ("jaccard_rematch_binem_rep1_vs_rep2", "Replicate reproducibility (Jaccard re-match binem)", "Jaccard"),
-            ("overlap_rematch_binem_rep1_vs_rep2", "Replicate reproducibility (Overlap re-match binem)", "Overlap fraction"),
-            ("emission_rep1_vs_rep2",             "Replicate reproducibility (Emission bin)",           "Cosine similarity"),
+            ("kappa_rep1_vs_rep2",                      "Replicate reproducibility (Kappa)",                           "Kappa"),
+            ("jaccard_rep1_vs_rep2",                    "Replicate reproducibility (Jaccard)",                         "Similarity"),
+            ("overlap_rep1_vs_rep2",                    "Replicate reproducibility (Overlap)",                         "Overlap fraction"),
+            ("kappa_rematch_binem_rep1_vs_rep2",        "Replicate reproducibility (Kappa re-match binem)",            "Kappa"),
+            ("jaccard_rematch_binem_rep1_vs_rep2",      "Replicate reproducibility (Jaccard re-match binem)",          "Jaccard"),
+            ("overlap_rematch_binem_rep1_vs_rep2",      "Replicate reproducibility (Overlap re-match binem)",          "Overlap fraction"),
+            ("emission_rep1_vs_rep2",                   "Replicate reproducibility (Emission bin)",                    "Cosine similarity"),
+            ("kappa_noqh_rep1_vs_rep2",                 "Replicate reproducibility (Kappa excl. Quies/Het)",           "Kappa"),
+            ("kappa_rematch_binem_noqh_rep1_vs_rep2",   "Replicate reproducibility (Kappa re-match binem excl. Quies/Het)", "Kappa"),
+            ("overlap_rematch_binem_noqh_rep1_vs_rep2", "Replicate reproducibility (Overlap re-match binem excl. Quies/Het)", "Overlap fraction"),
         ],
         "bwem": [
-            ("kappa_rep1_vs_rep2",                "Replicate reproducibility (Kappa)",                  "Kappa"),
-            ("jaccard_rep1_vs_rep2",              "Replicate reproducibility (Jaccard)",                "Similarity"),
-            ("overlap_rep1_vs_rep2",              "Replicate reproducibility (Overlap)",                "Overlap fraction"),
-            ("kappa_rematch_bwem_rep1_vs_rep2",   "Replicate reproducibility (Kappa re-match bwem)",    "Kappa"),
-            ("jaccard_rematch_bwem_rep1_vs_rep2", "Replicate reproducibility (Jaccard re-match bwem)",  "Jaccard"),
-            ("overlap_rematch_bwem_rep1_vs_rep2", "Replicate reproducibility (Overlap re-match bwem)",  "Overlap fraction"),
-            ("bw_emission_rep1_vs_rep2",          "Replicate reproducibility (Emission bw)",            "Cosine similarity"),
+            ("kappa_rep1_vs_rep2",                     "Replicate reproducibility (Kappa)",                           "Kappa"),
+            ("jaccard_rep1_vs_rep2",                   "Replicate reproducibility (Jaccard)",                         "Similarity"),
+            ("overlap_rep1_vs_rep2",                   "Replicate reproducibility (Overlap)",                         "Overlap fraction"),
+            ("kappa_rematch_bwem_rep1_vs_rep2",        "Replicate reproducibility (Kappa re-match bwem)",             "Kappa"),
+            ("jaccard_rematch_bwem_rep1_vs_rep2",      "Replicate reproducibility (Jaccard re-match bwem)",           "Jaccard"),
+            ("overlap_rematch_bwem_rep1_vs_rep2",      "Replicate reproducibility (Overlap re-match bwem)",           "Overlap fraction"),
+            ("bw_emission_rep1_vs_rep2",               "Replicate reproducibility (Emission bw)",                     "Cosine similarity"),
+            ("kappa_noqh_rep1_vs_rep2",                "Replicate reproducibility (Kappa excl. Quies/Het)",           "Kappa"),
+            ("kappa_rematch_bwem_noqh_rep1_vs_rep2",   "Replicate reproducibility (Kappa re-match bwem excl. Quies/Het)", "Kappa"),
+            ("overlap_rematch_bwem_noqh_rep1_vs_rep2", "Replicate reproducibility (Overlap re-match bwem excl. Quies/Het)", "Overlap fraction"),
         ],
     }
     for col, title, ylabel in _REMATCH_REP_COLS[rematch]:
