@@ -166,6 +166,8 @@ def _dataset_analysis_outputs(ds):
     if DO_ANALYZE:
         for folder in _folders(ds):
             t.append(f"{folder}/analysis/ref/report.tsv")
+    if DO_ANALYZE:
+        t.append(f"{ds}/peaks/peak_stats.tsv")
     if DO_COMPARE:
         t.append(f"{ds}/matched_stats_all.tsv")
         for variant in ["comb", "bwem", "ovlp"]:
@@ -197,5 +199,6 @@ include: "rules/omni.smk"
 include: "rules/homer.smk"
 include: "rules/match.smk"
 include: "rules/analyze.smk"
+include: "rules/peaks.smk"
 include: "rules/compare.smk"
 include: "rules/markups.smk"
