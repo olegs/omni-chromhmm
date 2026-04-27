@@ -326,7 +326,6 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
             jaccard = load_jaccard(_adir(method), method)
             for state, annotation, col in [
                 ("Tx",  "ExpressedGeneBodies", "jaccard_Tx_ExpressedGeneBodies"),
-                ("Tss", "ExpressedTSS",        "jaccard_Tss_ExpressedTSS"),
             ]:
                 if state in jaccard and annotation in jaccard[state]:
                     row[col] = jaccard[state][annotation]
@@ -465,7 +464,6 @@ def plot_comparison(df, outdir, rematch=None):
         for col, title in [
             ("enrich_Tx_ExpressedGeneBodies",  "Tx enrichment vs expressed gene bodies"),
             ("jaccard_Tx_ExpressedGeneBodies", "Jaccard: Tx state vs expressed gene bodies"),
-            ("jaccard_Tss_ExpressedTSS",       "Jaccard: Tss state vs TSS of expressed genes"),
             ("median_Tx_length",               "Median Tx (transcription) segment length"),
         ]:
             ylabel = "Fold enrichment" if col.startswith("enrich") else \
