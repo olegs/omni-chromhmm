@@ -570,11 +570,13 @@ def plot_emissions(states, marks, mat, outdir, subdir="bin_emissions"):
     plt.close(fig)
 
 
-# Preferred display order for enrichment annotations
+# Preferred display order for enrichment annotations (TSV only)
 ANNOTATIONS_ORDER = [
     "Genome %", "CpGIsland", "RefSeqExon", "RefSeqGene",
     "RefSeqTES", "RefSeqTSS", "RefSeqTSS2kb",
 ]
+
+_PLOT_ANNOTATION_PREFIX = "atac_"
 
 
 def _reorder_annotations(labels):
@@ -584,6 +586,13 @@ def _reorder_annotations(labels):
              for l in labels if _base(l) == ao]
     unknown = [l for l in labels if _base(l) not in ANNOTATIONS_ORDER]
     return known + unknown
+
+
+def _rename_plot_label(label):
+    """Human-readable label for enrichment.png."""
+    if label.startswith(_PLOT_ANNOTATION_PREFIX):
+        return "OpenChromatin ATAC"
+    return label
 
 
 def _compute_overlap_bp(by_chrom, starts, ann_segs):
@@ -681,6 +690,7 @@ def plot_enrichment(enrich_df, segs, outdir):
 
     fold_mat = enrich_df.pivot(index="state", columns="label", values="fold_enrichment")
     fold_mat = fold_mat.loc[sorted_idx, sorted_cols]
+    fold_mat.columns = [_rename_plot_label(c) for c in fold_mat.columns]
 
     state_bp = defaultdict(int)
     for _, s, e, name in segs:

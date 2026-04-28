@@ -32,6 +32,14 @@ rule download_rnaseq:
         "wget -q {params.url} -O {output}"
 
 
+rule download_atac:
+    output: "{ds}/atac_{acc}.bed.gz"
+    params:
+        url = lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.bed.gz"
+    shell:
+        "wget -q {params.url} -O {output}"
+
+
 rule download_gencode_gtf:
     output: TOOLS["gencode_gtf"]
     params:

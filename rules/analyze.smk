@@ -55,6 +55,8 @@ def _folder_analysis_inputs(w):
     if cfg.get("rnaseq"):
         files.append(f"{ds}/rnaseq_{cfg['rnaseq']}.tsv")
         files.append(TOOLS["gencode_gtf"])
+    if cfg.get("atac"):
+        files.append(f"{ds}/atac_{cfg['atac']}.bed.gz")
     return files
 
 
@@ -79,6 +81,8 @@ def _analysis_inputs(w):
     if cfg.get("rnaseq"):
         files.append(f"{ds}/rnaseq_{cfg['rnaseq']}.tsv")
         files.append(TOOLS["gencode_gtf"])
+    if cfg.get("atac"):
+        files.append(f"{ds}/atac_{cfg['atac']}.bed.gz")
     return files
 
 
@@ -101,6 +105,9 @@ rule analyze_segmentations:
                           f"{ds_of(w.folder)}/rnaseq_{DATASETS[ds_of(w.folder)]['rnaseq']}.tsv"
                           if DATASETS[ds_of(w.folder)].get("rnaseq") else ""),
         gtf         = lambda w: TOOLS["gencode_gtf"] if DATASETS[ds_of(w.folder)].get("rnaseq") else "",
+        atac        = lambda w: (
+                          f"{ds_of(w.folder)}/atac_{DATASETS[ds_of(w.folder)]['atac']}.bed.gz"
+                          if DATASETS[ds_of(w.folder)].get("atac") else ""),
     shell:
         r"""
         mkdir -p {wildcards.folder}/analysis
@@ -110,6 +117,11 @@ rule analyze_segmentations:
             RNA_ARGS="--rnaseq {params.rnaseq} --gtf {params.gtf}"
         fi
 
+        ATAC_EXTRA=""
+        if [ -n "{params.atac}" ]; then
+            ATAC_EXTRA="{params.atac}"
+        fi
+
         run_analyze() {{
             local bin="$1"; local seg="$2"; local outdir="$3"; shift 3
             local npz="${{seg%.bed}}.bw_emissions.npz"
@@ -117,7 +129,7 @@ rule analyze_segmentations:
             [ -f "$npz" ] && bw_arg="--bw-emissions $npz"
             python {params.scripts_dir}/analyze.py --seg "$seg" --bin "$bin" \
                 --outdir "$outdir" \
-                --annotations {params.coords}/*.bed.gz \
+                --annotations {params.coords}/*.bed.gz $ATAC_EXTRA \
                 $bw_arg $RNA_ARGS "$@"
         }}
 
