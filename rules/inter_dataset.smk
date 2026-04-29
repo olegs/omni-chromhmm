@@ -315,6 +315,46 @@ rule inter_reference_compare:
         """
 
 
+_REP_DATASETS = [ds for ds in DATASETS if DATASETS[ds].get("replicates")]
+
+_REP_CONSISTENCY_PLOTS = [
+    "inter_dataset/summary_plots/rep_consistency_kappa_noqh_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_kappa_rematch_ovlp_noqh_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_kappa_rematch_ovlp_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_jaccard_noqh_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_jaccard_rematch_ovlp_noqh_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_jaccard_rematch_ovlp_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_ami_noqh_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_ami_rep1_vs_rep2.png",
+]
+
+
+rule inter_dataset_rep_consistency_plots:
+    """Replicate consistency bar plots: Kappa/Jaccard/AMI (raw + ovlp-rematched) across datasets."""
+    input:
+        expand("{ds}/methods/ovlp/comparison_table.tsv",          ds=_REP_DATASETS),
+        expand("{ds}/methods/rematched_ovlp/comparison_table.tsv", ds=_REP_DATASETS),
+    output:
+        _REP_CONSISTENCY_PLOTS,
+    conda: "../envs/python.yaml"
+    params:
+        scripts_dir    = SCRIPTS_DIR,
+        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
+        datasets       = " ".join(_REP_DATASETS),
+        methods_dirs   = " ".join(f"{ds}/methods/ovlp"           for ds in _REP_DATASETS),
+        rematched_dirs = " ".join(f"{ds}/methods/rematched_ovlp" for ds in _REP_DATASETS),
+        outdir         = "inter_dataset/summary_plots",
+    shell:
+        r"""
+        python {params.scripts_dir}/summary_plots.py \
+            --datasets             {params.datasets} \
+            --methods-dirs         {params.methods_dirs} \
+            --rematched-ovlp-dirs  {params.rematched_dirs} \
+            --rep-consistency-outdir {params.outdir}
+        cp {params.outdir}/rep_consistency_*.png {params.repo_plots_dir}/
+        """
+
+
 rule inter_dataset_all:
     """Run all inter-dataset method comparisons + summary table + summary plots."""
     input:
@@ -328,3 +368,4 @@ rule inter_dataset_all:
         _PEAK_LENGTH_PLOT,
         _REF_DIST_PLOT,
         _REF_COMPOSITION_PLOT,
+        _REP_CONSISTENCY_PLOTS,

@@ -78,7 +78,12 @@ def bam_path(ds, acc):
 
 
 def bams_for_mark(ds, mark, rep=None):
-    return [bam_path(ds, a) for a in accs_of(ds, mark=mark, rep=rep)]
+    accs = accs_of(ds, mark=mark, rep=rep)
+    if not accs and rep is not None:
+        # Fall back to untagged BAMs for marks that have no replicate-specific entry
+        accs = [a for a, meta in DATASETS[ds]["bams"].items()
+                if meta["mark"] == mark and "rep" not in meta]
+    return [bam_path(ds, a) for a in accs]
 
 
 def read_chromsizes(path):

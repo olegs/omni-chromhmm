@@ -234,9 +234,17 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False):
     stds      = data.loc[methods].std(axis=1, skipna=True).values
     counts    = data.loc[methods].count(axis=1).values
 
-    # Skip if everything is NaN
+    # Write a "no data" placeholder rather than skipping, so Snakemake output files always exist
     if np.all(np.isnan(means)):
-        print(f"  skipping {outpath}: all NaN")
+        fig, ax = plt.subplots(figsize=(5, 4))
+        ax.text(0.5, 0.5, "No data available", ha="center", va="center",
+                transform=ax.transAxes, fontsize=12, color="grey")
+        ax.set_axis_off()
+        ax.set_title(title, fontsize=11, fontweight="bold")
+        os.makedirs(os.path.dirname(os.path.abspath(outpath)), exist_ok=True)
+        fig.savefig(outpath, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  saved {outpath} (no data)")
         return
 
     x = np.arange(len(methods))
@@ -292,6 +300,54 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False):
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Replicate consistency summary plots
+# ---------------------------------------------------------------------------
+
+_REP_CONSISTENCY_PLOTS = [
+    # (col_from_ovlp_table,  col_from_rematched_table_or_None, title, ylabel, outfile_stem)
+    ("kappa_noqh_rep1_vs_rep2",    None,
+     "Rep. consistency: Kappa (NOQH, raw)",             "Kappa",
+     "rep_consistency_kappa_noqh_rep1_vs_rep2"),
+    ("kappa_noqh_rep1_vs_rep2",    "kappa_rematch_ovlp_noqh_rep1_vs_rep2",
+     "Rep. consistency: Kappa (NOQH, ovlp-rematched)",  "Kappa",
+     "rep_consistency_kappa_rematch_ovlp_noqh_rep1_vs_rep2"),
+    (None,                         "kappa_rematch_ovlp_rep1_vs_rep2",
+     "Rep. consistency: Kappa (full, ovlp-rematched)",  "Kappa",
+     "rep_consistency_kappa_rematch_ovlp_rep1_vs_rep2"),
+    ("jaccard_noqh_rep1_vs_rep2",  None,
+     "Rep. consistency: Jaccard (NOQH, raw)",            "Jaccard",
+     "rep_consistency_jaccard_noqh_rep1_vs_rep2"),
+    ("jaccard_noqh_rep1_vs_rep2",  "jaccard_rematch_ovlp_noqh_rep1_vs_rep2",
+     "Rep. consistency: Jaccard (NOQH, ovlp-rematched)", "Jaccard",
+     "rep_consistency_jaccard_rematch_ovlp_noqh_rep1_vs_rep2"),
+    (None,                         "jaccard_rematch_ovlp_rep1_vs_rep2",
+     "Rep. consistency: Jaccard (full, ovlp-rematched)", "Jaccard",
+     "rep_consistency_jaccard_rematch_ovlp_rep1_vs_rep2"),
+    ("ami_noqh_rep1_vs_rep2",      None,
+     "Rep. consistency: AMI (NOQH, raw)",                "AMI",
+     "rep_consistency_ami_noqh_rep1_vs_rep2"),
+    ("ami_rep1_vs_rep2",           None,
+     "Rep. consistency: AMI (full, raw)",                "AMI",
+     "rep_consistency_ami_rep1_vs_rep2"),
+]
+
+
+def _plot_rep_consistency(datasets, methods_dirs, rematched_dirs, outdir):
+    """Generate replicate consistency bar plots (mean ± std across datasets with replicates)."""
+    os.makedirs(outdir, exist_ok=True)
+    for base_col, rematch_col, title, ylabel, stem in _REP_CONSISTENCY_PLOTS:
+        outpath = os.path.join(outdir, f"{stem}.png")
+        if rematch_col is not None and rematched_dirs:
+            data = _collect_table_col(datasets, rematched_dirs, rematch_col)
+        elif base_col is not None:
+            data = _collect_table_col(datasets, methods_dirs, base_col)
+        else:
+            # Should not happen given the table above, but guard just in case
+            data = pd.DataFrame()
+        _plot_summary(data, title, ylabel, outpath, partial_note=True)
+
+
 # Segment length violin (from matched_stats_all.tsv)
 # ---------------------------------------------------------------------------
 
@@ -749,6 +805,10 @@ def main():
                     help="Output PNG for inter-reference similarity distribution violin")
     ap.add_argument("--method-composition-outfile", default=None, dest="method_composition_outfile",
                     help="Output PNG for stacked state composition per method (mean across datasets)")
+    ap.add_argument("--rematched-ovlp-dirs", nargs="*", dest="rematched_ovlp_dirs", default=[],
+                    help="{ds}/methods/rematched_ovlp directories (for rep consistency plots)")
+    ap.add_argument("--rep-consistency-outdir", default=None, dest="rep_consistency_outdir",
+                    help="Output directory for replicate consistency bar plot PNGs")
     args = ap.parse_args()
 
     # --- summary bar plots -----------------------------------------------
@@ -829,6 +889,13 @@ def main():
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_outfile)), exist_ok=True)
         _plot_reference_distribution(args.ref_kappa_matrix, args.ref_ami_matrix,
                                      args.ref_jaccard_matrix, args.ref_dist_outfile)
+
+    # --- replicate consistency plots ----------------------------------------
+    if args.rep_consistency_outdir:
+        if not (len(args.datasets) == len(args.methods_dirs) == len(args.rematched_ovlp_dirs)):
+            ap.error("--datasets, --methods-dirs and --rematched-ovlp-dirs must have equal lengths")
+        _plot_rep_consistency(args.datasets, args.methods_dirs, args.rematched_ovlp_dirs,
+                              args.rep_consistency_outdir)
 
     # --- method state composition -------------------------------------------
     if args.method_composition_outfile:
