@@ -172,7 +172,6 @@ def _dataset_analysis_outputs(ds):
     if DO_ANALYZE:
         t.append(f"{ds}/peaks/peak_stats.tsv")
     if DO_COMPARE:
-        t.append(f"{ds}/matched_stats_all.tsv")
         for variant in ["comb", "bwem", "ovlp"]:
             t += [
                 f"{ds}/comparison/{variant}/entropy_summary.tsv",
