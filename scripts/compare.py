@@ -397,23 +397,27 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
 
 
 
-def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None):
+def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
+                label_override=None, all_pairs=False):
     """Selective segmentation comparison; saves metric matrices as TSV.
 
     bin_sizes: list of bin sizes parallel to seg_paths.
     For each pair the finer (smaller) of the two bin sizes is used for kappa/AMI,
     so methods with different native resolutions are compared fairly.
 
-    Two classes of pairs are compared:
+    Two classes of pairs are compared by default:
       1. Each pooled segmentation vs the ENCODE reference.
       2. Rep1 vs rep2 within the same method (replicate consistency).
     All other cross-method or replicate-vs-reference pairs are skipped.
+
+    label_override: optional dict {seg_path: label} to override _seg_label().
+    all_pairs: if True, compare every pair regardless of _should_compare().
     """
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
     os.makedirs(outdir, exist_ok=True)
     seg_outdirs = _build_seg_to_analysis_map(seg_paths, analysis_dir)
-    labels = [_seg_label(p) for p in seg_paths]
+    labels = [(label_override or {}).get(p) or _seg_label(p) for p in seg_paths]
     n = len(seg_paths)
 
     bin_emission_paths = {
@@ -460,10 +464,11 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None):
     pair_order = [
         (i, j)
         for i in range(n) for j in range(i + 1, n)
-        if _should_compare(labels[i], labels[j])
+        if all_pairs or _should_compare(labels[i], labels[j])
     ]
+    pair_desc = "all pairs" if all_pairs else "vs ref + same-method rep1/rep2"
     n_workers = min(len(pair_order), threads or os.cpu_count() or 4)
-    print(f"  Comparing {len(pair_order)} pairs (vs ref + same-method rep1/rep2) "
+    print(f"  Comparing {len(pair_order)} pairs ({pair_desc}) "
           f"with {n_workers} processes ...", file=sys.stderr)
 
     comparison_rows = []
@@ -721,6 +726,11 @@ def main():
                     help="Analysis root dir for per-segmentation metric output")
     ap.add_argument("--threads", type=int, default=None,
                     help="Max parallel workers for comparison jobs (default: cpu_count)")
+    ap.add_argument("--labels", nargs="+", default=None,
+                    help="Explicit labels for --seg files (one per file); "
+                         "overrides path-derived labels from seg_label()")
+    ap.add_argument("--all-pairs", action="store_true", dest="all_pairs",
+                    help="Compare every pair of segmentations (bypasses should_compare filter)")
     args = ap.parse_args()
 
     # Broadcast a single bin size to all segmentations if needed.
@@ -729,7 +739,11 @@ def main():
     if len(bin_sizes) != len(args.seg):
         ap.error(f"--bins must have 1 value or one per --seg file "
                  f"({len(args.seg)} files, {len(args.bins)} bin sizes given)")
+    if args.labels and len(args.labels) != len(args.seg):
+        ap.error(f"--labels must have one value per --seg file "
+                 f"({len(args.seg)} files, {len(args.labels)} labels given)")
 
+    label_override = dict(zip(args.seg, args.labels)) if args.labels else None
     analysis_dir   = args.analysis_dir or args.outdir
     comparison_dir = args.outdir
 
@@ -742,7 +756,8 @@ def main():
     _save_entropy_combined_plot(results_full, results_active, comparison_dir)
 
     run_segment_stats(args.seg, comparison_dir, analysis_dir)
-    compare_all(args.seg, bin_sizes, comparison_dir, analysis_dir, args.threads)
+    compare_all(args.seg, bin_sizes, comparison_dir, analysis_dir, args.threads,
+                label_override=label_override, all_pairs=args.all_pairs)
 
 
 if __name__ == "__main__":

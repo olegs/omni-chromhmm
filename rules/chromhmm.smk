@@ -11,6 +11,17 @@
 #   - ChromHMM LearnModel over peaks:  {folder}/{caller}/chromhmm_result/
 #   - KMeans segmentation:    {folder}/{caller}/kmeans_states.bed
 
+# Reference ChromHMM markup download.
+
+_MARKUPS_DIR = os.path.join(workflow.basedir, "markups")
+
+rule download_markups:
+    """Download ENCODE reference ChromHMM BED files into markups/."""
+    output: directory(_MARKUPS_DIR)
+    shell:
+        "bash {SCRIPTS_DIR}/download_chromhmm.sh {_MARKUPS_DIR}"
+
+# --- Default ChromHMM binarization ---------------------------------------
 
 rule make_cellmark_table:
     input:  lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS]

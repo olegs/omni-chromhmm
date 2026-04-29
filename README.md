@@ -123,10 +123,6 @@ With `--rematch ovlp|binem|bwem`, produces a focused replicate re-match table co
 only the columns relevant to that re-match method (`methods/rematched_{rematch}/`).
 PNG filenames omit the redundant method suffix (e.g. `kappa_rematch_rep1_vs_rep2.png`).
 
-### `analyze_downloaded.py` / `analyze_matched.py`
-
-Cross-cell-type and per-dataset violin plots, coverage, heatmaps, and summary statistics.
-
 ## Replicates
 
 Set `replicates: true` in `config.yaml` and tag each BAM with `rep: rep1` or `rep: rep2`.

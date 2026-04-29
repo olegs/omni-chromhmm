@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # Per-segmentation analysis: report, segment lengths, emissions, enrichment.
 #
-# Also provides shared IO and plotting helpers imported by
-# analyze_downloaded.py and analyze_matched.py.
+# Also provides shared IO and plotting helpers imported by other scripts.
 #
 # Usage:
 #   analyze.py --seg SEG.bed --bin BIN --outdir OUT \
@@ -65,9 +64,9 @@ def load_bed(path):
 
 
 def _load_seg_full(path):
-    """Load a BED file as a list of (chrom, start, end, name, color) 5-tuples."""
+    """Load a BED file (plain or gzipped) as a list of (chrom, start, end, name, color) 5-tuples."""
     segs = []
-    with open(path) as f:
+    with open_text(path) as f:
         for line in f:
             if not line.strip() or line.startswith(("#", "track", "browser")):
                 continue
@@ -117,7 +116,7 @@ def load_binary(path):
     return chrom, marks, np.asarray(rows, dtype=np.int8)
 
 
-# --- DataFrame helpers (shared with analyze_downloaded / analyze_matched) -
+# --- DataFrame helpers ---------------------------------------------------
 
 def rgb_str_to_hex(rgb):
     """Convert BED itemRgb '255,128,0' to matplotlib hex '#FF8000'."""
