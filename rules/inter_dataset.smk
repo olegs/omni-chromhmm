@@ -130,6 +130,7 @@ rule inter_dataset_compare_summary:
 
 
 _SUMMARY_PLOTS = [
+    "inter_dataset/summary_plots/summary_entropy.png",
     "inter_dataset/summary_plots/summary_entropy_noqh.png",
     "inter_dataset/summary_plots/summary_jaccard_tx.png",
     "inter_dataset/summary_plots/summary_enrich_tx.png",
@@ -262,11 +263,15 @@ rule inter_dataset_peak_length:
         """
 
 
-_REF_KAPPA_MATRIX   = "inter_dataset/reference/kappa_matrix.tsv"
-_REF_AMI_MATRIX     = "inter_dataset/reference/ami_matrix.tsv"
-_REF_JACCARD_MATRIX = "inter_dataset/reference/jaccard_similarity_matrix.tsv"
-_REF_DIST_PLOT      = "inter_dataset/reference/similarity_distribution.png"
-_REF_COMPOSITION_PLOT = "inter_dataset/reference/state_composition.png"
+_REF_KAPPA_MATRIX        = "inter_dataset/reference/kappa_matrix.tsv"
+_REF_AMI_MATRIX          = "inter_dataset/reference/ami_matrix.tsv"
+_REF_JACCARD_MATRIX      = "inter_dataset/reference/jaccard_similarity_matrix.tsv"
+_REF_KAPPA_NOQH_MATRIX   = "inter_dataset/reference/kappa_noqh_matrix.tsv"
+_REF_AMI_NOQH_MATRIX     = "inter_dataset/reference/ami_noqh_matrix.tsv"
+_REF_JACCARD_NOQH_MATRIX = "inter_dataset/reference/jaccard_noqh_matrix.tsv"
+_REF_DIST_PLOT           = "inter_dataset/reference/similarity_distribution.png"
+_REF_DIST_NOQH_PLOT      = "inter_dataset/reference/similarity_distribution_noqh.png"
+_REF_COMPOSITION_PLOT    = "inter_dataset/reference/state_composition.png"
 
 
 rule inter_reference_compare:
@@ -274,11 +279,15 @@ rule inter_reference_compare:
     input:
         _MARKUPS_DIR,
     output:
-        kappa       = _REF_KAPPA_MATRIX,
-        ami         = _REF_AMI_MATRIX,
-        jaccard     = _REF_JACCARD_MATRIX,
-        dist        = _REF_DIST_PLOT,
-        composition = _REF_COMPOSITION_PLOT,
+        kappa        = _REF_KAPPA_MATRIX,
+        ami          = _REF_AMI_MATRIX,
+        jaccard      = _REF_JACCARD_MATRIX,
+        kappa_noqh   = _REF_KAPPA_NOQH_MATRIX,
+        ami_noqh     = _REF_AMI_NOQH_MATRIX,
+        jaccard_noqh = _REF_JACCARD_NOQH_MATRIX,
+        dist         = _REF_DIST_PLOT,
+        dist_noqh    = _REF_DIST_NOQH_PLOT,
+        composition  = _REF_COMPOSITION_PLOT,
     threads: workflow.cores
     conda: "../envs/python.yaml"
     params:
@@ -306,12 +315,16 @@ rule inter_reference_compare:
             --outdir inter_dataset/reference \
             --threads {threads}
         python {params.scripts_dir}/summary_plots.py \
-            --markups-dir        {params.markups_dir} \
-            --ref-composition-outfile {output.composition} \
-            --ref-kappa-matrix   {output.kappa} \
-            --ref-ami-matrix     {output.ami} \
-            --ref-jaccard-matrix {output.jaccard} \
-            --ref-dist-outfile   {output.dist}
+            --markups-dir              {params.markups_dir} \
+            --ref-composition-outfile  {output.composition} \
+            --ref-kappa-matrix         {output.kappa} \
+            --ref-ami-matrix           {output.ami} \
+            --ref-jaccard-matrix       {output.jaccard} \
+            --ref-dist-outfile         {output.dist} \
+            --ref-kappa-noqh-matrix    {output.kappa_noqh} \
+            --ref-ami-noqh-matrix      {output.ami_noqh} \
+            --ref-jaccard-noqh-matrix  {output.jaccard_noqh} \
+            --ref-dist-noqh-outfile    {output.dist_noqh}
         """
 
 
@@ -319,13 +332,17 @@ _REP_DATASETS = [ds for ds in DATASETS if DATASETS[ds].get("replicates")]
 
 _REP_CONSISTENCY_PLOTS = [
     "inter_dataset/summary_plots/rep_consistency_kappa_noqh_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_kappa_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_kappa_rematch_ovlp_noqh_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_kappa_rematch_ovlp_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_jaccard_noqh_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_jaccard_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_jaccard_rematch_ovlp_noqh_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_jaccard_rematch_ovlp_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_ami_noqh_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_ami_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_ami_rematch_ovlp_noqh_rep1_vs_rep2.png",
+    "inter_dataset/summary_plots/rep_consistency_ami_rematch_ovlp_rep1_vs_rep2.png",
 ]
 
 
@@ -355,6 +372,43 @@ rule inter_dataset_rep_consistency_plots:
         """
 
 
+_EMISSION_SIM_PLOTS = (
+    expand("inter_dataset/summary_plots/emission_cosine_sim_{ds}.png",
+           ds=list(DATASETS))
+    + ["inter_dataset/summary_plots/emission_cosine_sim_summary.png"]
+)
+
+
+rule inter_dataset_emission_similarity:
+    """Pairwise cosine similarity of state emissions: binarized vs bigwig, per dataset + summary.
+
+    Demonstrates that bigwig (continuous) emissions produce more similar (less
+    discriminative) state profiles than binarized emissions, supporting the choice
+    of overlap-based label transfer as the primary matching strategy.
+    """
+    input:
+        expand("{ds}/methods/ovlp/comparison_table.tsv", ds=list(DATASETS)),
+    output:
+        _EMISSION_SIM_PLOTS,
+    conda: "../envs/python.yaml"
+    params:
+        scripts_dir   = SCRIPTS_DIR,
+        datasets      = " ".join(list(DATASETS)),
+        analysis_dirs = " ".join(f"{ds}/analysis/ovlp" for ds in DATASETS),
+        methods       = " ".join(INTER_DS_METHODS),
+        outdir        = "inter_dataset/summary_plots",
+        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
+    shell:
+        r"""
+        python {params.scripts_dir}/emission_similarity.py \
+            --datasets      {params.datasets} \
+            --analysis-dirs {params.analysis_dirs} \
+            --methods       {params.methods} \
+            --outdir        {params.outdir}
+        cp {params.outdir}/emission_cosine_sim_*.png {params.repo_plots_dir}/
+        """
+
+
 rule inter_dataset_all:
     """Run all inter-dataset method comparisons + summary table + summary plots."""
     input:
@@ -367,5 +421,7 @@ rule inter_dataset_all:
         _PEAK_COUNT_PLOT,
         _PEAK_LENGTH_PLOT,
         _REF_DIST_PLOT,
+        _REF_DIST_NOQH_PLOT,
         _REF_COMPOSITION_PLOT,
         _REP_CONSISTENCY_PLOTS,
+        _EMISSION_SIM_PLOTS,

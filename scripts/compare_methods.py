@@ -275,9 +275,11 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
                     (kappa_rematch_ovlp_mat,           "kappa_rematch_ovlp_rep1_vs_rep2"),
                     (jaccard_rematch_ovlp_mat,         "jaccard_rematch_ovlp_rep1_vs_rep2"),
                     (overlap_rematch_ovlp_mat,         "overlap_rematch_ovlp_rep1_vs_rep2"),
+                    (ami_mat,                          "ami_rematch_ovlp_rep1_vs_rep2"),
                     (kappa_rematch_ovlp_noqh_mat,      "kappa_rematch_ovlp_noqh_rep1_vs_rep2"),
                     (jaccard_rematch_ovlp_noqh_mat,    "jaccard_rematch_ovlp_noqh_rep1_vs_rep2"),
                     (overlap_rematch_ovlp_noqh_mat,    "overlap_rematch_ovlp_noqh_rep1_vs_rep2"),
+                    (ami_noqh_mat,                     "ami_rematch_ovlp_noqh_rep1_vs_rep2"),
                 ],
                 "binem": [
                     (kappa_rematch_binem_mat,           "kappa_rematch_binem_rep1_vs_rep2"),

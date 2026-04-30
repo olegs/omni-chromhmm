@@ -228,6 +228,10 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False):
         print(f"  skipping {outpath}: no data")
         return
 
+    # Drop methods that have no data at all (e.g. ENCODE Ref in rep-consistency plots)
+    methods = [m for m in methods
+               if not data.loc[m].isna().all()]
+
     display   = [DISPLAY_NAMES.get(m, m) for m in methods]
     colors    = [BIN_COLORS.get(METHOD_INFO[m][0], "#888888") for m in methods]
     means     = data.loc[methods].mean(axis=1, skipna=True).values
@@ -309,6 +313,9 @@ _REP_CONSISTENCY_PLOTS = [
     ("kappa_noqh_rep1_vs_rep2",    None,
      "Rep. consistency: Kappa (NOQH, raw)",             "Kappa",
      "rep_consistency_kappa_noqh_rep1_vs_rep2"),
+    ("kappa_rep1_vs_rep2",         None,
+     "Rep. consistency: Kappa (full, raw)",             "Kappa",
+     "rep_consistency_kappa_rep1_vs_rep2"),
     ("kappa_noqh_rep1_vs_rep2",    "kappa_rematch_ovlp_noqh_rep1_vs_rep2",
      "Rep. consistency: Kappa (NOQH, ovlp-rematched)",  "Kappa",
      "rep_consistency_kappa_rematch_ovlp_noqh_rep1_vs_rep2"),
@@ -318,6 +325,9 @@ _REP_CONSISTENCY_PLOTS = [
     ("jaccard_noqh_rep1_vs_rep2",  None,
      "Rep. consistency: Jaccard (NOQH, raw)",            "Jaccard",
      "rep_consistency_jaccard_noqh_rep1_vs_rep2"),
+    ("jaccard_rep1_vs_rep2",       None,
+     "Rep. consistency: Jaccard (full, raw)",            "Jaccard",
+     "rep_consistency_jaccard_rep1_vs_rep2"),
     ("jaccard_noqh_rep1_vs_rep2",  "jaccard_rematch_ovlp_noqh_rep1_vs_rep2",
      "Rep. consistency: Jaccard (NOQH, ovlp-rematched)", "Jaccard",
      "rep_consistency_jaccard_rematch_ovlp_noqh_rep1_vs_rep2"),
@@ -330,6 +340,12 @@ _REP_CONSISTENCY_PLOTS = [
     ("ami_rep1_vs_rep2",           None,
      "Rep. consistency: AMI (full, raw)",                "AMI",
      "rep_consistency_ami_rep1_vs_rep2"),
+    ("ami_noqh_rep1_vs_rep2",      "ami_rematch_ovlp_noqh_rep1_vs_rep2",
+     "Rep. consistency: AMI (NOQH, ovlp-rematched)",    "AMI",
+     "rep_consistency_ami_rematch_ovlp_noqh_rep1_vs_rep2"),
+    (None,                         "ami_rematch_ovlp_rep1_vs_rep2",
+     "Rep. consistency: AMI (full, ovlp-rematched)",    "AMI",
+     "rep_consistency_ami_rematch_ovlp_rep1_vs_rep2"),
 ]
 
 
@@ -729,7 +745,8 @@ def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, out
     )
 
 
-def _plot_reference_distribution(kappa_path, ami_path, jaccard_path, outfile):
+def _plot_reference_distribution(kappa_path, ami_path, jaccard_path, outfile,
+                                  title_suffix=""):
     """Violin plot of pairwise kappa/AMI/Jaccard similarity among ENCODE reference segmentations."""
     metrics = [
         ("Kappa",   kappa_path),
@@ -755,11 +772,11 @@ def _plot_reference_distribution(kappa_path, ami_path, jaccard_path, outfile):
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     n_refs = plot_df["value"].count() // 3  # pairs per metric
-    ax.set_title(
-        f"Inter-reference similarity distribution\n"
-        f"({int((-1 + (1 + 8 * n_refs) ** 0.5) / 2 + 1)} ENCODE references, {n_refs} pairs each metric)",
-        fontsize=10, fontweight="bold",
+    title = (
+        f"Inter-reference similarity distribution{title_suffix}\n"
+        f"({int((-1 + (1 + 8 * n_refs) ** 0.5) / 2 + 1)} ENCODE references, {n_refs} pairs each metric)"
     )
+    ax.set_title(title, fontsize=10, fontweight="bold")
     fig.tight_layout()
     fig.savefig(outfile, bbox_inches="tight")
     plt.close(fig)
@@ -802,7 +819,15 @@ def main():
     ap.add_argument("--ref-jaccard-matrix", default=None, dest="ref_jaccard_matrix",
                     help="Jaccard matrix TSV from inter-reference compare.py run")
     ap.add_argument("--ref-dist-outfile",   default=None, dest="ref_dist_outfile",
-                    help="Output PNG for inter-reference similarity distribution violin")
+                    help="Output PNG for inter-reference similarity distribution violin (FULL)")
+    ap.add_argument("--ref-kappa-noqh-matrix",   default=None, dest="ref_kappa_noqh_matrix",
+                    help="Kappa NOQH matrix TSV from inter-reference compare.py run")
+    ap.add_argument("--ref-ami-noqh-matrix",     default=None, dest="ref_ami_noqh_matrix",
+                    help="AMI NOQH matrix TSV from inter-reference compare.py run")
+    ap.add_argument("--ref-jaccard-noqh-matrix", default=None, dest="ref_jaccard_noqh_matrix",
+                    help="Jaccard NOQH matrix TSV from inter-reference compare.py run")
+    ap.add_argument("--ref-dist-noqh-outfile",   default=None, dest="ref_dist_noqh_outfile",
+                    help="Output PNG for inter-reference similarity distribution violin (NOQH)")
     ap.add_argument("--method-composition-outfile", default=None, dest="method_composition_outfile",
                     help="Output PNG for stacked state composition per method (mean across datasets)")
     ap.add_argument("--rematched-ovlp-dirs", nargs="*", dest="rematched_ovlp_dirs", default=[],
@@ -817,6 +842,11 @@ def main():
             ap.error("--datasets, --methods-dirs and --analysis-dirs must have equal lengths")
         os.makedirs(args.outdir, exist_ok=True)
         ds, mdirs, adirs = args.datasets, args.methods_dirs, args.analysis_dirs
+
+        data = _collect_table_col(ds, mdirs, "entropy")
+        _plot_summary(data, "Transition matrix entropy (full)",
+                      "Entropy (bits)",
+                      os.path.join(args.outdir, "summary_entropy.png"))
 
         data = _collect_table_col(ds, mdirs, "entropy_noqh")
         _plot_summary(data, "Transition matrix entropy (NOQH, excl. Quies/Het)",
@@ -888,7 +918,18 @@ def main():
                      "for --ref-dist-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_outfile)), exist_ok=True)
         _plot_reference_distribution(args.ref_kappa_matrix, args.ref_ami_matrix,
-                                     args.ref_jaccard_matrix, args.ref_dist_outfile)
+                                     args.ref_jaccard_matrix, args.ref_dist_outfile,
+                                     title_suffix=" — Full")
+
+    if args.ref_dist_noqh_outfile:
+        if not (args.ref_kappa_noqh_matrix and args.ref_ami_noqh_matrix
+                and args.ref_jaccard_noqh_matrix):
+            ap.error("--ref-kappa-noqh-matrix, --ref-ami-noqh-matrix and "
+                     "--ref-jaccard-noqh-matrix are required for --ref-dist-noqh-outfile")
+        os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_noqh_outfile)), exist_ok=True)
+        _plot_reference_distribution(args.ref_kappa_noqh_matrix, args.ref_ami_noqh_matrix,
+                                     args.ref_jaccard_noqh_matrix, args.ref_dist_noqh_outfile,
+                                     title_suffix=" — NOQH (excl. Quies/Het)")
 
     # --- replicate consistency plots ----------------------------------------
     if args.rep_consistency_outdir:
