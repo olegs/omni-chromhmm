@@ -375,7 +375,12 @@ rule inter_dataset_rep_consistency_plots:
 _EMISSION_SIM_PLOTS = (
     expand("inter_dataset/summary_plots/emission_cosine_sim_{ds}.png",
            ds=list(DATASETS))
-    + ["inter_dataset/summary_plots/emission_cosine_sim_summary.png"]
+    + expand("inter_dataset/summary_plots/emission_gini_{ds}.png",
+             ds=list(DATASETS))
+    + [
+        "inter_dataset/summary_plots/emission_cosine_sim_summary.png",
+        "inter_dataset/summary_plots/emission_gini_summary.png",
+    ]
 )
 
 
