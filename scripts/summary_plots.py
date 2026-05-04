@@ -106,9 +106,12 @@ def ds_method_bed(workdir, ds, cell, nstates, method_key):
     root = Path(workdir) / ds
     mapping = {
         "chromhmm_default": root / "chromhmm_default_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
+        "chromhmm_omni":    root / "omni"  / "chromhmm_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
         "kmeans_omni":      root / "omni"  / "kmeans_states_ovlp_matched.bed",
+        "chromhmm_homer":   root / "homer" / "chromhmm_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
         "kmeans_homer":     root / "homer" / "kmeans_states_ovlp_matched.bed",
         "chromhmm_macs2":   root / "macs2" / "chromhmm_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
+        "kmeans_macs2":     root / "macs2" / "kmeans_states_ovlp_matched.bed",
     }
     return mapping[method_key]
 
@@ -745,6 +748,40 @@ def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, out
     )
 
 
+def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
+                                         method_key, method_label, outfile):
+    """Stacked bar chart: state fraction per dataset for a single method."""
+    from analyze import load_bed_df
+
+    def _fracs_from_path(path):
+        p = Path(path)
+        if not p.exists():
+            return {}
+        df = load_bed_df(str(p))[["state", "length"]]
+        totals = df.groupby("state")["length"].sum()
+        total_bp = totals.sum()
+        return (totals / total_bp).to_dict() if total_bp > 0 else {}
+
+    coverages = {}
+    labels_out = []
+    for ds, cell in zip(datasets, cells):
+        bed = ds_method_bed(workdir, ds, cell, nstates, method_key)
+        fracs = _fracs_from_path(bed)
+        if fracs:
+            coverages[ds] = fracs
+            labels_out.append(ds)
+
+    if not coverages:
+        print(f"  skipping {outfile}: no data for method {method_key}", file=sys.stderr)
+        return
+
+    _stacked_composition_chart(
+        coverages, labels_out,
+        f"State composition — {method_label} (per dataset)",
+        outfile, label_fontsize=9,
+    )
+
+
 def _plot_reference_distribution(kappa_path, ami_path, jaccard_path, outfile,
                                   title_suffix=""):
     """Violin plot of pairwise kappa/AMI/Jaccard similarity among ENCODE reference segmentations."""
@@ -830,6 +867,9 @@ def main():
                     help="Output PNG for inter-reference similarity distribution violin (NOQH)")
     ap.add_argument("--method-composition-outfile", default=None, dest="method_composition_outfile",
                     help="Output PNG for stacked state composition per method (mean across datasets)")
+    ap.add_argument("--method-ds-composition-outdir", default=None,
+                    dest="method_ds_composition_outdir",
+                    help="Output directory for per-dataset state composition plots, one PNG per method")
     ap.add_argument("--rematched-ovlp-dirs", nargs="*", dest="rematched_ovlp_dirs", default=[],
                     help="{ds}/methods/rematched_ovlp directories (for rep consistency plots)")
     ap.add_argument("--rep-consistency-outdir", default=None, dest="rep_consistency_outdir",
@@ -945,6 +985,31 @@ def main():
         os.makedirs(os.path.dirname(os.path.abspath(args.method_composition_outfile)), exist_ok=True)
         _plot_method_composition(args.datasets, args.cells, args.workdir, args.markups_dir,
                                  args.nstates, args.method_composition_outfile)
+
+    # --- per-dataset method state composition (4 supplementary plots) -------
+    if args.method_ds_composition_outdir:
+        if not (args.workdir and args.cells and args.datasets):
+            ap.error("--workdir, --datasets and --cells are required for "
+                     "--method-ds-composition-outdir")
+        if len(args.datasets) != len(args.cells):
+            ap.error("--datasets and --cells must have equal lengths")
+        os.makedirs(args.method_ds_composition_outdir, exist_ok=True)
+        _supp_methods = [
+            ("chromhmm_default", "Default ChromHMM"),
+            ("chromhmm_omni",    "ChromHMM OmniPeak"),
+            ("kmeans_omni",      "KMeans OmniPeak"),
+            ("chromhmm_homer",   "ChromHMM HOMER"),
+            ("kmeans_homer",     "KMeans HOMER"),
+            ("chromhmm_macs2",   "ChromHMM MACS2"),
+            ("kmeans_macs2",     "KMeans MACS2"),
+        ]
+        for method_key, method_label in _supp_methods:
+            outfile = os.path.join(args.method_ds_composition_outdir,
+                                   f"method_ds_composition_{method_key}.png")
+            _plot_per_dataset_method_composition(
+                args.datasets, args.cells, args.workdir, args.nstates,
+                method_key, method_label, outfile,
+            )
 
 
 if __name__ == "__main__":

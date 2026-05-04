@@ -372,6 +372,40 @@ rule inter_dataset_rep_consistency_plots:
         """
 
 
+# all 7 de-novo methods
+_METHOD_DS_COMPOSITION_PLOTS = [
+    f"inter_dataset/summary_plots/method_ds_composition_{m}.png"
+    for m in (list(INTER_DS_METHODS))
+]
+
+
+rule inter_dataset_method_composition:
+    """Per-dataset state composition for each de-novo method (4 supplementary plots)."""
+    input:
+        [_inter_ds_bed(ds,m) for ds in DATASETS for m in (list(INTER_DS_METHODS))],
+    output:
+        _METHOD_DS_COMPOSITION_PLOTS,
+    conda: "../envs/python.yaml"
+    params:
+        scripts_dir    = SCRIPTS_DIR,
+        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
+        workdir        = lambda w: config.get("workdir", "."),
+        datasets       = " ".join(list(DATASETS)),
+        cells          = " ".join(DATASETS[ds]["cell"] for ds in DATASETS),
+        nstates        = NSTATES,
+        outdir         = "inter_dataset/summary_plots",
+    shell:
+        r"""
+        python {params.scripts_dir}/summary_plots.py \
+            --datasets                     {params.datasets} \
+            --cells                        {params.cells} \
+            --workdir                      {params.workdir} \
+            --nstates                      {params.nstates} \
+            --method-ds-composition-outdir {params.outdir}
+        cp {params.outdir}/method_ds_composition_*.png {params.repo_plots_dir}/
+        """
+
+
 _EMISSION_SIM_PLOTS = (
     expand("inter_dataset/summary_plots/emission_cosine_sim_{ds}.png",
            ds=list(DATASETS))
@@ -430,3 +464,4 @@ rule inter_dataset_all:
         _REF_COMPOSITION_PLOT,
         _REP_CONSISTENCY_PLOTS,
         _EMISSION_SIM_PLOTS,
+        _METHOD_DS_COMPOSITION_PLOTS,
