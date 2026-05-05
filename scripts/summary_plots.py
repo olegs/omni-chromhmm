@@ -352,6 +352,70 @@ _REP_CONSISTENCY_PLOTS = [
 ]
 
 
+def _plot_emission_rep_consistency(datasets, rematched_binem_dirs, outdir):
+    """Binarized emission cosine similarity between replicates — summary + per-dataset plots."""
+    os.makedirs(outdir, exist_ok=True)
+    data = _collect_table_col(datasets, rematched_binem_dirs, "emission_rep1_vs_rep2")
+
+    # 1. Average across datasets
+    _plot_summary(
+        data,
+        "Rep. consistency: Binarized emission cosine similarity",
+        "Cosine similarity (rep1 vs rep2)",
+        os.path.join(outdir, "rep_consistency_emission_rep1_vs_rep2.png"),
+        partial_note=True,
+    )
+
+    # 2. Per-dataset grouped bars — makes the monocytes outlier visible
+    methods = [m for m in METHODS_POOLED
+               if m in data.index and not data.loc[m].isna().all()]
+    if not methods:
+        return
+
+    n_ds = len(datasets)
+    width = 0.8 / n_ds
+    offsets = np.linspace(-(n_ds - 1) / 2, (n_ds - 1) / 2, n_ds) * width
+    ds_colors = ["#4878CF", "#E8833A", "#2CA02C", "#9467BD"][:n_ds]
+    ds_labels = [ds.replace("_", " ") for ds in datasets]
+
+    x = np.arange(len(methods))
+    fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.85 + 1.5), 4.8))
+
+    for ds, offset, color, label in zip(datasets, offsets, ds_colors, ds_labels):
+        vals = []
+        for m in methods:
+            try:
+                v = float(data.loc[m, ds]) if (m in data.index and ds in data.columns) else np.nan
+            except (TypeError, ValueError):
+                v = np.nan
+            vals.append(v)
+        bar_heights = [v if not np.isnan(v) else 0 for v in vals]
+        ax.bar(x + offset, bar_heights, width=width * 0.9,
+               color=color, label=label, edgecolor="white", linewidth=0.4)
+        for xi, v in zip(x, vals):
+            if not np.isnan(v):
+                ax.text(xi + offset, v + 0.004, f"{v:.3f}",
+                        ha="center", va="bottom", fontsize=5, rotation=90)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([DISPLAY_NAMES.get(m, m) for m in methods],
+                       rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Cosine similarity (rep1 vs rep2)", fontsize=9)
+    ax.set_title(
+        "Binarized emission cosine similarity between replicates\n(per dataset)",
+        fontsize=10, fontweight="bold",
+    )
+    ax.legend(fontsize=8, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
+    ax.grid(axis="y", alpha=0.3, linewidth=0.5)
+    ax.set_ylim(0, 1.05)
+    ax.set_xlabel("each bar = one dataset", fontsize=7, color="grey")
+    fig.tight_layout()
+    outpath = os.path.join(outdir, "rep_consistency_emission_per_dataset_rep1_vs_rep2.png")
+    fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved {outpath}")
+
+
 def _plot_rep_consistency(datasets, methods_dirs, rematched_dirs, outdir):
     """Generate replicate consistency bar plots (mean ± std across datasets with replicates)."""
     os.makedirs(outdir, exist_ok=True)
@@ -872,6 +936,8 @@ def main():
                     help="Output directory for per-dataset state composition plots, one PNG per method")
     ap.add_argument("--rematched-ovlp-dirs", nargs="*", dest="rematched_ovlp_dirs", default=[],
                     help="{ds}/methods/rematched_ovlp directories (for rep consistency plots)")
+    ap.add_argument("--rematched-binem-dirs", nargs="*", dest="rematched_binem_dirs", default=[],
+                    help="{ds}/methods/rematched_binem directories (for emission cosine sim plots)")
     ap.add_argument("--rep-consistency-outdir", default=None, dest="rep_consistency_outdir",
                     help="Output directory for replicate consistency bar plot PNGs")
     args = ap.parse_args()
@@ -977,6 +1043,11 @@ def main():
             ap.error("--datasets, --methods-dirs and --rematched-ovlp-dirs must have equal lengths")
         _plot_rep_consistency(args.datasets, args.methods_dirs, args.rematched_ovlp_dirs,
                               args.rep_consistency_outdir)
+        if args.rematched_binem_dirs:
+            if len(args.rematched_binem_dirs) != len(args.datasets):
+                ap.error("--rematched-binem-dirs must have the same length as --datasets")
+            _plot_emission_rep_consistency(args.datasets, args.rematched_binem_dirs,
+                                          args.rep_consistency_outdir)
 
     # --- method state composition -------------------------------------------
     if args.method_composition_outfile:
