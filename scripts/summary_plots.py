@@ -11,6 +11,7 @@ Plots are generated:
   summary_enrich_tx.png           — Tx fold enrichment at expressed gene bodies
   summary_median_tx_length.png    — median Tx segment length
   summary_jaccard_tss.png         — Jaccard: Tss state vs RefSeqTSS ±1 kb
+  summary_jaccard_tss_atac.png    — Jaccard: Tss state vs ATAC-seq peaks
   summary_n_segments.png          — total number of segments
 
 Usage:
@@ -216,6 +217,37 @@ def _collect_jaccard(datasets, analysis_dirs, state, label):
     for ds, adir in zip(datasets, analysis_dirs):
         for method in METHODS_POOLED:
             val = _load_jaccard_value(adir, method, state, label)
+            records.setdefault(method, {})[ds] = val
+    return pd.DataFrame(records).T
+
+
+def _load_jaccard_atac_value(analysis_dir, method, state):
+    """Return Jaccard of (state, atac_*) — matches any atac_ label."""
+    if method == "ref":
+        path = os.path.join(os.path.dirname(analysis_dir), "ref",
+                            "enrichment", "jaccard.tsv")
+    else:
+        path = os.path.join(analysis_dir, method, "enrichment", "jaccard.tsv")
+    if not os.path.exists(path):
+        return np.nan
+    df = pd.read_csv(path, sep="\t")
+    mask = (df["state"] == state) & df["label"].str.startswith("atac_")
+    if not mask.any():
+        return np.nan
+    return float(df.loc[mask, "jaccard"].iloc[0])
+
+
+def _collect_jaccard_atac(datasets, analysis_dirs, state):
+    """Collect ATAC-seq Jaccard values for *state* across datasets.
+
+    Matches any label starting with 'atac_' (dataset-specific accession).
+    Datasets without ATAC data contribute NaN.
+    Returns DataFrame with index=method, columns=dataset.
+    """
+    records = {}
+    for ds, adir in zip(datasets, analysis_dirs):
+        for method in METHODS_POOLED:
+            val = _load_jaccard_atac_value(adir, method, state)
             records.setdefault(method, {})[ds] = val
     return pd.DataFrame(records).T
 
@@ -846,6 +878,87 @@ def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
     )
 
 
+def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=False,
+                                         group_a=None, group_b=None):
+    """Violin plot: pairwise similarity distributions per de-novo method and metric.
+
+    For each method the upper triangle of the kappa/AMI/Jaccard matrix is extracted
+    (one value per dataset pair) and drawn as a violin, grouped by metric.
+
+    If group_a and group_b are provided (sets of dataset name prefixes), only pairs
+    where one dataset is in group_a and the other is in group_b are included.
+    """
+    suffix = "_noqh" if noqh else ""
+    metric_configs = [
+        ("Kappa",   f"kappa{suffix}_matrix.tsv",                                        "#4878CF"),
+        ("AMI",     f"ami{suffix}_matrix.tsv",                                          "#E8833A"),
+        ("Jaccard", f"jaccard_noqh_matrix.tsv" if noqh else "jaccard_similarity_matrix.tsv",
+                    "#2CA02C"),
+    ]
+
+    def _ds_name(label):
+        """Extract dataset name prefix from a matrix index label like 'imr90:method'."""
+        return label.split(":")[0]
+
+    rows = []
+    for method in methods:
+        label = _SAMPLE_TO_INFO.get(method, (method,))[0]
+        for metric, filename, _ in metric_configs:
+            path = os.path.join(inter_ds_dir, method, filename)
+            if not os.path.exists(path):
+                print(f"  WARNING: missing {path}", file=sys.stderr)
+                continue
+            mat = pd.read_csv(path, sep="\t", index_col=0)
+            n = len(mat)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    if group_a is not None and group_b is not None:
+                        ds_i = _ds_name(mat.index[i])
+                        ds_j = _ds_name(mat.index[j])
+                        if not ((ds_i in group_a and ds_j in group_b) or
+                                (ds_i in group_b and ds_j in group_a)):
+                            continue
+                    rows.append({"Method": label, "Metric": metric, "value": float(mat.iloc[i, j])})
+
+    if not rows:
+        print(f"  skipping {outfile}: no data", file=sys.stderr)
+        return
+
+    plot_df = pd.DataFrame(rows)
+    method_labels = [_SAMPLE_TO_INFO.get(m, (m,))[0] for m in methods
+                     if _SAMPLE_TO_INFO.get(m, (m,))[0] in plot_df["Method"].unique()]
+    palette = {"Kappa": "#4878CF", "AMI": "#E8833A", "Jaccard": "#2CA02C"}
+
+    n_methods = len(method_labels)
+    fig, ax = plt.subplots(figsize=(max(10, n_methods * 1.4 + 3), 5))
+    sns.violinplot(
+        data=plot_df, x="Method", y="value", hue="Metric",
+        order=method_labels,
+        hue_order=["Kappa", "AMI", "Jaccard"],
+        palette=palette,
+        inner="box", cut=0, ax=ax,
+    )
+    ax.set_xlabel("")
+    ax.set_ylabel("Pairwise similarity", fontsize=9)
+    ax.set_ylim(0, 1)
+    ax.grid(axis="y", alpha=0.3, linewidth=0.5)
+    mode = "NOQH (excl. Quies/Het)" if noqh else "Full"
+    n_pairs = plot_df[plot_df["Metric"] == "Kappa"]["Method"].count() // max(n_methods, 1)
+    pair_desc = " — ChIP↔Mint-ChIP pairs only" if (group_a and group_b) else ""
+    ax.set_title(
+        f"Inter-dataset similarity by method — {mode}{pair_desc}\n"
+        f"({n_methods} methods, {n_pairs} dataset pairs each)",
+        fontsize=10, fontweight="bold",
+    )
+    ax.tick_params(axis="x", rotation=30, labelsize=8)
+    ax.legend(title="Metric", fontsize=8, title_fontsize=9,
+              bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
+    fig.tight_layout()
+    fig.savefig(outfile, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved {outfile}")
+
+
 def _plot_reference_distribution(kappa_path, ami_path, jaccard_path, outfile,
                                   title_suffix=""):
     """Violin plot of pairwise kappa/AMI/Jaccard similarity among ENCODE reference segmentations."""
@@ -940,6 +1053,28 @@ def main():
                     help="{ds}/methods/rematched_binem directories (for emission cosine sim plots)")
     ap.add_argument("--rep-consistency-outdir", default=None, dest="rep_consistency_outdir",
                     help="Output directory for replicate consistency bar plot PNGs")
+    ap.add_argument("--method-sim-dist-indir", default=None, dest="method_sim_dist_indir",
+                    help="inter_dataset/ directory containing per-method subdirectories")
+    ap.add_argument("--method-sim-dist-methods", nargs="*", dest="method_sim_dist_methods",
+                    default=[],
+                    help="Method keys to include in the similarity distribution plot")
+    ap.add_argument("--method-sim-dist-outfile", default=None, dest="method_sim_dist_outfile",
+                    help="Output PNG for inter-method similarity distribution (FULL)")
+    ap.add_argument("--method-sim-dist-noqh-outfile", default=None,
+                    dest="method_sim_dist_noqh_outfile",
+                    help="Output PNG for inter-method similarity distribution (NOQH)")
+    ap.add_argument("--method-sim-dist-group-a", nargs="*", default=None,
+                    dest="method_sim_dist_group_a",
+                    help="Dataset names for group A (for cross-group pair filtering)")
+    ap.add_argument("--method-sim-dist-group-b", nargs="*", default=None,
+                    dest="method_sim_dist_group_b",
+                    help="Dataset names for group B (for cross-group pair filtering)")
+    ap.add_argument("--method-sim-dist-filtered-outfile", default=None,
+                    dest="method_sim_dist_filtered_outfile",
+                    help="Output PNG for cross-group filtered similarity distribution (FULL)")
+    ap.add_argument("--method-sim-dist-filtered-noqh-outfile", default=None,
+                    dest="method_sim_dist_filtered_noqh_outfile",
+                    help="Output PNG for cross-group filtered similarity distribution (NOQH)")
     args = ap.parse_args()
 
     # --- summary bar plots -----------------------------------------------
@@ -976,6 +1111,11 @@ def main():
         data = _collect_jaccard(ds, adirs, "Tss", "RefSeqTSS2kb.hg38")
         _plot_summary(data, "Jaccard: Tss state vs RefSeq TSS ±1 kb", "Jaccard",
                       os.path.join(args.outdir, "summary_jaccard_tss.png"))
+
+        data = _collect_jaccard_atac(ds, adirs, "Tss")
+        _plot_summary(data, "Jaccard: Tss state vs ATAC-seq", "Jaccard",
+                      os.path.join(args.outdir, "summary_jaccard_tss_atac.png"),
+                      partial_note=True)
 
         data = _collect_table_col(ds, mdirs, "n_segments") / 1000.0
         _plot_summary(data, "Total number of segments", "Segments (×10³)",
@@ -1036,6 +1176,48 @@ def main():
         _plot_reference_distribution(args.ref_kappa_noqh_matrix, args.ref_ami_noqh_matrix,
                                      args.ref_jaccard_noqh_matrix, args.ref_dist_noqh_outfile,
                                      title_suffix=" — NOQH (excl. Quies/Het)")
+
+    # --- inter-method similarity distribution --------------------------------
+    if args.method_sim_dist_outfile or args.method_sim_dist_noqh_outfile:
+        if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
+            ap.error("--method-sim-dist-indir and --method-sim-dist-methods are required "
+                     "for --method-sim-dist-outfile / --method-sim-dist-noqh-outfile")
+        if args.method_sim_dist_outfile:
+            os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_outfile)), exist_ok=True)
+            _plot_method_similarity_distribution(
+                args.method_sim_dist_indir, args.method_sim_dist_methods,
+                args.method_sim_dist_outfile, noqh=False,
+            )
+        if args.method_sim_dist_noqh_outfile:
+            os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_noqh_outfile)), exist_ok=True)
+            _plot_method_similarity_distribution(
+                args.method_sim_dist_indir, args.method_sim_dist_methods,
+                args.method_sim_dist_noqh_outfile, noqh=True,
+            )
+
+    # --- cross-group filtered similarity distribution -------------------------
+    if args.method_sim_dist_filtered_outfile or args.method_sim_dist_filtered_noqh_outfile:
+        if not (args.method_sim_dist_indir and args.method_sim_dist_methods
+                and args.method_sim_dist_group_a and args.method_sim_dist_group_b):
+            ap.error("--method-sim-dist-indir, --method-sim-dist-methods, "
+                     "--method-sim-dist-group-a and --method-sim-dist-group-b are required "
+                     "for --method-sim-dist-filtered-outfile / --method-sim-dist-filtered-noqh-outfile")
+        ga = set(args.method_sim_dist_group_a)
+        gb = set(args.method_sim_dist_group_b)
+        if args.method_sim_dist_filtered_outfile:
+            os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_filtered_outfile)), exist_ok=True)
+            _plot_method_similarity_distribution(
+                args.method_sim_dist_indir, args.method_sim_dist_methods,
+                args.method_sim_dist_filtered_outfile, noqh=False,
+                group_a=ga, group_b=gb,
+            )
+        if args.method_sim_dist_filtered_noqh_outfile:
+            os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_filtered_noqh_outfile)), exist_ok=True)
+            _plot_method_similarity_distribution(
+                args.method_sim_dist_indir, args.method_sim_dist_methods,
+                args.method_sim_dist_filtered_noqh_outfile, noqh=True,
+                group_a=ga, group_b=gb,
+            )
 
     # --- replicate consistency plots ----------------------------------------
     if args.rep_consistency_outdir:

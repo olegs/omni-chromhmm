@@ -136,6 +136,7 @@ _SUMMARY_PLOTS = [
     "inter_dataset/summary_plots/summary_enrich_tx.png",
     "inter_dataset/summary_plots/summary_median_tx_length.png",
     "inter_dataset/summary_plots/summary_jaccard_tss.png",
+    "inter_dataset/summary_plots/summary_jaccard_tss_atac.png",
     "inter_dataset/summary_plots/summary_n_segments.png",
 ]
 
@@ -328,6 +329,69 @@ rule inter_reference_compare:
         """
 
 
+_METHOD_SIM_DIST_PLOT             = "inter_dataset/summary_plots/method_similarity_distribution.png"
+_METHOD_SIM_DIST_NOQH_PLOT        = "inter_dataset/summary_plots/method_similarity_distribution_noqh.png"
+_METHOD_SIM_DIST_CHIP_MINT_PLOT      = "inter_dataset/summary_plots/method_similarity_distribution_chip_vs_mint.png"
+_METHOD_SIM_DIST_CHIP_MINT_NOQH_PLOT = "inter_dataset/summary_plots/method_similarity_distribution_chip_vs_mint_noqh.png"
+
+_CHIP_DATASETS = [ds for ds in DATASETS if not ds.endswith("_mint")]
+_MINT_DATASETS = [ds for ds in DATASETS if ds.endswith("_mint")]
+
+
+rule inter_dataset_method_similarity_distribution:
+    """Violin plots of inter-dataset pairwise similarity (kappa/AMI/Jaccard) per de-novo method."""
+    input:
+        expand("inter_dataset/{method}/kappa_noqh_matrix.tsv", method=INTER_DS_METHODS),
+    output:
+        dist      = _METHOD_SIM_DIST_PLOT,
+        dist_noqh = _METHOD_SIM_DIST_NOQH_PLOT,
+    conda: "../envs/python.yaml"
+    params:
+        scripts_dir    = SCRIPTS_DIR,
+        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
+        indir          = "inter_dataset",
+        methods        = " ".join(INTER_DS_METHODS),
+    shell:
+        r"""
+        python {params.scripts_dir}/summary_plots.py \
+            --method-sim-dist-indir          {params.indir} \
+            --method-sim-dist-methods        {params.methods} \
+            --method-sim-dist-outfile        {output.dist} \
+            --method-sim-dist-noqh-outfile   {output.dist_noqh}
+        mkdir -p {params.repo_plots_dir}
+        cp {output.dist} {output.dist_noqh} {params.repo_plots_dir}/
+        """
+
+
+rule inter_dataset_method_similarity_distribution_chip_vs_mint:
+    """Violin plots of inter-dataset similarity filtered to ChIP↔Mint-ChIP pairs only."""
+    input:
+        expand("inter_dataset/{method}/kappa_noqh_matrix.tsv", method=INTER_DS_METHODS),
+    output:
+        dist      = _METHOD_SIM_DIST_CHIP_MINT_PLOT,
+        dist_noqh = _METHOD_SIM_DIST_CHIP_MINT_NOQH_PLOT,
+    conda: "../envs/python.yaml"
+    params:
+        scripts_dir    = SCRIPTS_DIR,
+        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
+        indir          = "inter_dataset",
+        methods        = " ".join(INTER_DS_METHODS),
+        chip_datasets  = " ".join(_CHIP_DATASETS),
+        mint_datasets  = " ".join(_MINT_DATASETS),
+    shell:
+        r"""
+        python {params.scripts_dir}/summary_plots.py \
+            --method-sim-dist-indir                   {params.indir} \
+            --method-sim-dist-methods                 {params.methods} \
+            --method-sim-dist-group-a                 {params.chip_datasets} \
+            --method-sim-dist-group-b                 {params.mint_datasets} \
+            --method-sim-dist-filtered-outfile        {output.dist} \
+            --method-sim-dist-filtered-noqh-outfile   {output.dist_noqh}
+        mkdir -p {params.repo_plots_dir}
+        cp {output.dist} {output.dist_noqh} {params.repo_plots_dir}/
+        """
+
+
 _REP_DATASETS = [ds for ds in DATASETS if DATASETS[ds].get("replicates")]
 
 _REP_CONSISTENCY_PLOTS = [
@@ -373,6 +437,7 @@ rule inter_dataset_rep_consistency_plots:
             --rematched-ovlp-dirs   {params.rematched_dirs} \
             --rematched-binem-dirs  {params.binem_dirs} \
             --rep-consistency-outdir {params.outdir}
+        mkdir -p {params.repo_plots_dir}
         cp {params.outdir}/rep_consistency_*.png {params.repo_plots_dir}/
         """
 
@@ -407,7 +472,38 @@ rule inter_dataset_method_composition:
             --workdir                      {params.workdir} \
             --nstates                      {params.nstates} \
             --method-ds-composition-outdir {params.outdir}
+        mkdir -p {params.repo_plots_dir}
         cp {params.outdir}/method_ds_composition_*.png {params.repo_plots_dir}/
+        """
+
+
+rule inter_dataset_method_state_composition:
+    """Mean state composition across datasets per method (single summary plot)."""
+    input:
+        [_inter_ds_bed(ds, m) for ds in DATASETS for m in (list(INTER_DS_METHODS))],
+        _MARKUPS_DIR,
+    output:
+        "inter_dataset/summary_plots/method_state_composition.png",
+    conda: "../envs/python.yaml"
+    params:
+        scripts_dir    = SCRIPTS_DIR,
+        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
+        workdir        = lambda w: config.get("workdir", "."),
+        datasets       = " ".join(list(DATASETS)),
+        cells          = " ".join(DATASETS[ds]["cell"] for ds in DATASETS),
+        nstates        = NSTATES,
+        markups_dir    = _MARKUPS_DIR,
+    shell:
+        r"""
+        python {params.scripts_dir}/summary_plots.py \
+            --datasets                   {params.datasets} \
+            --cells                      {params.cells} \
+            --workdir                    {params.workdir} \
+            --markups-dir                {params.markups_dir} \
+            --nstates                    {params.nstates} \
+            --method-composition-outfile {output}
+        mkdir -p {params.repo_plots_dir}
+        cp {output} {params.repo_plots_dir}/
         """
 
 
@@ -449,6 +545,7 @@ rule inter_dataset_emission_similarity:
             --analysis-dirs {params.analysis_dirs} \
             --methods       {params.methods} \
             --outdir        {params.outdir}
+        mkdir -p {params.repo_plots_dir}
         cp {params.outdir}/emission_cosine_sim_*.png {params.repo_plots_dir}/
         """
 
@@ -470,3 +567,6 @@ rule inter_dataset_all:
         _REP_CONSISTENCY_PLOTS,
         _EMISSION_SIM_PLOTS,
         _METHOD_DS_COMPOSITION_PLOTS,
+        "inter_dataset/summary_plots/method_state_composition.png",
+        _METHOD_SIM_DIST_PLOT,
+        _METHOD_SIM_DIST_NOQH_PLOT,
