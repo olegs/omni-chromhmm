@@ -66,7 +66,8 @@ datasets:
 
   monocytes_mint:
     cell: "MonocyteMint"
-    ref_chromhmm: "ENCFF166IHY"
+#    ref_chromhmm: "ENCFF166IHY" # Don't use this because of a non-standard states naming
+    ref_chromhmm: "ENCFF227EMB"   # same CD14+ monocyte 15-state ref as monocytes dataset
     rnaseq: null
     atac: null
     omnipeak_extra: "--fragmentation 0"
@@ -81,7 +82,8 @@ datasets:
 
   gm12878_mint:
     cell: "GM12878Mint"
-    ref_chromhmm: "ENCFF870JAH"
+#    ref_chromhmm: "ENCFF870JAH" # Don't use this because of a non-standard states naming
+    ref_chromhmm: "ENCFF140VIG"   # GM12878 standard 15-state (ENCSR310DFZ)
     rnaseq: null
     atac: null
     omnipeak_extra: "--fragmentation 0"
@@ -94,27 +96,27 @@ datasets:
       ENCFF869PBS: {mark: H3K36me3}
       ENCFF934GLQ: {mark: H3K4me1}
 
-#  spleen:
-#    cell: "Spleen"
-#    ref_chromhmm: "ENCFF183AWD"
-#    rnaseq: "ENCFF143INW"         # total RNA-seq, gene quant TSV (ENCSR096LTX, female adult 61y)
-#    atac: "ENCFF105FRE"           # ATAC-seq IDR peaks (ENCSR078EBD, female adult 51y)
-#    omnipeak_extra: ""
-#    replicates: true
-#    bams:
-#      ENCFF702ICJ: {mark: H3K4me1, rep: rep2}
-#      ENCFF915NOI: {mark: H3K4me1, rep: rep1}
-#      ENCFF464ZDR: {mark: H3K4me3, rep: rep2}
-#      ENCFF838OPW: {mark: H3K4me3, rep: rep1}
-#      ENCFF472TSV: {mark: H3K27ac, rep: rep2}
-#      ENCFF185DQS: {mark: H3K27ac, rep: rep1}
-#      ENCFF488FJX: {mark: H3K27me3, rep: rep2}
-#      ENCFF811PTP: {mark: H3K27me3, rep: rep1}
-#      ENCFF934RMM: {mark: H3K36me3, rep: rep2}
-#      ENCFF877UDA: {mark: H3K36me3, rep: rep1}
-#      ENCFF425JOG: {mark: H3K9me3, rep: rep2}
-#      ENCFF865ORP: {mark: H3K9me3, rep: rep1}
-#
+  spleen:
+    cell: "Spleen"
+    ref_chromhmm: "ENCFF183AWD"
+    rnaseq: "ENCFF143INW"         # total RNA-seq, gene quant TSV (ENCSR096LTX, female adult 61y)
+    atac: "ENCFF105FRE"           # ATAC-seq IDR peaks (ENCSR078EBD, female adult 51y)
+    omnipeak_extra: ""
+    replicates: true
+    bams:
+      ENCFF702ICJ: {mark: H3K4me1, rep: rep2}
+      ENCFF915NOI: {mark: H3K4me1, rep: rep1}
+      ENCFF464ZDR: {mark: H3K4me3, rep: rep2}
+      ENCFF838OPW: {mark: H3K4me3, rep: rep1}
+      ENCFF472TSV: {mark: H3K27ac, rep: rep2}
+      ENCFF185DQS: {mark: H3K27ac, rep: rep1}
+      ENCFF488FJX: {mark: H3K27me3, rep: rep2}
+      ENCFF811PTP: {mark: H3K27me3, rep: rep1}
+      ENCFF934RMM: {mark: H3K36me3, rep: rep2}
+      ENCFF877UDA: {mark: H3K36me3, rep: rep1}
+      ENCFF425JOG: {mark: H3K9me3, rep: rep2}
+      ENCFF865ORP: {mark: H3K9me3, rep: rep1}
+
 #  heart_right_ventricle:
 #    cell: "HeartRightVentricle"
 #    ref_chromhmm: "ENCFF393FJX"
