@@ -1,6 +1,6 @@
 # Cross-segmentation comparison and method summary (driven by compare.py / compare_methods.py):
 #   - Transition matrix entropy
-#   - Pairwise Cohen's Kappa, AMI, Jaccard similarity
+#   - Pairwise Cohen's Kappa, Jaccard similarity
 #   - Segment length statistics
 #   - Unified method comparison table
 #
@@ -58,19 +58,17 @@ def _ds_compare_inputs(w):
 
 
 rule compute_metrics:
-    """Dataset-level comparison for one matching strategy: entropy, kappa, AMI, Jaccard."""
+    """Dataset-level comparison for one matching strategy: entropy, kappa, Jaccard."""
     input: _ds_compare_inputs
     output:
         entropy              = "{ds}/comparison/{variant}/entropy_summary.tsv",
         kappa                = "{ds}/comparison/{variant}/kappa_matrix.tsv",
-        ami                  = "{ds}/comparison/{variant}/ami_matrix.tsv",
         jaccard              = "{ds}/comparison/{variant}/jaccard_similarity_matrix.tsv",
         overlap              = "{ds}/comparison/{variant}/overlap_matrix.tsv",
         stats                = "{ds}/comparison/{variant}/segment_stats.tsv",
         emission_sim    = "{ds}/comparison/{variant}/emission_similarity_matrix.tsv",
         bw_emission_sim = "{ds}/comparison/{variant}/bw_emission_similarity_matrix.tsv",
         kappa_noqh      = "{ds}/comparison/{variant}/kappa_noqh_matrix.tsv",
-        ami_noqh        = "{ds}/comparison/{variant}/ami_noqh_matrix.tsv",
         overlap_noqh    = "{ds}/comparison/{variant}/overlap_noqh_matrix.tsv",
         jaccard_noqh    = "{ds}/comparison/{variant}/jaccard_noqh_matrix.tsv",
     wildcard_constraints:
@@ -81,7 +79,7 @@ rule compute_metrics:
     params:
         scripts_dir = SCRIPTS_DIR,
         # Per-segmentation bin sizes: each method is evaluated at its native resolution.
-        # For pair comparison (kappa/AMI), compare.py uses min(bin_i, bin_j) so that
+        # For pair comparison (kappa), compare.py uses min(bin_i, bin_j) so that
         # 200bp segments are compared at 100bp when paired with OmniPeak segmentations.
         segs        = lambda w: " ".join(_ds_compare_segs(w.ds, w.variant)),
         bins        = lambda w: " ".join(str(_seg_bin(p)) for p in _ds_compare_segs(w.ds, w.variant)),
@@ -101,7 +99,6 @@ rule compare_methods:
     input:
         entropy  = "{ds}/comparison/{variant}/entropy_summary.tsv",
         kappa    = "{ds}/comparison/{variant}/kappa_matrix.tsv",
-        ami      = "{ds}/comparison/{variant}/ami_matrix.tsv",
         jaccard  = "{ds}/comparison/{variant}/jaccard_similarity_matrix.tsv",
         overlap  = "{ds}/comparison/{variant}/overlap_matrix.tsv",
         stats    = "{ds}/comparison/{variant}/segment_stats.tsv",

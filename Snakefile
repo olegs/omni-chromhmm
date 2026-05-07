@@ -181,7 +181,6 @@ def _dataset_analysis_outputs(ds):
         t += [
             f"{ds}/comparison/comb/entropy_summary.tsv",
             f"{ds}/comparison/comb/kappa_matrix.tsv",
-            f"{ds}/comparison/comb/ami_matrix.tsv",
             f"{ds}/comparison/comb/jaccard_similarity_matrix.tsv",
             f"{ds}/comparison/comb/overlap_matrix.tsv",
             f"{ds}/comparison/comb/segment_stats.tsv",

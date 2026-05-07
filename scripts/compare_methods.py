@@ -14,7 +14,6 @@ Reads from:
   - {analysis_dir}/{method}/enrichment/jaccard.tsv
   - {comparison_dir}/entropy_summary.tsv
   - {comparison_dir}/kappa_matrix.tsv
-  - {comparison_dir}/ami_matrix.tsv
   - {comparison_dir}/jaccard_similarity_matrix.tsv
   - {comparison_dir}/segment_stats.tsv
   - {comparison_dir}/emission_similarity_matrix.tsv
@@ -172,22 +171,20 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
     # Load cross-segmentation metrics
     entropy_data = load_entropy(comparison_dir)
     kappa_mat        = _load_matrix(comparison_dir, "kappa_matrix.tsv")
-    ami_mat          = _load_matrix(comparison_dir, "ami_matrix.tsv")
     jaccard_mat      = _load_matrix(comparison_dir, "jaccard_similarity_matrix.tsv")
     overlap_mat      = _load_matrix(comparison_dir, "overlap_matrix.tsv")
     emission_mat     = _load_matrix(comparison_dir, "emission_similarity_matrix.tsv")
     bw_emission_mat  = _load_matrix(comparison_dir, "bw_emission_similarity_matrix.tsv")
     kappa_noqh_mat   = _load_matrix(comparison_dir, "kappa_noqh_matrix.tsv")
-    ami_noqh_mat     = _load_matrix(comparison_dir, "ami_noqh_matrix.tsv")
     overlap_noqh_mat = _load_matrix(comparison_dir, "overlap_noqh_matrix.tsv")
     jaccard_noqh_mat = _load_matrix(comparison_dir, "jaccard_noqh_matrix.tsv")
     seg_stats    = load_segment_stats(comparison_dir)
 
     # seg_names = union of all labels seen across every metric source
     seg_names = set(entropy_data) | set(seg_stats)
-    for mat in (kappa_mat, ami_mat, jaccard_mat, overlap_mat,
+    for mat in (kappa_mat, jaccard_mat, overlap_mat,
                 emission_mat, bw_emission_mat,
-                kappa_noqh_mat, ami_noqh_mat, overlap_noqh_mat, jaccard_noqh_mat):
+                kappa_noqh_mat, overlap_noqh_mat, jaccard_noqh_mat):
         if mat is not None:
             seg_names |= set(mat.index)
     a2s = _build_analysis_to_seg_map(methods, seg_names)
@@ -219,7 +216,6 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
         if seg_name and ref_seg:
             for mat, col in [
                 (kappa_mat,      "kappa_vs_ref"),
-                (ami_mat,        "ami_vs_ref"),
                 (kappa_noqh_mat, "kappa_noqh_vs_ref"),
             ]:
                 if mat is not None and seg_name in mat.index and ref_seg in mat.columns:
@@ -234,11 +230,9 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             # Base as-is replicate columns (always included).
             base_rep_cols = [
                 (kappa_mat,      "kappa_rep1_vs_rep2"),
-                (ami_mat,        "ami_rep1_vs_rep2"),
                 (jaccard_mat,    "jaccard_rep1_vs_rep2"),
                 (overlap_mat,    "overlap_rep1_vs_rep2"),
                 (kappa_noqh_mat,   "kappa_noqh_rep1_vs_rep2"),
-                (ami_noqh_mat,     "ami_noqh_rep1_vs_rep2"),
                 (jaccard_noqh_mat, "jaccard_noqh_rep1_vs_rep2"),
                 (overlap_noqh_mat, "overlap_noqh_rep1_vs_rep2"),
             ]
@@ -353,11 +347,9 @@ def plot_comparison(df, outdir):
     # Replicate consistency plots
     _REP_COLS = [
         ("kappa_rep1_vs_rep2",          "Replicate reproducibility (Kappa)",                    "Kappa"),
-        ("ami_rep1_vs_rep2",            "Replicate reproducibility (AMI)",                      "AMI"),
         ("jaccard_rep1_vs_rep2",        "Replicate reproducibility (Jaccard)",                  "Similarity"),
         ("overlap_rep1_vs_rep2",        "Replicate reproducibility (Overlap)",                  "Overlap fraction"),
         ("kappa_noqh_rep1_vs_rep2",     "Replicate reproducibility (Kappa excl. Quies/Het)",    "Kappa"),
-        ("ami_noqh_rep1_vs_rep2",       "Replicate reproducibility (AMI excl. Quies/Het)",      "AMI"),
         ("jaccard_noqh_rep1_vs_rep2",   "Replicate reproducibility (Jaccard excl. Quies/Het)",  "Similarity"),
         ("overlap_noqh_rep1_vs_rep2",   "Replicate reproducibility (Overlap excl. Quies/Het)",  "Overlap fraction"),
     ]

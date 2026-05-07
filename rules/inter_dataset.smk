@@ -52,12 +52,10 @@ rule inter_dataset_compare_method:
     output:
         entropy  = "inter_dataset/{method}/entropy_summary.tsv",
         kappa    = "inter_dataset/{method}/kappa_matrix.tsv",
-        ami      = "inter_dataset/{method}/ami_matrix.tsv",
         jaccard  = "inter_dataset/{method}/jaccard_similarity_matrix.tsv",
         overlap  = "inter_dataset/{method}/overlap_matrix.tsv",
         stats    = "inter_dataset/{method}/segment_stats.tsv",
         kappa_noqh   = "inter_dataset/{method}/kappa_noqh_matrix.tsv",
-        ami_noqh     = "inter_dataset/{method}/ami_noqh_matrix.tsv",
         jaccard_noqh = "inter_dataset/{method}/jaccard_noqh_matrix.tsv",
         overlap_noqh = "inter_dataset/{method}/overlap_noqh_matrix.tsv",
     wildcard_constraints:
@@ -240,10 +238,8 @@ rule inter_dataset_peak_length:
 
 
 _REF_KAPPA_MATRIX        = "inter_dataset/reference/kappa_matrix.tsv"
-_REF_AMI_MATRIX          = "inter_dataset/reference/ami_matrix.tsv"
 _REF_JACCARD_MATRIX      = "inter_dataset/reference/jaccard_similarity_matrix.tsv"
 _REF_KAPPA_NOQH_MATRIX   = "inter_dataset/reference/kappa_noqh_matrix.tsv"
-_REF_AMI_NOQH_MATRIX     = "inter_dataset/reference/ami_noqh_matrix.tsv"
 _REF_JACCARD_NOQH_MATRIX = "inter_dataset/reference/jaccard_noqh_matrix.tsv"
 _REF_DIST_PLOT           = "inter_dataset/reference/similarity_distribution.png"
 _REF_DIST_NOQH_PLOT      = "inter_dataset/reference/similarity_distribution_noqh.png"
@@ -251,15 +247,13 @@ _REF_COMPOSITION_PLOT    = "inter_dataset/reference/state_composition.png"
 
 
 rule inter_reference_compare:
-    """Pairwise kappa/AMI/Jaccard among all downloaded ENCODE reference segmentations (no rematch)."""
+    """Pairwise kappa/Jaccard among all downloaded ENCODE reference segmentations (no rematch)."""
     input:
         _MARKUPS_DIR,
     output:
         kappa        = _REF_KAPPA_MATRIX,
-        ami          = _REF_AMI_MATRIX,
         jaccard      = _REF_JACCARD_MATRIX,
         kappa_noqh   = _REF_KAPPA_NOQH_MATRIX,
-        ami_noqh     = _REF_AMI_NOQH_MATRIX,
         jaccard_noqh = _REF_JACCARD_NOQH_MATRIX,
         dist         = _REF_DIST_PLOT,
         dist_noqh    = _REF_DIST_NOQH_PLOT,
@@ -294,11 +288,9 @@ rule inter_reference_compare:
             --markups-dir              {params.markups_dir} \
             --ref-composition-outfile  {output.composition} \
             --ref-kappa-matrix         {output.kappa} \
-            --ref-ami-matrix           {output.ami} \
             --ref-jaccard-matrix       {output.jaccard} \
             --ref-dist-outfile         {output.dist} \
             --ref-kappa-noqh-matrix    {output.kappa_noqh} \
-            --ref-ami-noqh-matrix      {output.ami_noqh} \
             --ref-jaccard-noqh-matrix  {output.jaccard_noqh} \
             --ref-dist-noqh-outfile    {output.dist_noqh}
         """
@@ -314,7 +306,7 @@ _MINT_DATASETS = [ds for ds in DATASETS if ds.endswith("_mint")]
 
 
 rule inter_dataset_method_similarity_distribution:
-    """Violin plots of inter-dataset pairwise similarity (kappa/AMI/Jaccard) per de-novo method."""
+    """Violin plots of inter-dataset pairwise similarity (kappa/Jaccard) per de-novo method."""
     input:
         expand("inter_dataset/{method}/kappa_noqh_matrix.tsv", method=INTER_DS_METHODS),
     output:
@@ -374,13 +366,11 @@ _REP_CONSISTENCY_PLOTS = [
     "inter_dataset/summary_plots/rep_consistency_kappa_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_jaccard_noqh_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_jaccard_rep1_vs_rep2.png",
-    "inter_dataset/summary_plots/rep_consistency_ami_noqh_rep1_vs_rep2.png",
-    "inter_dataset/summary_plots/rep_consistency_ami_rep1_vs_rep2.png",
 ]
 
 
 rule inter_dataset_rep_consistency_plots:
-    """Replicate consistency bar plots: Kappa/Jaccard/AMI (raw) across datasets."""
+    """Replicate consistency bar plots: Kappa/Jaccard (raw) across datasets."""
     input:
         expand("{ds}/methods/comb/comparison_table.tsv", ds=_REP_DATASETS),
     output:

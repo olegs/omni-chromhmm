@@ -357,12 +357,6 @@ _REP_CONSISTENCY_PLOTS = [
     ("jaccard_rep1_vs_rep2",
      "Rep. consistency: Jaccard (full, raw)", "Jaccard",
      "rep_consistency_jaccard_rep1_vs_rep2"),
-    ("ami_noqh_rep1_vs_rep2",
-     "Rep. consistency: AMI (NOQH, raw)",     "AMI",
-     "rep_consistency_ami_noqh_rep1_vs_rep2"),
-    ("ami_rep1_vs_rep2",
-     "Rep. consistency: AMI (full, raw)",     "AMI",
-     "rep_consistency_ami_rep1_vs_rep2"),
 ]
 
 
@@ -794,7 +788,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
                                          group_a=None, group_b=None):
     """Violin plot: pairwise similarity distributions per de-novo method and metric.
 
-    For each method the upper triangle of the kappa/AMI/Jaccard matrix is extracted
+    For each method the upper triangle of the kappa/Jaccard matrix is extracted
     (one value per dataset pair) and drawn as a violin, grouped by metric.
 
     If group_a and group_b are provided (sets of dataset name prefixes), only pairs
@@ -803,7 +797,6 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     suffix = "_noqh" if noqh else ""
     metric_configs = [
         ("Kappa",   f"kappa{suffix}_matrix.tsv",                                        "#4878CF"),
-        ("AMI",     f"ami{suffix}_matrix.tsv",                                          "#E8833A"),
         ("Jaccard", f"jaccard_noqh_matrix.tsv" if noqh else "jaccard_similarity_matrix.tsv",
                     "#2CA02C"),
     ]
@@ -839,14 +832,14 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     plot_df = pd.DataFrame(rows)
     method_labels = [_SAMPLE_TO_INFO.get(m, (m,))[0] for m in methods
                      if _SAMPLE_TO_INFO.get(m, (m,))[0] in plot_df["Method"].unique()]
-    palette = {"Kappa": "#4878CF", "AMI": "#E8833A", "Jaccard": "#2CA02C"}
+    palette = {"Kappa": "#4878CF", "Jaccard": "#2CA02C"}
 
     n_methods = len(method_labels)
     fig, ax = plt.subplots(figsize=(max(10, n_methods * 1.4 + 3), 5))
     sns.violinplot(
         data=plot_df, x="Method", y="value", hue="Metric",
         order=method_labels,
-        hue_order=["Kappa", "AMI", "Jaccard"],
+        hue_order=["Kappa", "Jaccard"],
         palette=palette,
         inner="box", cut=0, ax=ax,
     )
@@ -871,12 +864,11 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     print(f"  saved {outfile}")
 
 
-def _plot_reference_distribution(kappa_path, ami_path, jaccard_path, outfile,
+def _plot_reference_distribution(kappa_path, jaccard_path, outfile,
                                   title_suffix=""):
-    """Violin plot of pairwise kappa/AMI/Jaccard similarity among ENCODE reference segmentations."""
+    """Violin plot of pairwise Kappa/Jaccard similarity among ENCODE reference segmentations."""
     metrics = [
         ("Kappa",   kappa_path),
-        ("AMI",     ami_path),
         ("Jaccard", jaccard_path),
     ]
     rows = []
@@ -888,16 +880,16 @@ def _plot_reference_distribution(kappa_path, ami_path, jaccard_path, outfile,
                 rows.append({"Metric": metric, "value": float(mat.iloc[i, j])})
     plot_df = pd.DataFrame(rows)
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(5, 5))
     sns.violinplot(data=plot_df, x="Metric", y="value", hue="Metric",
-                   order=["Kappa", "AMI", "Jaccard"],
+                   order=["Kappa", "Jaccard"],
                    inner="box", cut=0, ax=ax, legend=False,
-                   palette={"Kappa": "#4878CF", "AMI": "#E8833A", "Jaccard": "#2CA02C"})
+                   palette={"Kappa": "#4878CF", "Jaccard": "#2CA02C"})
     ax.set_xlabel("")
     ax.set_ylabel("Pairwise similarity", fontsize=9)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    n_refs = plot_df["value"].count() // 3  # pairs per metric
+    n_refs = plot_df["value"].count() // 2  # pairs per metric
     title = (
         f"Inter-reference similarity distribution{title_suffix}\n"
         f"({int((-1 + (1 + 8 * n_refs) ** 0.5) / 2 + 1)} ENCODE references, {n_refs} pairs each metric)"
@@ -940,16 +932,12 @@ def main():
                     help="Output PNG for stacked state composition across ENCODE references")
     ap.add_argument("--ref-kappa-matrix",   default=None, dest="ref_kappa_matrix",
                     help="Kappa matrix TSV from inter-reference compare.py run")
-    ap.add_argument("--ref-ami-matrix",     default=None, dest="ref_ami_matrix",
-                    help="AMI matrix TSV from inter-reference compare.py run")
     ap.add_argument("--ref-jaccard-matrix", default=None, dest="ref_jaccard_matrix",
                     help="Jaccard matrix TSV from inter-reference compare.py run")
     ap.add_argument("--ref-dist-outfile",   default=None, dest="ref_dist_outfile",
                     help="Output PNG for inter-reference similarity distribution violin (FULL)")
     ap.add_argument("--ref-kappa-noqh-matrix",   default=None, dest="ref_kappa_noqh_matrix",
                     help="Kappa NOQH matrix TSV from inter-reference compare.py run")
-    ap.add_argument("--ref-ami-noqh-matrix",     default=None, dest="ref_ami_noqh_matrix",
-                    help="AMI NOQH matrix TSV from inter-reference compare.py run")
     ap.add_argument("--ref-jaccard-noqh-matrix", default=None, dest="ref_jaccard_noqh_matrix",
                     help="Jaccard NOQH matrix TSV from inter-reference compare.py run")
     ap.add_argument("--ref-dist-noqh-outfile",   default=None, dest="ref_dist_noqh_outfile",
@@ -1067,21 +1055,20 @@ def main():
 
     # --- inter-reference similarity distribution ----------------------------
     if args.ref_dist_outfile:
-        if not (args.ref_kappa_matrix and args.ref_ami_matrix and args.ref_jaccard_matrix):
-            ap.error("--ref-kappa-matrix, --ref-ami-matrix and --ref-jaccard-matrix are required "
+        if not (args.ref_kappa_matrix and args.ref_jaccard_matrix):
+            ap.error("--ref-kappa-matrix and --ref-jaccard-matrix are required "
                      "for --ref-dist-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_outfile)), exist_ok=True)
-        _plot_reference_distribution(args.ref_kappa_matrix, args.ref_ami_matrix,
+        _plot_reference_distribution(args.ref_kappa_matrix,
                                      args.ref_jaccard_matrix, args.ref_dist_outfile,
                                      title_suffix=" — Full")
 
     if args.ref_dist_noqh_outfile:
-        if not (args.ref_kappa_noqh_matrix and args.ref_ami_noqh_matrix
-                and args.ref_jaccard_noqh_matrix):
-            ap.error("--ref-kappa-noqh-matrix, --ref-ami-noqh-matrix and "
+        if not (args.ref_kappa_noqh_matrix and args.ref_jaccard_noqh_matrix):
+            ap.error("--ref-kappa-noqh-matrix and "
                      "--ref-jaccard-noqh-matrix are required for --ref-dist-noqh-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_noqh_outfile)), exist_ok=True)
-        _plot_reference_distribution(args.ref_kappa_noqh_matrix, args.ref_ami_noqh_matrix,
+        _plot_reference_distribution(args.ref_kappa_noqh_matrix,
                                      args.ref_jaccard_noqh_matrix, args.ref_dist_noqh_outfile,
                                      title_suffix=" — NOQH (excl. Quies/Het)")
 

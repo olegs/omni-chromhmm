@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Cross-segmentation comparison: entropy, kappa, AMI, Jaccard, segment stats.
+# Cross-segmentation comparison: entropy, kappa, Jaccard, segment stats.
 #
 # Shared IO helpers are imported from analyze.py.
 #
@@ -147,7 +147,7 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
 
 
 # ---------------------------------------------------------------------------
-# Cohen's Kappa / AMI
+# Cohen's Kappa
 # ---------------------------------------------------------------------------
 
 def segmentation_to_bins(segs, bin_size):
@@ -176,14 +176,6 @@ def _aligned_label_arrays(bins1, bins2):
             l2.append(bins2[chrom][b])
     return np.array(l1), np.array(l2)
 
-
-def compute_ami(bins1, bins2):
-    """Compute Adjusted Mutual Information. Returns (ami, n_bins)."""
-    from sklearn.metrics import adjusted_mutual_info_score
-    labels1, labels2 = _aligned_label_arrays(bins1, bins2)
-    if len(labels1) == 0:
-        return 0.0, 0
-    return adjusted_mutual_info_score(labels1, labels2), len(labels1)
 
 
 def compute_kappa(bins1, bins2):
@@ -270,7 +262,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
                   bin_size_i, bin_size_j, outdir):
     """Compare one pair of segmentations (runs in a worker process).
 
-    Uses the finer of the two bin sizes for kappa/AMI so that 200bp segments
+    Uses the finer of the two bin sizes for kappa so that 200bp segments
     are compared at 100bp resolution when paired with a 100bp segmentation.
     """
     from match import (pair_overlap as match_pair_overlap,
@@ -290,9 +282,6 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     kappa, po, pe, n_bins, _ = compute_kappa(bins_i, bins_j)
     row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
     row["_per_state_kappa"] = compute_per_state_kappa(bins_i, bins_j)
-
-    ami, _ = compute_ami(bins_i, bins_j)
-    row["ami"] = ami
 
     segs_full_i = _load_seg_full(path_i)
     segs_full_j = _load_seg_full(path_j)
@@ -338,10 +327,9 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     kappa_noqh, po_noqh, _, _, _ = compute_kappa(bins_i_noqh, bins_j_noqh)
     row["kappa_noqh"]   = kappa_noqh
     row["overlap_noqh"] = po_noqh
-    row["ami_noqh"]     = compute_ami(bins_i_noqh, bins_j_noqh)[0]
     row["jaccard_noqh"] = compute_jaccard(bins_i_noqh, bins_j_noqh)
 
-    print(f"  {label_i} vs {label_j}: kappa={kappa:.4f}, ami={ami:.4f}, "
+    print(f"  {label_i} vs {label_j}: kappa={kappa:.4f}, "
           f"jaccard={sim:.4f}, overlap={row['overlap_fraction']:.4f}"
           + (f", emission={row['emission_similarity']:.4f}"
              if "emission_similarity" in row else ""))
@@ -354,7 +342,7 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     """Selective segmentation comparison; saves metric matrices as TSV.
 
     bin_sizes: list of bin sizes parallel to seg_paths.
-    For each pair the finer (smaller) of the two bin sizes is used for kappa/AMI,
+    For each pair the finer (smaller) of the two bin sizes is used for kappa,
     so methods with different native resolutions are compared fairly.
 
     Two classes of pairs are compared by default:
@@ -385,11 +373,9 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     }
 
     kappa_mat        = np.zeros((n, n))
-    ami_mat          = np.zeros((n, n))
     jaccard_mat      = np.zeros((n, n))
     overlap_mat      = np.zeros((n, n))
     kappa_noqh_mat   = np.zeros((n, n))
-    ami_noqh_mat     = np.zeros((n, n))
     overlap_noqh_mat = np.zeros((n, n))
     jaccard_noqh_mat = np.zeros((n, n))
     em_sim_mat       = np.zeros((n, n))
@@ -420,7 +406,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
             row = fut.result()
             i, j = row.pop("_i"), row.pop("_j")
             kappa_mat[i, j] = kappa_mat[j, i] = row["kappa"]
-            ami_mat[i, j]   = ami_mat[j, i]   = row["ami"]
             jaccard_mat[i, j] = jaccard_mat[j, i] = row["jaccard_similarity"]
             overlap_mat[i, j] = overlap_mat[j, i] = row["overlap_fraction"]
             if "emission_similarity" in row:
@@ -428,7 +413,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
             if "bw_emission_similarity" in row:
                 bw_sim_mat[i, j] = bw_sim_mat[j, i] = row["bw_emission_similarity"]
             kappa_noqh_mat[i, j]   = kappa_noqh_mat[j, i]   = row["kappa_noqh"]
-            ami_noqh_mat[i, j]     = ami_noqh_mat[j, i]     = row["ami_noqh"]
             overlap_noqh_mat[i, j] = overlap_noqh_mat[j, i] = row["overlap_noqh"]
             jaccard_noqh_mat[i, j] = jaccard_noqh_mat[j, i] = row["jaccard_noqh"]
             comparison_rows.append(row)
@@ -481,13 +465,11 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
         return df
 
     kappa_df   = _save_matrix(kappa_mat, "kappa")
-    ami_df     = _save_matrix(ami_mat, "ami")
     jaccard_df = _save_matrix(jaccard_mat, "jaccard_similarity")
     _save_matrix(overlap_mat, "overlap")
     em_df = _save_matrix(em_sim_mat, "emission_similarity")
     _save_matrix(bw_sim_mat, "bw_emission_similarity")
     _save_matrix(kappa_noqh_mat,   "kappa_noqh")
-    _save_matrix(ami_noqh_mat,     "ami_noqh")
     _save_matrix(overlap_noqh_mat, "overlap_noqh")
     _save_matrix(jaccard_noqh_mat, "jaccard_noqh")
 
@@ -500,8 +482,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
         os.makedirs(comp_dir, exist_ok=True)
         kappa_df.iloc[[i]].to_csv(os.path.join(comp_dir, "kappa_vs_all.tsv"),
                                    sep="\t", float_format="%.4f")
-        ami_df.iloc[[i]].to_csv(os.path.join(comp_dir, "ami_vs_all.tsv"),
-                                 sep="\t", float_format="%.4f")
         jaccard_df.iloc[[i]].to_csv(os.path.join(comp_dir, "jaccard_vs_all.tsv"),
                                      sep="\t", float_format="%.4f")
         if em_df is not None and i in bin_emission_paths:
@@ -610,7 +590,7 @@ def run_segment_stats(seg_paths, outdir, analysis_dir=None):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Cross-segmentation comparison: entropy, kappa, AMI, Jaccard, segment stats.")
+        description="Cross-segmentation comparison: entropy, kappa, Jaccard, segment stats.")
     ap.add_argument("--seg", nargs="+", required=True,
                     help="Two or more segmentation BED files")
     ap.add_argument("--bins", nargs="+", type=int, required=True,
