@@ -3,8 +3,7 @@
 
 For each method, reads the per-method kappa matrices produced by compare.py
 (with --all-pairs --labels ds:method) and extracts the upper-triangle pairs.
-Outputs one row per (method, ds_a, ds_b) with raw kappa, rematch kappa, and
-their NOQH variants.
+Outputs one row per (method, ds_a, ds_b) with raw kappa and NOQH variants.
 
 Usage:
     compare_inter_dataset.py --methods M1 M2 ... --indir DIR --outfile OUT.tsv
@@ -52,14 +51,10 @@ def main():
         method_dir = os.path.join(args.indir, method)
 
         mats = {
-            "kappa":                   _read_matrix(os.path.join(method_dir, "kappa_matrix.tsv")),
-            "kappa_rematch_ovlp":      _read_matrix(os.path.join(method_dir, "kappa_rematch_ovlp_matrix.tsv")),
-            "kappa_rematch_binem":     _read_matrix(os.path.join(method_dir, "kappa_rematch_binem_matrix.tsv")),
-            "kappa_noqh":              _read_matrix(os.path.join(method_dir, "kappa_noqh_matrix.tsv")),
-            "kappa_rematch_ovlp_noqh": _read_matrix(os.path.join(method_dir, "kappa_rematch_ovlp_noqh_matrix.tsv")),
-            "kappa_rematch_binem_noqh":_read_matrix(os.path.join(method_dir, "kappa_rematch_binem_noqh_matrix.tsv")),
-            "jaccard":                 _read_matrix(os.path.join(method_dir, "jaccard_similarity_matrix.tsv")),
-            "jaccard_noqh":            _read_matrix(os.path.join(method_dir, "jaccard_noqh_matrix.tsv")),
+            "kappa":        _read_matrix(os.path.join(method_dir, "kappa_matrix.tsv")),
+            "kappa_noqh":   _read_matrix(os.path.join(method_dir, "kappa_noqh_matrix.tsv")),
+            "jaccard":      _read_matrix(os.path.join(method_dir, "jaccard_similarity_matrix.tsv")),
+            "jaccard_noqh": _read_matrix(os.path.join(method_dir, "jaccard_noqh_matrix.tsv")),
         }
 
         base_mat = mats["kappa"]
@@ -86,11 +81,7 @@ def main():
 
     df = pd.DataFrame(rows)
     # Column order
-    metric_cols = [
-        "kappa", "kappa_rematch_ovlp", "kappa_rematch_binem",
-        "kappa_noqh", "kappa_rematch_ovlp_noqh", "kappa_rematch_binem_noqh",
-        "jaccard", "jaccard_noqh",
-    ]
+    metric_cols = ["kappa", "kappa_noqh", "jaccard", "jaccard_noqh"]
     cols = ["method", "ds_a", "ds_b"] + [c for c in metric_cols if c in df.columns]
     df = df[cols].sort_values(["method", "ds_a", "ds_b"])
     df.to_csv(args.outfile, sep="\t", index=False, float_format="%.4f")

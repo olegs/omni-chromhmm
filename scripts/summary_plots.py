@@ -344,122 +344,34 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False):
 # ---------------------------------------------------------------------------
 
 _REP_CONSISTENCY_PLOTS = [
-    # (col_from_ovlp_table,  col_from_rematched_table_or_None, title, ylabel, outfile_stem)
-    ("kappa_noqh_rep1_vs_rep2",    None,
-     "Rep. consistency: Kappa (NOQH, raw)",             "Kappa",
+    # (col_from_methods_table, title, ylabel, outfile_stem)
+    ("kappa_noqh_rep1_vs_rep2",
+     "Rep. consistency: Kappa (NOQH, raw)",   "Kappa",
      "rep_consistency_kappa_noqh_rep1_vs_rep2"),
-    ("kappa_rep1_vs_rep2",         None,
-     "Rep. consistency: Kappa (full, raw)",             "Kappa",
+    ("kappa_rep1_vs_rep2",
+     "Rep. consistency: Kappa (full, raw)",   "Kappa",
      "rep_consistency_kappa_rep1_vs_rep2"),
-    ("kappa_noqh_rep1_vs_rep2",    "kappa_rematch_ovlp_noqh_rep1_vs_rep2",
-     "Rep. consistency: Kappa (NOQH, ovlp-rematched)",  "Kappa",
-     "rep_consistency_kappa_rematch_ovlp_noqh_rep1_vs_rep2"),
-    (None,                         "kappa_rematch_ovlp_rep1_vs_rep2",
-     "Rep. consistency: Kappa (full, ovlp-rematched)",  "Kappa",
-     "rep_consistency_kappa_rematch_ovlp_rep1_vs_rep2"),
-    ("jaccard_noqh_rep1_vs_rep2",  None,
-     "Rep. consistency: Jaccard (NOQH, raw)",            "Jaccard",
+    ("jaccard_noqh_rep1_vs_rep2",
+     "Rep. consistency: Jaccard (NOQH, raw)", "Jaccard",
      "rep_consistency_jaccard_noqh_rep1_vs_rep2"),
-    ("jaccard_rep1_vs_rep2",       None,
-     "Rep. consistency: Jaccard (full, raw)",            "Jaccard",
+    ("jaccard_rep1_vs_rep2",
+     "Rep. consistency: Jaccard (full, raw)", "Jaccard",
      "rep_consistency_jaccard_rep1_vs_rep2"),
-    ("jaccard_noqh_rep1_vs_rep2",  "jaccard_rematch_ovlp_noqh_rep1_vs_rep2",
-     "Rep. consistency: Jaccard (NOQH, ovlp-rematched)", "Jaccard",
-     "rep_consistency_jaccard_rematch_ovlp_noqh_rep1_vs_rep2"),
-    (None,                         "jaccard_rematch_ovlp_rep1_vs_rep2",
-     "Rep. consistency: Jaccard (full, ovlp-rematched)", "Jaccard",
-     "rep_consistency_jaccard_rematch_ovlp_rep1_vs_rep2"),
-    ("ami_noqh_rep1_vs_rep2",      None,
-     "Rep. consistency: AMI (NOQH, raw)",                "AMI",
+    ("ami_noqh_rep1_vs_rep2",
+     "Rep. consistency: AMI (NOQH, raw)",     "AMI",
      "rep_consistency_ami_noqh_rep1_vs_rep2"),
-    ("ami_rep1_vs_rep2",           None,
-     "Rep. consistency: AMI (full, raw)",                "AMI",
+    ("ami_rep1_vs_rep2",
+     "Rep. consistency: AMI (full, raw)",     "AMI",
      "rep_consistency_ami_rep1_vs_rep2"),
-    ("ami_noqh_rep1_vs_rep2",      "ami_rematch_ovlp_noqh_rep1_vs_rep2",
-     "Rep. consistency: AMI (NOQH, ovlp-rematched)",    "AMI",
-     "rep_consistency_ami_rematch_ovlp_noqh_rep1_vs_rep2"),
-    (None,                         "ami_rematch_ovlp_rep1_vs_rep2",
-     "Rep. consistency: AMI (full, ovlp-rematched)",    "AMI",
-     "rep_consistency_ami_rematch_ovlp_rep1_vs_rep2"),
 ]
 
 
-def _plot_emission_rep_consistency(datasets, rematched_binem_dirs, outdir):
-    """Binarized emission cosine similarity between replicates — summary + per-dataset plots."""
-    os.makedirs(outdir, exist_ok=True)
-    data = _collect_table_col(datasets, rematched_binem_dirs, "emission_rep1_vs_rep2")
-
-    # 1. Average across datasets
-    _plot_summary(
-        data,
-        "Rep. consistency: Binarized emission cosine similarity",
-        "Cosine similarity (rep1 vs rep2)",
-        os.path.join(outdir, "rep_consistency_emission_rep1_vs_rep2.png"),
-        partial_note=True,
-    )
-
-    # 2. Per-dataset grouped bars — makes the monocytes outlier visible
-    methods = [m for m in METHODS_POOLED
-               if m in data.index and not data.loc[m].isna().all()]
-    if not methods:
-        return
-
-    n_ds = len(datasets)
-    width = 0.8 / n_ds
-    offsets = np.linspace(-(n_ds - 1) / 2, (n_ds - 1) / 2, n_ds) * width
-    ds_colors = ["#4878CF", "#E8833A", "#2CA02C", "#9467BD"][:n_ds]
-    ds_labels = [ds.replace("_", " ") for ds in datasets]
-
-    x = np.arange(len(methods))
-    fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.85 + 1.5), 4.8))
-
-    for ds, offset, color, label in zip(datasets, offsets, ds_colors, ds_labels):
-        vals = []
-        for m in methods:
-            try:
-                v = float(data.loc[m, ds]) if (m in data.index and ds in data.columns) else np.nan
-            except (TypeError, ValueError):
-                v = np.nan
-            vals.append(v)
-        bar_heights = [v if not np.isnan(v) else 0 for v in vals]
-        ax.bar(x + offset, bar_heights, width=width * 0.9,
-               color=color, label=label, edgecolor="white", linewidth=0.4)
-        for xi, v in zip(x, vals):
-            if not np.isnan(v):
-                ax.text(xi + offset, v + 0.004, f"{v:.3f}",
-                        ha="center", va="bottom", fontsize=5, rotation=90)
-
-    ax.set_xticks(x)
-    ax.set_xticklabels([DISPLAY_NAMES.get(m, m) for m in methods],
-                       rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Cosine similarity (rep1 vs rep2)", fontsize=9)
-    ax.set_title(
-        "Binarized emission cosine similarity between replicates\n(per dataset)",
-        fontsize=10, fontweight="bold",
-    )
-    ax.legend(fontsize=8, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
-    ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.set_ylim(0, 1.05)
-    ax.set_xlabel("each bar = one dataset", fontsize=7, color="grey")
-    fig.tight_layout()
-    outpath = os.path.join(outdir, "rep_consistency_emission_per_dataset_rep1_vs_rep2.png")
-    fig.savefig(outpath, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outpath}")
-
-
-def _plot_rep_consistency(datasets, methods_dirs, rematched_dirs, outdir):
+def _plot_rep_consistency(datasets, methods_dirs, outdir):
     """Generate replicate consistency bar plots (mean ± std across datasets with replicates)."""
     os.makedirs(outdir, exist_ok=True)
-    for base_col, rematch_col, title, ylabel, stem in _REP_CONSISTENCY_PLOTS:
+    for col, title, ylabel, stem in _REP_CONSISTENCY_PLOTS:
         outpath = os.path.join(outdir, f"{stem}.png")
-        if rematch_col is not None and rematched_dirs:
-            data = _collect_table_col(datasets, rematched_dirs, rematch_col)
-        elif base_col is not None:
-            data = _collect_table_col(datasets, methods_dirs, base_col)
-        else:
-            # Should not happen given the table above, but guard just in case
-            data = pd.DataFrame()
+        data = _collect_table_col(datasets, methods_dirs, col)
         _plot_summary(data, title, ylabel, outpath, partial_note=True)
 
 
@@ -1047,10 +959,6 @@ def main():
     ap.add_argument("--method-ds-composition-outdir", default=None,
                     dest="method_ds_composition_outdir",
                     help="Output directory for per-dataset state composition plots, one PNG per method")
-    ap.add_argument("--rematched-ovlp-dirs", nargs="*", dest="rematched_ovlp_dirs", default=[],
-                    help="{ds}/methods/rematched_ovlp directories (for rep consistency plots)")
-    ap.add_argument("--rematched-binem-dirs", nargs="*", dest="rematched_binem_dirs", default=[],
-                    help="{ds}/methods/rematched_binem directories (for emission cosine sim plots)")
     ap.add_argument("--rep-consistency-outdir", default=None, dest="rep_consistency_outdir",
                     help="Output directory for replicate consistency bar plot PNGs")
     ap.add_argument("--method-sim-dist-indir", default=None, dest="method_sim_dist_indir",
@@ -1221,15 +1129,9 @@ def main():
 
     # --- replicate consistency plots ----------------------------------------
     if args.rep_consistency_outdir:
-        if not (len(args.datasets) == len(args.methods_dirs) == len(args.rematched_ovlp_dirs)):
-            ap.error("--datasets, --methods-dirs and --rematched-ovlp-dirs must have equal lengths")
-        _plot_rep_consistency(args.datasets, args.methods_dirs, args.rematched_ovlp_dirs,
-                              args.rep_consistency_outdir)
-        if args.rematched_binem_dirs:
-            if len(args.rematched_binem_dirs) != len(args.datasets):
-                ap.error("--rematched-binem-dirs must have the same length as --datasets")
-            _plot_emission_rep_consistency(args.datasets, args.rematched_binem_dirs,
-                                          args.rep_consistency_outdir)
+        if len(args.datasets) != len(args.methods_dirs):
+            ap.error("--datasets and --methods-dirs must have equal lengths")
+        _plot_rep_consistency(args.datasets, args.methods_dirs, args.rep_consistency_outdir)
 
     # --- method state composition -------------------------------------------
     if args.method_composition_outfile:

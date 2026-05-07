@@ -4,18 +4,8 @@
 #   - Segment length statistics
 #   - Unified method comparison table
 #
-# Three parallel comparison runs, one per label-matching strategy (variant):
-#   comparison/comb/   — combined (overlap + bw-emission, default)
-#   comparison/bwem/   — bigwig-emission-only
-#   comparison/ovlp/   — overlap-only
-#
-# compare_methods aggregates each variant into methods/{variant}/comparison_table.tsv
-# (no rematch columns; base replicate consistency only).
-#
-# Three replicate re-match runs (always from comb matrices):
-#   methods/rematched_ovlp/  — re-align rep labels by bp overlap
-#   methods/rematched_binem/ — re-align rep labels by cosine sim of binarized emissions
-#   methods/rematched_bwem/  — re-align rep labels by cosine sim of bigwig emissions
+# Default: comparison/ovlp/ only — overlap-based matching.
+# compare_methods aggregates results into methods/ovlp/comparison_table.tsv.
 
 
 _VARIANT_SUFFIX = {
@@ -58,7 +48,7 @@ def _ds_compare_inputs(w):
 
     When DO_ANALYZE is enabled the analysis sentinels are included so that
     compute_metrics runs after analyze_segmentations, ensuring .bin_emissions.npz
-    files are present for binem re-matching.
+    files are present for emission similarity computation.
     """
     segs = list(_ds_compare_segs(w.ds, w.variant))
     if DO_ANALYZE:
@@ -77,30 +67,12 @@ rule compute_metrics:
         jaccard              = "{ds}/comparison/{variant}/jaccard_similarity_matrix.tsv",
         overlap              = "{ds}/comparison/{variant}/overlap_matrix.tsv",
         stats                = "{ds}/comparison/{variant}/segment_stats.tsv",
-        kappa_rematch_ovlp   = "{ds}/comparison/{variant}/kappa_rematch_ovlp_matrix.tsv",
-        jaccard_rematch_ovlp = "{ds}/comparison/{variant}/jaccard_rematch_ovlp_matrix.tsv",
-        overlap_rematch_ovlp = "{ds}/comparison/{variant}/overlap_rematch_ovlp_matrix.tsv",
-        kappa_rematch_binem     = "{ds}/comparison/{variant}/kappa_rematch_binem_matrix.tsv",
-        jaccard_rematch_binem   = "{ds}/comparison/{variant}/jaccard_rematch_binem_matrix.tsv",
-        overlap_rematch_binem   = "{ds}/comparison/{variant}/overlap_rematch_binem_matrix.tsv",
-        emission_sim         = "{ds}/comparison/{variant}/emission_similarity_matrix.tsv",
-        kappa_rematch_bwem     = "{ds}/comparison/{variant}/kappa_rematch_bwem_matrix.tsv",
-        jaccard_rematch_bwem   = "{ds}/comparison/{variant}/jaccard_rematch_bwem_matrix.tsv",
-        overlap_rematch_bwem   = "{ds}/comparison/{variant}/overlap_rematch_bwem_matrix.tsv",
-        bw_emission_sim      = "{ds}/comparison/{variant}/bw_emission_similarity_matrix.tsv",
-        kappa_noqh           = "{ds}/comparison/{variant}/kappa_noqh_matrix.tsv",
-        ami_noqh             = "{ds}/comparison/{variant}/ami_noqh_matrix.tsv",
-        overlap_noqh         = "{ds}/comparison/{variant}/overlap_noqh_matrix.tsv",
-        jaccard_noqh         = "{ds}/comparison/{variant}/jaccard_noqh_matrix.tsv",
-        kappa_rematch_ovlp_noqh   = "{ds}/comparison/{variant}/kappa_rematch_ovlp_noqh_matrix.tsv",
-        jaccard_rematch_ovlp_noqh = "{ds}/comparison/{variant}/jaccard_rematch_ovlp_noqh_matrix.tsv",
-        overlap_rematch_ovlp_noqh = "{ds}/comparison/{variant}/overlap_rematch_ovlp_noqh_matrix.tsv",
-        kappa_rematch_binem_noqh   = "{ds}/comparison/{variant}/kappa_rematch_binem_noqh_matrix.tsv",
-        jaccard_rematch_binem_noqh = "{ds}/comparison/{variant}/jaccard_rematch_binem_noqh_matrix.tsv",
-        overlap_rematch_binem_noqh = "{ds}/comparison/{variant}/overlap_rematch_binem_noqh_matrix.tsv",
-        kappa_rematch_bwem_noqh   = "{ds}/comparison/{variant}/kappa_rematch_bwem_noqh_matrix.tsv",
-        jaccard_rematch_bwem_noqh = "{ds}/comparison/{variant}/jaccard_rematch_bwem_noqh_matrix.tsv",
-        overlap_rematch_bwem_noqh = "{ds}/comparison/{variant}/overlap_rematch_bwem_noqh_matrix.tsv",
+        emission_sim    = "{ds}/comparison/{variant}/emission_similarity_matrix.tsv",
+        bw_emission_sim = "{ds}/comparison/{variant}/bw_emission_similarity_matrix.tsv",
+        kappa_noqh      = "{ds}/comparison/{variant}/kappa_noqh_matrix.tsv",
+        ami_noqh        = "{ds}/comparison/{variant}/ami_noqh_matrix.tsv",
+        overlap_noqh    = "{ds}/comparison/{variant}/overlap_noqh_matrix.tsv",
+        jaccard_noqh    = "{ds}/comparison/{variant}/jaccard_noqh_matrix.tsv",
     wildcard_constraints:
         ds      = r"[A-Za-z0-9_]+",
         variant = r"comb|bwem|ovlp",
@@ -151,67 +123,3 @@ rule compare_methods:
         """
 
 
-def _rematched_inputs(w):
-    """Declared compute_metrics outputs relevant to this rematch method."""
-    base = [
-        f"{w.ds}/comparison/comb/kappa_matrix.tsv",
-        f"{w.ds}/comparison/comb/jaccard_similarity_matrix.tsv",
-        f"{w.ds}/comparison/comb/overlap_matrix.tsv",
-        f"{w.ds}/analysis/ref/report.tsv",
-    ]
-    extras = {
-        "ovlp": [
-            f"{w.ds}/comparison/comb/kappa_rematch_ovlp_matrix.tsv",
-            f"{w.ds}/comparison/comb/jaccard_rematch_ovlp_matrix.tsv",
-            f"{w.ds}/comparison/comb/overlap_rematch_ovlp_matrix.tsv",
-            f"{w.ds}/comparison/comb/kappa_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/ami_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/overlap_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/kappa_rematch_ovlp_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/overlap_rematch_ovlp_noqh_matrix.tsv",
-        ],
-        "binem": [
-            f"{w.ds}/comparison/comb/kappa_rematch_binem_matrix.tsv",
-            f"{w.ds}/comparison/comb/jaccard_rematch_binem_matrix.tsv",
-            f"{w.ds}/comparison/comb/overlap_rematch_binem_matrix.tsv",
-            f"{w.ds}/comparison/comb/emission_similarity_matrix.tsv",
-            f"{w.ds}/comparison/comb/kappa_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/ami_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/overlap_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/kappa_rematch_binem_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/overlap_rematch_binem_noqh_matrix.tsv",
-        ],
-        "bwem": [
-            f"{w.ds}/comparison/comb/kappa_rematch_bwem_matrix.tsv",
-            f"{w.ds}/comparison/comb/jaccard_rematch_bwem_matrix.tsv",
-            f"{w.ds}/comparison/comb/overlap_rematch_bwem_matrix.tsv",
-            f"{w.ds}/comparison/comb/bw_emission_similarity_matrix.tsv",
-            f"{w.ds}/comparison/comb/kappa_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/ami_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/overlap_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/kappa_rematch_bwem_noqh_matrix.tsv",
-            f"{w.ds}/comparison/comb/overlap_rematch_bwem_noqh_matrix.tsv",
-        ],
-    }
-    return base + extras[w.rematch]
-
-
-rule compare_rematched:
-    """Replicate reproducibility after {rematch} re-matching (using comb comparison)."""
-    input: _rematched_inputs
-    output: "{ds}/methods/rematched_{rematch}/comparison_table.tsv"
-    wildcard_constraints:
-        ds      = r"[A-Za-z0-9_]+",
-        rematch = r"ovlp|binem|bwem",
-    conda: "../envs/python.yaml"
-    params:
-        scripts_dir = SCRIPTS_DIR,
-    shell:
-        r"""
-        python {params.scripts_dir}/compare_methods.py \
-            --analysis-dir {wildcards.ds}/analysis/comb \
-            --ref-dir {wildcards.ds}/analysis \
-            --comparison-dir {wildcards.ds}/comparison/comb \
-            --rematch {wildcards.rematch} \
-            --outdir {wildcards.ds}/methods/rematched_{wildcards.rematch}
-        """

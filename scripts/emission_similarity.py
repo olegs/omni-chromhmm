@@ -40,12 +40,14 @@ import sys
 import numpy as np
 import pandas as pd
 import matplotlib
+import seaborn as sns
 matplotlib.use("Agg")
 matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
 from utils import METHOD_ORDER, DISPLAY_NAMES
+from match import emission_cosine_mapping
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +332,99 @@ def plot_gini_summary(df, datasets, outpath):
 
 
 # ---------------------------------------------------------------------------
+# Inter-dataset binarized emission cosine similarity
+# ---------------------------------------------------------------------------
+
+def collect_inter_dataset_binem_records(datasets, analysis_dirs, methods,
+                                        group_a=None, group_b=None):
+    """For each method and dataset pair, compute mean cosine similarity between
+    optimally-matched state binarized emission vectors (Hungarian matching,
+    consistent with compare.py's emission_similarity_matrix.tsv).
+
+    group_a / group_b: when both are given, only pairs with one dataset from
+    each group are included (used for ChIP↔Mint-ChIP cross-assay filtering).
+
+    Returns DataFrame with columns: method, ds_a, ds_b, mean_sim.
+    """
+    # Load (states_list, matrix) per (dataset, method) — keep as arrays for Hungarian
+    emissions = {}
+    for ds, adir in zip(datasets, analysis_dirs):
+        for method in methods:
+            base = _analysis_base(adir, method)
+            path = os.path.join(base, EMISSION_SUBDIRS["bin"], "state_emissions.tsv")
+            result = _load_emissions_tsv(path)
+            if result is not None:
+                states, mat = result
+                emissions[(ds, method)] = (states, mat)
+
+    records = []
+    n = len(datasets)
+    for i in range(n):
+        for j in range(i + 1, n):
+            ds_a, ds_b = datasets[i], datasets[j]
+            if group_a is not None and group_b is not None:
+                if not ((ds_a in group_a and ds_b in group_b) or
+                        (ds_a in group_b and ds_b in group_a)):
+                    continue
+            for method in methods:
+                em_a = emissions.get((ds_a, method))
+                em_b = emissions.get((ds_b, method))
+                if em_a is None or em_b is None:
+                    continue
+                states_a, mat_a = em_a
+                states_b, mat_b = em_b
+                # Hungarian optimal matching — same as compare.py emission_similarity_matrix
+                avg_sim, _ = emission_cosine_mapping(states_a, mat_a, states_b, mat_b)
+                if not np.isnan(avg_sim):
+                    records.append({
+                        "method":   method,
+                        "ds_a":     ds_a,
+                        "ds_b":     ds_b,
+                        "mean_sim": float(avg_sim),
+                    })
+    return pd.DataFrame(records)
+
+
+def plot_inter_dataset_binem(df, methods, outfile, cross_assay=False):
+    """Violin plot: per-method distribution of inter-dataset binarized emission cosine similarity."""
+    if df.empty:
+        print(f"  skipping {outfile}: no data", file=sys.stderr)
+        return
+
+    plot_df = df.copy()
+    plot_df["Method"] = plot_df["method"].map(lambda m: DISPLAY_NAMES.get(m, m))
+    method_labels = [DISPLAY_NAMES.get(m, m) for m in methods
+                     if DISPLAY_NAMES.get(m, m) in plot_df["Method"].values]
+
+    n_methods = len(method_labels)
+    n_pairs = int(plot_df.groupby("method").size().max()) if not plot_df.empty else 0
+
+    fig, ax = plt.subplots(figsize=(max(8, n_methods * 1.4 + 2), 5))
+    sns.violinplot(
+        data=plot_df, x="Method", y="mean_sim",
+        order=method_labels,
+        color="#5B8DB8",
+        inner="box", cut=0, ax=ax,
+    )
+    ax.set_xlabel("")
+    ax.set_ylabel("Mean cosine similarity (matched states)", fontsize=9)
+    ax.set_ylim(0, 1)
+    ax.grid(axis="y", alpha=0.3, linewidth=0.5)
+    pair_note = " — ChIP↔Mint-ChIP pairs" if cross_assay else ""
+    ax.set_title(
+        f"Inter-dataset binarized emission similarity{pair_note}\n"
+        f"({n_methods} methods, {n_pairs} dataset pairs per method)",
+        fontsize=10, fontweight="bold",
+    )
+    ax.tick_params(axis="x", rotation=30, labelsize=8)
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(os.path.abspath(outfile)), exist_ok=True)
+    fig.savefig(outfile, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved {outfile}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -341,6 +436,16 @@ def main():
                     dest="analysis_dirs")
     ap.add_argument("--methods",       nargs="*", default=None)
     ap.add_argument("--outdir",        required=True)
+    ap.add_argument("--inter-dataset-binem-outfile", default=None,
+                    dest="inter_dataset_binem_outfile",
+                    help="Output PNG for inter-dataset binarized emission cosine similarity")
+    ap.add_argument("--cross-assay-binem-outfile", default=None,
+                    dest="cross_assay_binem_outfile",
+                    help="Output PNG for ChIP↔Mint-ChIP binarized emission cosine similarity")
+    ap.add_argument("--group-a", nargs="*", default=None, dest="group_a",
+                    help="Dataset names for group A (ChIP) for cross-assay filtering")
+    ap.add_argument("--group-b", nargs="*", default=None, dest="group_b",
+                    help="Dataset names for group B (Mint-ChIP) for cross-assay filtering")
     args = ap.parse_args()
 
     if len(args.datasets) != len(args.analysis_dirs):
@@ -366,6 +471,22 @@ def main():
         os.path.join(args.outdir, "emission_cosine_sim_summary.png"))
     plot_gini_summary(df, args.datasets,
         os.path.join(args.outdir, "emission_gini_summary.png"))
+
+    if args.inter_dataset_binem_outfile or args.cross_assay_binem_outfile:
+        print("Collecting inter-dataset binarized emission data ...")
+        df_inter = collect_inter_dataset_binem_records(
+            args.datasets, args.analysis_dirs, methods)
+        if args.inter_dataset_binem_outfile:
+            plot_inter_dataset_binem(df_inter, methods,
+                                     args.inter_dataset_binem_outfile,
+                                     cross_assay=False)
+        if args.cross_assay_binem_outfile:
+            df_cross = collect_inter_dataset_binem_records(
+                args.datasets, args.analysis_dirs, methods,
+                group_a=args.group_a, group_b=args.group_b)
+            plot_inter_dataset_binem(df_cross, methods,
+                                     args.cross_assay_binem_outfile,
+                                     cross_assay=True)
 
 
 if __name__ == "__main__":

@@ -8,15 +8,10 @@ from pathlib import Path
 # Labels are prefixed with the dataset name (e.g. "imr90:chromhmm_omni") to
 # avoid collisions when the same method key appears in multiple datasets.
 #
-# State re-matching (ovlp and binem) aligns any residual label differences that
-# survive the per-dataset reference matching step.
-#
 # Outputs (under inter_dataset/):
-#   {method}/kappa_matrix.tsv              — raw kappa, all dataset pairs
-#   {method}/kappa_rematch_ovlp_matrix.tsv — after overlap re-matching
-#   {method}/kappa_noqh_matrix.tsv         — NOQH variants
-#   {method}/kappa_rematch_ovlp_noqh_matrix.tsv
-#   comparison_table.tsv                   — one row per method × dataset-pair
+#   {method}/kappa_matrix.tsv       — raw kappa, all dataset pairs
+#   {method}/kappa_noqh_matrix.tsv  — NOQH variant
+#   comparison_table.tsv            — one row per method × dataset-pair
 
 INTER_DS_METHODS = [
     "chromhmm_default",
@@ -51,40 +46,20 @@ def _inter_ds_inputs(method):
 
 
 rule inter_dataset_compare_method:
-    """Compare one method across all datasets with ovlp + binem re-matching."""
+    """Compare one method across all datasets (no re-matching)."""
     input:
         lambda w: _inter_ds_inputs(w.method),
     output:
-        entropy                    = "inter_dataset/{method}/entropy_summary.tsv",
-        kappa                      = "inter_dataset/{method}/kappa_matrix.tsv",
-        ami                        = "inter_dataset/{method}/ami_matrix.tsv",
-        jaccard                    = "inter_dataset/{method}/jaccard_similarity_matrix.tsv",
-        overlap                    = "inter_dataset/{method}/overlap_matrix.tsv",
-        stats                      = "inter_dataset/{method}/segment_stats.tsv",
-        kappa_rematch_ovlp         = "inter_dataset/{method}/kappa_rematch_ovlp_matrix.tsv",
-        jaccard_rematch_ovlp       = "inter_dataset/{method}/jaccard_rematch_ovlp_matrix.tsv",
-        overlap_rematch_ovlp       = "inter_dataset/{method}/overlap_rematch_ovlp_matrix.tsv",
-        kappa_rematch_binem        = "inter_dataset/{method}/kappa_rematch_binem_matrix.tsv",
-        jaccard_rematch_binem      = "inter_dataset/{method}/jaccard_rematch_binem_matrix.tsv",
-        overlap_rematch_binem      = "inter_dataset/{method}/overlap_rematch_binem_matrix.tsv",
-        emission_sim               = "inter_dataset/{method}/emission_similarity_matrix.tsv",
-        kappa_rematch_bwem         = "inter_dataset/{method}/kappa_rematch_bwem_matrix.tsv",
-        jaccard_rematch_bwem       = "inter_dataset/{method}/jaccard_rematch_bwem_matrix.tsv",
-        overlap_rematch_bwem       = "inter_dataset/{method}/overlap_rematch_bwem_matrix.tsv",
-        bw_emission_sim            = "inter_dataset/{method}/bw_emission_similarity_matrix.tsv",
-        kappa_noqh                 = "inter_dataset/{method}/kappa_noqh_matrix.tsv",
-        ami_noqh                   = "inter_dataset/{method}/ami_noqh_matrix.tsv",
-        jaccard_noqh               = "inter_dataset/{method}/jaccard_noqh_matrix.tsv",
-        overlap_noqh               = "inter_dataset/{method}/overlap_noqh_matrix.tsv",
-        kappa_rematch_ovlp_noqh    = "inter_dataset/{method}/kappa_rematch_ovlp_noqh_matrix.tsv",
-        jaccard_rematch_ovlp_noqh  = "inter_dataset/{method}/jaccard_rematch_ovlp_noqh_matrix.tsv",
-        overlap_rematch_ovlp_noqh  = "inter_dataset/{method}/overlap_rematch_ovlp_noqh_matrix.tsv",
-        kappa_rematch_binem_noqh   = "inter_dataset/{method}/kappa_rematch_binem_noqh_matrix.tsv",
-        jaccard_rematch_binem_noqh = "inter_dataset/{method}/jaccard_rematch_binem_noqh_matrix.tsv",
-        overlap_rematch_binem_noqh = "inter_dataset/{method}/overlap_rematch_binem_noqh_matrix.tsv",
-        kappa_rematch_bwem_noqh    = "inter_dataset/{method}/kappa_rematch_bwem_noqh_matrix.tsv",
-        jaccard_rematch_bwem_noqh  = "inter_dataset/{method}/jaccard_rematch_bwem_noqh_matrix.tsv",
-        overlap_rematch_bwem_noqh  = "inter_dataset/{method}/overlap_rematch_bwem_noqh_matrix.tsv",
+        entropy  = "inter_dataset/{method}/entropy_summary.tsv",
+        kappa    = "inter_dataset/{method}/kappa_matrix.tsv",
+        ami      = "inter_dataset/{method}/ami_matrix.tsv",
+        jaccard  = "inter_dataset/{method}/jaccard_similarity_matrix.tsv",
+        overlap  = "inter_dataset/{method}/overlap_matrix.tsv",
+        stats    = "inter_dataset/{method}/segment_stats.tsv",
+        kappa_noqh   = "inter_dataset/{method}/kappa_noqh_matrix.tsv",
+        ami_noqh     = "inter_dataset/{method}/ami_noqh_matrix.tsv",
+        jaccard_noqh = "inter_dataset/{method}/jaccard_noqh_matrix.tsv",
+        overlap_noqh = "inter_dataset/{method}/overlap_noqh_matrix.tsv",
     wildcard_constraints:
         method = "|".join(INTER_DS_METHODS),
     threads: workflow.cores
@@ -111,7 +86,7 @@ rule inter_dataset_compare_method:
 rule inter_dataset_compare_summary:
     """Aggregate per-method kappa matrices into one cross-dataset comparison table."""
     input:
-        expand("inter_dataset/{method}/kappa_rematch_ovlp_noqh_matrix.tsv",
+        expand("inter_dataset/{method}/kappa_noqh_matrix.tsv",
                method=INTER_DS_METHODS),
     output:
         "inter_dataset/comparison_table.tsv",
@@ -397,27 +372,17 @@ _REP_DATASETS = [ds for ds in DATASETS if DATASETS[ds].get("replicates")]
 _REP_CONSISTENCY_PLOTS = [
     "inter_dataset/summary_plots/rep_consistency_kappa_noqh_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_kappa_rep1_vs_rep2.png",
-    "inter_dataset/summary_plots/rep_consistency_kappa_rematch_ovlp_noqh_rep1_vs_rep2.png",
-    "inter_dataset/summary_plots/rep_consistency_kappa_rematch_ovlp_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_jaccard_noqh_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_jaccard_rep1_vs_rep2.png",
-    "inter_dataset/summary_plots/rep_consistency_jaccard_rematch_ovlp_noqh_rep1_vs_rep2.png",
-    "inter_dataset/summary_plots/rep_consistency_jaccard_rematch_ovlp_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_ami_noqh_rep1_vs_rep2.png",
     "inter_dataset/summary_plots/rep_consistency_ami_rep1_vs_rep2.png",
-    "inter_dataset/summary_plots/rep_consistency_ami_rematch_ovlp_noqh_rep1_vs_rep2.png",
-    "inter_dataset/summary_plots/rep_consistency_ami_rematch_ovlp_rep1_vs_rep2.png",
-    "inter_dataset/summary_plots/rep_consistency_emission_rep1_vs_rep2.png",
-    "inter_dataset/summary_plots/rep_consistency_emission_per_dataset_rep1_vs_rep2.png",
 ]
 
 
 rule inter_dataset_rep_consistency_plots:
-    """Replicate consistency bar plots: Kappa/Jaccard/AMI (raw + ovlp-rematched) across datasets."""
+    """Replicate consistency bar plots: Kappa/Jaccard/AMI (raw) across datasets."""
     input:
-        expand("{ds}/methods/ovlp/comparison_table.tsv",           ds=_REP_DATASETS),
-        expand("{ds}/methods/rematched_ovlp/comparison_table.tsv",  ds=_REP_DATASETS),
-        expand("{ds}/methods/rematched_binem/comparison_table.tsv", ds=_REP_DATASETS),
+        expand("{ds}/methods/ovlp/comparison_table.tsv", ds=_REP_DATASETS),
     output:
         _REP_CONSISTENCY_PLOTS,
     conda: "../envs/python.yaml"
@@ -425,17 +390,13 @@ rule inter_dataset_rep_consistency_plots:
         scripts_dir     = SCRIPTS_DIR,
         repo_plots_dir  = os.path.join(workflow.basedir, "plots", "summary"),
         datasets        = " ".join(_REP_DATASETS),
-        methods_dirs    = " ".join(f"{ds}/methods/ovlp"            for ds in _REP_DATASETS),
-        rematched_dirs  = " ".join(f"{ds}/methods/rematched_ovlp"  for ds in _REP_DATASETS),
-        binem_dirs      = " ".join(f"{ds}/methods/rematched_binem" for ds in _REP_DATASETS),
+        methods_dirs    = " ".join(f"{ds}/methods/ovlp" for ds in _REP_DATASETS),
         outdir          = "inter_dataset/summary_plots",
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
             --datasets              {params.datasets} \
             --methods-dirs          {params.methods_dirs} \
-            --rematched-ovlp-dirs   {params.rematched_dirs} \
-            --rematched-binem-dirs  {params.binem_dirs} \
             --rep-consistency-outdir {params.outdir}
         mkdir -p {params.repo_plots_dir}
         cp {params.outdir}/rep_consistency_*.png {params.repo_plots_dir}/
@@ -550,11 +511,48 @@ rule inter_dataset_emission_similarity:
         """
 
 
+_INTER_DS_BINEM_PLOT      = "inter_dataset/summary_plots/inter_dataset_binem_similarity.png"
+_CROSS_ASSAY_BINEM_PLOT   = "inter_dataset/summary_plots/cross_assay_binem_similarity.png"
+
+
+rule inter_dataset_binem_similarity:
+    """Inter-dataset and cross-assay binarized emission cosine similarity per method."""
+    input:
+        expand("{ds}/methods/ovlp/comparison_table.tsv", ds=list(DATASETS)),
+    output:
+        inter_ds   = _INTER_DS_BINEM_PLOT,
+        cross_assay = _CROSS_ASSAY_BINEM_PLOT,
+    conda: "../envs/python.yaml"
+    params:
+        scripts_dir    = SCRIPTS_DIR,
+        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
+        datasets       = " ".join(list(DATASETS)),
+        analysis_dirs  = " ".join(f"{ds}/analysis/ovlp" for ds in DATASETS),
+        methods        = " ".join(INTER_DS_METHODS),
+        outdir         = "inter_dataset/summary_plots",
+        chip_datasets  = " ".join(_CHIP_DATASETS),
+        mint_datasets  = " ".join(_MINT_DATASETS),
+    shell:
+        r"""
+        python {params.scripts_dir}/emission_similarity.py \
+            --datasets                      {params.datasets} \
+            --analysis-dirs                 {params.analysis_dirs} \
+            --methods                       {params.methods} \
+            --outdir                        {params.outdir} \
+            --inter-dataset-binem-outfile   {output.inter_ds} \
+            --cross-assay-binem-outfile     {output.cross_assay} \
+            --group-a                       {params.chip_datasets} \
+            --group-b                       {params.mint_datasets}
+        mkdir -p {params.repo_plots_dir}
+        cp {output.inter_ds} {output.cross_assay} {params.repo_plots_dir}/
+        """
+
+
 rule inter_dataset_all:
     """Run all inter-dataset method comparisons + summary table + summary plots."""
     input:
         "inter_dataset/comparison_table.tsv",
-        expand("inter_dataset/{method}/kappa_rematch_ovlp_noqh_matrix.tsv",
+        expand("inter_dataset/{method}/kappa_noqh_matrix.tsv",
                method=INTER_DS_METHODS),
         _SUMMARY_PLOTS,
         _STATE_LENGTH_PLOT,
@@ -570,3 +568,7 @@ rule inter_dataset_all:
         "inter_dataset/summary_plots/method_state_composition.png",
         _METHOD_SIM_DIST_PLOT,
         _METHOD_SIM_DIST_NOQH_PLOT,
+        _METHOD_SIM_DIST_CHIP_MINT_PLOT,
+        _METHOD_SIM_DIST_CHIP_MINT_NOQH_PLOT,
+        _INTER_DS_BINEM_PLOT,
+        _CROSS_ASSAY_BINEM_PLOT,

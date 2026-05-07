@@ -147,16 +147,16 @@ def all_results(ds):
     t = [f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bed"]
 
     for folder in _folders(ds):
-        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_comb_matched.bed")
+        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
         t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
         t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
         for mark in MARKS:
             t.append(f"{folder}/chromhmm_default_result/{mark}.bed")
         for caller in ["omni", "homer", "macs2"]:
-            t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed")
+            t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
             t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
             t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
-            t.append(f"{folder}/{caller}/kmeans_states_comb_matched.bed")
+            t.append(f"{folder}/{caller}/kmeans_states_ovlp_matched.bed")
             t.append(f"{folder}/{caller}/kmeans_states_bwem_matched.bed")
             t.append(f"{folder}/{caller}/kmeans_states_ovlp_matched.bed")
 
@@ -165,7 +165,8 @@ def all_results(ds):
 
 rule all:
     input:
-        [f"{ds}/.done" for ds in DATASETS],
+        lambda wildcards: [f"{ds}/.done" for ds in DATASETS]
+                        + list(rules.inter_dataset_all.input),
 
 
 def _dataset_analysis_outputs(ds):
@@ -177,19 +178,15 @@ def _dataset_analysis_outputs(ds):
     if DO_ANALYZE:
         t.append(f"{ds}/peaks/peak_stats.tsv")
     if DO_COMPARE:
-        for variant in ["comb", "bwem", "ovlp"]:
-            t += [
-                f"{ds}/comparison/{variant}/entropy_summary.tsv",
-                f"{ds}/comparison/{variant}/kappa_matrix.tsv",
-                f"{ds}/comparison/{variant}/ami_matrix.tsv",
-                f"{ds}/comparison/{variant}/jaccard_similarity_matrix.tsv",
-                f"{ds}/comparison/{variant}/overlap_matrix.tsv",
-                f"{ds}/comparison/{variant}/segment_stats.tsv",
-                f"{ds}/methods/{variant}/comparison_table.tsv",
-            ]
-        if DATASETS[ds].get("replicates"):
-            for rematch in ["ovlp", "binem", "bwem"]:
-                t.append(f"{ds}/methods/rematched_{rematch}/comparison_table.tsv")
+        t += [
+            f"{ds}/comparison/ovlp/entropy_summary.tsv",
+            f"{ds}/comparison/ovlp/kappa_matrix.tsv",
+            f"{ds}/comparison/ovlp/ami_matrix.tsv",
+            f"{ds}/comparison/ovlp/jaccard_similarity_matrix.tsv",
+            f"{ds}/comparison/ovlp/overlap_matrix.tsv",
+            f"{ds}/comparison/ovlp/segment_stats.tsv",
+            f"{ds}/methods/ovlp/comparison_table.tsv",
+        ]
     return t
 
 

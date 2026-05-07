@@ -17,6 +17,8 @@ Reads from:
   - {comparison_dir}/ami_matrix.tsv
   - {comparison_dir}/jaccard_similarity_matrix.tsv
   - {comparison_dir}/segment_stats.tsv
+  - {comparison_dir}/emission_similarity_matrix.tsv
+  - {comparison_dir}/bw_emission_similarity_matrix.tsv
 
 Produces in {outdir}/:
   - comparison_table.tsv
@@ -134,15 +136,12 @@ def load_jaccard(analysis_dir, method):
 # Build comparison table
 # ---------------------------------------------------------------------------
 
-def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
+def build_table(analysis_dir, comparison_dir, ref_dir=None):
     """Build the unified comparison DataFrame (one row per pooled method).
 
     analysis_dir : variant-specific subdir (e.g. ds/analysis/comb/)
     ref_dir      : top-level analysis dir containing ref/ (e.g. ds/analysis/).
                    Defaults to analysis_dir when not provided.
-    rematch      : one of 'ovlp', 'binem', 'bwem' — when given, only replicate
-                   re-match columns for that method are populated (used for
-                   rematched_{rematch}/ output dirs).
     """
     ref_dir = ref_dir or analysis_dir
 
@@ -172,48 +171,23 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
 
     # Load cross-segmentation metrics
     entropy_data = load_entropy(comparison_dir)
-    kappa_mat              = _load_matrix(comparison_dir, "kappa_matrix.tsv")
-    ami_mat                = _load_matrix(comparison_dir, "ami_matrix.tsv")
-    jaccard_mat            = _load_matrix(comparison_dir, "jaccard_similarity_matrix.tsv")
-    overlap_mat            = _load_matrix(comparison_dir, "overlap_matrix.tsv")
-    kappa_rematch_ovlp_mat   = _load_matrix(comparison_dir, "kappa_rematch_ovlp_matrix.tsv")
-    jaccard_rematch_ovlp_mat = _load_matrix(comparison_dir, "jaccard_rematch_ovlp_matrix.tsv")
-    overlap_rematch_ovlp_mat = _load_matrix(comparison_dir, "overlap_rematch_ovlp_matrix.tsv")
-    kappa_rematch_binem_mat     = _load_matrix(comparison_dir, "kappa_rematch_binem_matrix.tsv")
-    jaccard_rematch_binem_mat   = _load_matrix(comparison_dir, "jaccard_rematch_binem_matrix.tsv")
-    overlap_rematch_binem_mat   = _load_matrix(comparison_dir, "overlap_rematch_binem_matrix.tsv")
-    emission_mat             = _load_matrix(comparison_dir, "emission_similarity_matrix.tsv")
-    kappa_rematch_bwem_mat     = _load_matrix(comparison_dir, "kappa_rematch_bwem_matrix.tsv")
-    jaccard_rematch_bwem_mat   = _load_matrix(comparison_dir, "jaccard_rematch_bwem_matrix.tsv")
-    overlap_rematch_bwem_mat   = _load_matrix(comparison_dir, "overlap_rematch_bwem_matrix.tsv")
-    bw_emission_mat          = _load_matrix(comparison_dir, "bw_emission_similarity_matrix.tsv")
-    kappa_noqh_mat           = _load_matrix(comparison_dir, "kappa_noqh_matrix.tsv")
-    ami_noqh_mat             = _load_matrix(comparison_dir, "ami_noqh_matrix.tsv")
-    overlap_noqh_mat         = _load_matrix(comparison_dir, "overlap_noqh_matrix.tsv")
-    jaccard_noqh_mat         = _load_matrix(comparison_dir, "jaccard_noqh_matrix.tsv")
-    kappa_rematch_ovlp_noqh_mat   = _load_matrix(comparison_dir, "kappa_rematch_ovlp_noqh_matrix.tsv")
-    jaccard_rematch_ovlp_noqh_mat = _load_matrix(comparison_dir, "jaccard_rematch_ovlp_noqh_matrix.tsv")
-    overlap_rematch_ovlp_noqh_mat = _load_matrix(comparison_dir, "overlap_rematch_ovlp_noqh_matrix.tsv")
-    kappa_rematch_binem_noqh_mat   = _load_matrix(comparison_dir, "kappa_rematch_binem_noqh_matrix.tsv")
-    jaccard_rematch_binem_noqh_mat = _load_matrix(comparison_dir, "jaccard_rematch_binem_noqh_matrix.tsv")
-    overlap_rematch_binem_noqh_mat = _load_matrix(comparison_dir, "overlap_rematch_binem_noqh_matrix.tsv")
-    kappa_rematch_bwem_noqh_mat   = _load_matrix(comparison_dir, "kappa_rematch_bwem_noqh_matrix.tsv")
-    jaccard_rematch_bwem_noqh_mat = _load_matrix(comparison_dir, "jaccard_rematch_bwem_noqh_matrix.tsv")
-    overlap_rematch_bwem_noqh_mat = _load_matrix(comparison_dir, "overlap_rematch_bwem_noqh_matrix.tsv")
+    kappa_mat        = _load_matrix(comparison_dir, "kappa_matrix.tsv")
+    ami_mat          = _load_matrix(comparison_dir, "ami_matrix.tsv")
+    jaccard_mat      = _load_matrix(comparison_dir, "jaccard_similarity_matrix.tsv")
+    overlap_mat      = _load_matrix(comparison_dir, "overlap_matrix.tsv")
+    emission_mat     = _load_matrix(comparison_dir, "emission_similarity_matrix.tsv")
+    bw_emission_mat  = _load_matrix(comparison_dir, "bw_emission_similarity_matrix.tsv")
+    kappa_noqh_mat   = _load_matrix(comparison_dir, "kappa_noqh_matrix.tsv")
+    ami_noqh_mat     = _load_matrix(comparison_dir, "ami_noqh_matrix.tsv")
+    overlap_noqh_mat = _load_matrix(comparison_dir, "overlap_noqh_matrix.tsv")
+    jaccard_noqh_mat = _load_matrix(comparison_dir, "jaccard_noqh_matrix.tsv")
     seg_stats    = load_segment_stats(comparison_dir)
 
     # seg_names = union of all labels seen across every metric source
     seg_names = set(entropy_data) | set(seg_stats)
     for mat in (kappa_mat, ami_mat, jaccard_mat, overlap_mat,
-                kappa_rematch_ovlp_mat, jaccard_rematch_ovlp_mat, overlap_rematch_ovlp_mat,
-                kappa_rematch_binem_mat, jaccard_rematch_binem_mat, overlap_rematch_binem_mat,
-                emission_mat,
-                kappa_rematch_bwem_mat, jaccard_rematch_bwem_mat, overlap_rematch_bwem_mat,
-                bw_emission_mat,
-                kappa_noqh_mat, ami_noqh_mat, overlap_noqh_mat, jaccard_noqh_mat,
-                kappa_rematch_ovlp_noqh_mat, jaccard_rematch_ovlp_noqh_mat, overlap_rematch_ovlp_noqh_mat,
-                kappa_rematch_binem_noqh_mat, jaccard_rematch_binem_noqh_mat, overlap_rematch_binem_noqh_mat,
-                kappa_rematch_bwem_noqh_mat, jaccard_rematch_bwem_noqh_mat, overlap_rematch_bwem_noqh_mat):
+                emission_mat, bw_emission_mat,
+                kappa_noqh_mat, ami_noqh_mat, overlap_noqh_mat, jaccard_noqh_mat):
         if mat is not None:
             seg_names |= set(mat.index)
     a2s = _build_analysis_to_seg_map(methods, seg_names)
@@ -232,27 +206,26 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
             "replicate":     rep or "",
         }
 
-        if not rematch:
-            # Entropy
-            if seg_name in entropy_data:
-                row["entropy"]          = entropy_data[seg_name].get("entropy", np.nan)
-                row["entropy_noqh"] = entropy_data[seg_name].get("entropy_noqh", np.nan)
+        # Entropy
+        if seg_name in entropy_data:
+            row["entropy"]      = entropy_data[seg_name].get("entropy", np.nan)
+            row["entropy_noqh"] = entropy_data[seg_name].get("entropy_noqh", np.nan)
 
-            # Segment stats
-            if seg_name in seg_stats:
-                row.update(seg_stats[seg_name])
+        # Segment stats
+        if seg_name in seg_stats:
+            row.update(seg_stats[seg_name])
 
-            # vs reference (base metrics only; rematch vs-ref cols live in rematched_*/)
-            if seg_name and ref_seg:
-                for mat, col in [
-                    (kappa_mat,     "kappa_vs_ref"),
-                    (ami_mat,       "ami_vs_ref"),
-                    (kappa_noqh_mat, "kappa_noqh_vs_ref"),
-                ]:
-                    if mat is not None and seg_name in mat.index and ref_seg in mat.columns:
-                        val = mat.loc[seg_name, ref_seg]
-                        if not np.isnan(val):
-                            row[col] = val
+        # vs reference
+        if seg_name and ref_seg:
+            for mat, col in [
+                (kappa_mat,      "kappa_vs_ref"),
+                (ami_mat,        "ami_vs_ref"),
+                (kappa_noqh_mat, "kappa_noqh_vs_ref"),
+            ]:
+                if mat is not None and seg_name in mat.index and ref_seg in mat.columns:
+                    val = mat.loc[seg_name, ref_seg]
+                    if not np.isnan(val):
+                        row[col] = val
 
         # Replicate consistency: only for pooled (non-replicate) methods
         if rep is None and method != "ref" and seg_name:
@@ -269,76 +242,37 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None, rematch=None):
                 (jaccard_noqh_mat, "jaccard_noqh_rep1_vs_rep2"),
                 (overlap_noqh_mat, "overlap_noqh_rep1_vs_rep2"),
             ]
-            # Rematch replicate columns, grouped by method.
-            rematch_rep_cols = {
-                "ovlp": [
-                    (kappa_rematch_ovlp_mat,           "kappa_rematch_ovlp_rep1_vs_rep2"),
-                    (jaccard_rematch_ovlp_mat,         "jaccard_rematch_ovlp_rep1_vs_rep2"),
-                    (overlap_rematch_ovlp_mat,         "overlap_rematch_ovlp_rep1_vs_rep2"),
-                    (ami_mat,                          "ami_rematch_ovlp_rep1_vs_rep2"),
-                    (kappa_rematch_ovlp_noqh_mat,      "kappa_rematch_ovlp_noqh_rep1_vs_rep2"),
-                    (jaccard_rematch_ovlp_noqh_mat,    "jaccard_rematch_ovlp_noqh_rep1_vs_rep2"),
-                    (overlap_rematch_ovlp_noqh_mat,    "overlap_rematch_ovlp_noqh_rep1_vs_rep2"),
-                    (ami_noqh_mat,                     "ami_rematch_ovlp_noqh_rep1_vs_rep2"),
-                ],
-                "binem": [
-                    (kappa_rematch_binem_mat,           "kappa_rematch_binem_rep1_vs_rep2"),
-                    (jaccard_rematch_binem_mat,         "jaccard_rematch_binem_rep1_vs_rep2"),
-                    (overlap_rematch_binem_mat,         "overlap_rematch_binem_rep1_vs_rep2"),
-                    (emission_mat,                      "emission_rep1_vs_rep2"),
-                    (kappa_rematch_binem_noqh_mat,      "kappa_rematch_binem_noqh_rep1_vs_rep2"),
-                    (jaccard_rematch_binem_noqh_mat,    "jaccard_rematch_binem_noqh_rep1_vs_rep2"),
-                    (overlap_rematch_binem_noqh_mat,    "overlap_rematch_binem_noqh_rep1_vs_rep2"),
-                ],
-                "bwem": [
-                    (kappa_rematch_bwem_mat,            "kappa_rematch_bwem_rep1_vs_rep2"),
-                    (jaccard_rematch_bwem_mat,          "jaccard_rematch_bwem_rep1_vs_rep2"),
-                    (overlap_rematch_bwem_mat,          "overlap_rematch_bwem_rep1_vs_rep2"),
-                    (bw_emission_mat,                   "bw_emission_rep1_vs_rep2"),
-                    (kappa_rematch_bwem_noqh_mat,       "kappa_rematch_bwem_noqh_rep1_vs_rep2"),
-                    (jaccard_rematch_bwem_noqh_mat,     "jaccard_rematch_bwem_noqh_rep1_vs_rep2"),
-                    (overlap_rematch_bwem_noqh_mat,     "overlap_rematch_bwem_noqh_rep1_vs_rep2"),
-                ],
-            }
-            # When rematch is given include only that method's cols;
-            # otherwise only base as-is cols (rematch cols live in rematched_{rematch}/).
-            if rematch:
-                rep_pairs = base_rep_cols + rematch_rep_cols.get(rematch, [])
-            else:
-                rep_pairs = base_rep_cols
-            for mat, col_name in rep_pairs:
+            for mat, col_name in base_rep_cols:
                 if mat is not None and rep1_seg in mat.index and rep2_seg in mat.columns:
                     row[col_name] = mat.loc[rep1_seg, rep2_seg]
 
-        if not rematch:
-            # Report: median lengths for key states
-            report = load_report(_adir(method), method)
-            for state, col in [("Tx", "median_Tx_length"),
-                                ("Tss", "median_Tss_length"),
-                                ("TxWk", "median_TxWk_length")]:
-                if state in report:
-                    row[col] = report[state].get("median_length", np.nan)
+        # Report: median lengths for key states
+        report = load_report(_adir(method), method)
+        for state, col in [("Tx", "median_Tx_length"),
+                            ("Tss", "median_Tss_length"),
+                            ("TxWk", "median_TxWk_length")]:
+            if state in report:
+                row[col] = report[state].get("median_length", np.nan)
 
-            # Enrichment
-            enrichment = load_enrichment(_adir(method), method)
-            for state, annotation, col in [
-                ("Tx",   "RefSeqGene.hg38",        "enrich_Tx_RefSeqGene"),
-                ("Tx",   "ExpressedGeneBodies",     "enrich_Tx_ExpressedGeneBodies"),
-                ("Tss",  "RefSeqTSS.hg38",          "enrich_Tss_RefSeqTSS"),
-                ("Tss",  "RefSeqTSS2kb.hg38",       "enrich_Tss_RefSeqTSS2kb"),
-                ("Enh1", "ExpressedTSS",            "enrich_Enh1_ExpressedTSS"),
-            ]:
-                if state in enrichment and annotation in enrichment[state]:
-                    row[col] = enrichment[state][annotation]
+        # Enrichment
+        enrichment = load_enrichment(_adir(method), method)
+        for state, annotation, col in [
+            ("Tx",   "RefSeqGene.hg38",        "enrich_Tx_RefSeqGene"),
+            ("Tx",   "ExpressedGeneBodies",     "enrich_Tx_ExpressedGeneBodies"),
+            ("Tss",  "RefSeqTSS.hg38",          "enrich_Tss_RefSeqTSS"),
+            ("Tss",  "RefSeqTSS2kb.hg38",       "enrich_Tss_RefSeqTSS2kb"),
+            ("Enh1", "ExpressedTSS",            "enrich_Enh1_ExpressedTSS"),
+        ]:
+            if state in enrichment and annotation in enrichment[state]:
+                row[col] = enrichment[state][annotation]
 
-        if not rematch:
-            # Jaccard vs expressed annotations
-            jaccard = load_jaccard(_adir(method), method)
-            for state, annotation, col in [
-                ("Tx",  "ExpressedGeneBodies", "jaccard_Tx_ExpressedGeneBodies"),
-            ]:
-                if state in jaccard and annotation in jaccard[state]:
-                    row[col] = jaccard[state][annotation]
+        # Jaccard vs expressed annotations
+        jaccard = load_jaccard(_adir(method), method)
+        for state, annotation, col in [
+            ("Tx",  "ExpressedGeneBodies", "jaccard_Tx_ExpressedGeneBodies"),
+        ]:
+            if state in jaccard and annotation in jaccard[state]:
+                row[col] = jaccard[state][annotation]
 
         rows.append(row)
 
@@ -394,7 +328,7 @@ def _save_panel(fig, outdir, name):
     print(f"  saved {path}")
 
 
-def plot_comparison(df, outdir, rematch=None):
+def plot_comparison(df, outdir):
     """Generate per-metric bar chart PNGs."""
     from matplotlib.patches import Patch
 
@@ -416,77 +350,35 @@ def plot_comparison(df, outdir, rematch=None):
                   bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
         return fig, ax
 
-    # Replicate consistency plots — filtered by rematch when specified.
-    _REMATCH_REP_COLS = {
-        None: [
-            ("kappa_rep1_vs_rep2",          "Replicate reproducibility (Kappa)",                    "Kappa"),
-            ("ami_rep1_vs_rep2",            "Replicate reproducibility (AMI)",                      "AMI"),
-            ("jaccard_rep1_vs_rep2",        "Replicate reproducibility (Jaccard)",                  "Similarity"),
-            ("overlap_rep1_vs_rep2",        "Replicate reproducibility (Overlap)",                  "Overlap fraction"),
-            ("kappa_noqh_rep1_vs_rep2",     "Replicate reproducibility (Kappa excl. Quies/Het)",    "Kappa"),
-            ("ami_noqh_rep1_vs_rep2",       "Replicate reproducibility (AMI excl. Quies/Het)",      "AMI"),
-            ("jaccard_noqh_rep1_vs_rep2",   "Replicate reproducibility (Jaccard excl. Quies/Het)",  "Similarity"),
-            ("overlap_noqh_rep1_vs_rep2",   "Replicate reproducibility (Overlap excl. Quies/Het)",  "Overlap fraction"),
-        ],
-        "ovlp": [
-            ("kappa_rep1_vs_rep2",                      "Replicate reproducibility (Kappa)",                                    "Kappa"),
-            ("jaccard_rep1_vs_rep2",                    "Replicate reproducibility (Jaccard)",                                  "Similarity"),
-            ("overlap_rep1_vs_rep2",                    "Replicate reproducibility (Overlap)",                                  "Overlap fraction"),
-            ("kappa_rematch_ovlp_rep1_vs_rep2",         "Replicate reproducibility (Kappa re-match ovlp)",                     "Kappa"),
-            ("jaccard_rematch_ovlp_rep1_vs_rep2",       "Replicate reproducibility (Jaccard re-match ovlp)",                   "Jaccard"),
-            ("overlap_rematch_ovlp_rep1_vs_rep2",       "Replicate reproducibility (Overlap re-match ovlp)",                   "Overlap fraction"),
-            ("kappa_noqh_rep1_vs_rep2",                 "Replicate reproducibility (Kappa excl. Quies/Het)",                   "Kappa"),
-            ("kappa_rematch_ovlp_noqh_rep1_vs_rep2",    "Replicate reproducibility (Kappa re-match ovlp excl. Quies/Het)",    "Kappa"),
-            ("jaccard_rematch_ovlp_noqh_rep1_vs_rep2",  "Replicate reproducibility (Jaccard re-match ovlp excl. Quies/Het)",  "Jaccard"),
-            ("overlap_rematch_ovlp_noqh_rep1_vs_rep2",  "Replicate reproducibility (Overlap re-match ovlp excl. Quies/Het)",  "Overlap fraction"),
-        ],
-        "binem": [
-            ("kappa_rep1_vs_rep2",                       "Replicate reproducibility (Kappa)",                                     "Kappa"),
-            ("jaccard_rep1_vs_rep2",                     "Replicate reproducibility (Jaccard)",                                   "Similarity"),
-            ("overlap_rep1_vs_rep2",                     "Replicate reproducibility (Overlap)",                                   "Overlap fraction"),
-            ("kappa_rematch_binem_rep1_vs_rep2",         "Replicate reproducibility (Kappa re-match binem)",                     "Kappa"),
-            ("jaccard_rematch_binem_rep1_vs_rep2",       "Replicate reproducibility (Jaccard re-match binem)",                   "Jaccard"),
-            ("overlap_rematch_binem_rep1_vs_rep2",       "Replicate reproducibility (Overlap re-match binem)",                   "Overlap fraction"),
-            ("emission_rep1_vs_rep2",                    "Replicate reproducibility (Emission bin)",                             "Cosine similarity"),
-            ("kappa_noqh_rep1_vs_rep2",                  "Replicate reproducibility (Kappa excl. Quies/Het)",                   "Kappa"),
-            ("kappa_rematch_binem_noqh_rep1_vs_rep2",    "Replicate reproducibility (Kappa re-match binem excl. Quies/Het)",   "Kappa"),
-            ("jaccard_rematch_binem_noqh_rep1_vs_rep2",  "Replicate reproducibility (Jaccard re-match binem excl. Quies/Het)", "Jaccard"),
-            ("overlap_rematch_binem_noqh_rep1_vs_rep2",  "Replicate reproducibility (Overlap re-match binem excl. Quies/Het)", "Overlap fraction"),
-        ],
-        "bwem": [
-            ("kappa_rep1_vs_rep2",                       "Replicate reproducibility (Kappa)",                                    "Kappa"),
-            ("jaccard_rep1_vs_rep2",                     "Replicate reproducibility (Jaccard)",                                  "Similarity"),
-            ("overlap_rep1_vs_rep2",                     "Replicate reproducibility (Overlap)",                                  "Overlap fraction"),
-            ("kappa_rematch_bwem_rep1_vs_rep2",          "Replicate reproducibility (Kappa re-match bwem)",                    "Kappa"),
-            ("jaccard_rematch_bwem_rep1_vs_rep2",        "Replicate reproducibility (Jaccard re-match bwem)",                  "Jaccard"),
-            ("overlap_rematch_bwem_rep1_vs_rep2",        "Replicate reproducibility (Overlap re-match bwem)",                  "Overlap fraction"),
-            ("bw_emission_rep1_vs_rep2",                 "Replicate reproducibility (Emission bw)",                            "Cosine similarity"),
-            ("kappa_noqh_rep1_vs_rep2",                  "Replicate reproducibility (Kappa excl. Quies/Het)",                  "Kappa"),
-            ("kappa_rematch_bwem_noqh_rep1_vs_rep2",     "Replicate reproducibility (Kappa re-match bwem excl. Quies/Het)",   "Kappa"),
-            ("jaccard_rematch_bwem_noqh_rep1_vs_rep2",   "Replicate reproducibility (Jaccard re-match bwem excl. Quies/Het)", "Jaccard"),
-            ("overlap_rematch_bwem_noqh_rep1_vs_rep2",   "Replicate reproducibility (Overlap re-match bwem excl. Quies/Het)", "Overlap fraction"),
-        ],
-    }
-    for col, title, ylabel in _REMATCH_REP_COLS[rematch]:
+    # Replicate consistency plots
+    _REP_COLS = [
+        ("kappa_rep1_vs_rep2",          "Replicate reproducibility (Kappa)",                    "Kappa"),
+        ("ami_rep1_vs_rep2",            "Replicate reproducibility (AMI)",                      "AMI"),
+        ("jaccard_rep1_vs_rep2",        "Replicate reproducibility (Jaccard)",                  "Similarity"),
+        ("overlap_rep1_vs_rep2",        "Replicate reproducibility (Overlap)",                  "Overlap fraction"),
+        ("kappa_noqh_rep1_vs_rep2",     "Replicate reproducibility (Kappa excl. Quies/Het)",    "Kappa"),
+        ("ami_noqh_rep1_vs_rep2",       "Replicate reproducibility (AMI excl. Quies/Het)",      "AMI"),
+        ("jaccard_noqh_rep1_vs_rep2",   "Replicate reproducibility (Jaccard excl. Quies/Het)",  "Similarity"),
+        ("overlap_noqh_rep1_vs_rep2",   "Replicate reproducibility (Overlap excl. Quies/Het)",  "Overlap fraction"),
+    ]
+    for col, title, ylabel in _REP_COLS:
         if col in df_main.columns and df_main[col].notna().any():
             fig, ax = _make_fig()
             _bar_panel(ax, df_main, col, title, ylabel)
-            fname = col.replace(f"_rematch_{rematch}", "_rematch") if rematch else col
-            _save_panel(fig, outdir, fname)
+            _save_panel(fig, outdir, col)
 
-    if not rematch:
-        # Enrichment / Jaccard plots
-        for col, title in [
-            ("enrich_Tx_ExpressedGeneBodies",  "Tx enrichment vs expressed gene bodies"),
-            ("jaccard_Tx_ExpressedGeneBodies", "Jaccard: Tx state vs expressed gene bodies"),
-            ("median_Tx_length",               "Median Tx (transcription) segment length"),
-        ]:
-            ylabel = "Fold enrichment" if col.startswith("enrich") else \
-                     "Jaccard" if col.startswith("jaccard") else "bp"
-            if col in df_main.columns and df_main[col].notna().any():
-                fig, ax = _make_fig()
-                _bar_panel(ax, df_main, col, title, ylabel)
-                _save_panel(fig, outdir, col)
+    # Enrichment / Jaccard plots
+    for col, title in [
+        ("enrich_Tx_ExpressedGeneBodies",  "Tx enrichment vs expressed gene bodies"),
+        ("jaccard_Tx_ExpressedGeneBodies", "Jaccard: Tx state vs expressed gene bodies"),
+        ("median_Tx_length",               "Median Tx (transcription) segment length"),
+    ]:
+        ylabel = "Fold enrichment" if col.startswith("enrich") else \
+                 "Jaccard" if col.startswith("jaccard") else "bp"
+        if col in df_main.columns and df_main[col].notna().any():
+            fig, ax = _make_fig()
+            _bar_panel(ax, df_main, col, title, ylabel)
+            _save_panel(fig, outdir, col)
 
 
 # ---------------------------------------------------------------------------
@@ -503,15 +395,11 @@ def main():
     ap.add_argument("--comparison-dir", required=True,
                     help="Directory with entropy, kappa, segment_stats TSVs")
     ap.add_argument("--outdir",         required=True, help="Output directory")
-    ap.add_argument("--rematch",        default=None, choices=["ovlp", "binem", "bwem"],
-                    help="When given, produce focused replicate re-match table "
-                         "for this method (for rematched_{rematch}/ output dirs)")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    df = build_table(args.analysis_dir, args.comparison_dir,
-                     ref_dir=args.ref_dir, rematch=args.rematch)
+    df = build_table(args.analysis_dir, args.comparison_dir, ref_dir=args.ref_dir)
     table_path = os.path.join(args.outdir, "comparison_table.tsv")
     df.to_csv(table_path, sep="\t", index=False, float_format="%.4f")
     print(f"  saved {table_path}")
@@ -524,7 +412,7 @@ def main():
         df["replicate"] = df["method"].map(lambda m: METHOD_INFO.get(m, (None, None, None))[2] or "")
 
     df = _order_methods(df)
-    plot_comparison(df, args.outdir, rematch=args.rematch)
+    plot_comparison(df, args.outdir)
 
 
 if __name__ == "__main__":
