@@ -179,13 +179,13 @@ def _dataset_analysis_outputs(ds):
         t.append(f"{ds}/peaks/peak_stats.tsv")
     if DO_COMPARE:
         t += [
-            f"{ds}/comparison/ovlp/entropy_summary.tsv",
-            f"{ds}/comparison/ovlp/kappa_matrix.tsv",
-            f"{ds}/comparison/ovlp/ami_matrix.tsv",
-            f"{ds}/comparison/ovlp/jaccard_similarity_matrix.tsv",
-            f"{ds}/comparison/ovlp/overlap_matrix.tsv",
-            f"{ds}/comparison/ovlp/segment_stats.tsv",
-            f"{ds}/methods/ovlp/comparison_table.tsv",
+            f"{ds}/comparison/comb/entropy_summary.tsv",
+            f"{ds}/comparison/comb/kappa_matrix.tsv",
+            f"{ds}/comparison/comb/ami_matrix.tsv",
+            f"{ds}/comparison/comb/jaccard_similarity_matrix.tsv",
+            f"{ds}/comparison/comb/overlap_matrix.tsv",
+            f"{ds}/comparison/comb/segment_stats.tsv",
+            f"{ds}/methods/comb/comparison_table.tsv",
         ]
     return t
 

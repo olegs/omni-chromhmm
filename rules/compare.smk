@@ -4,8 +4,8 @@
 #   - Segment length statistics
 #   - Unified method comparison table
 #
-# Default: comparison/ovlp/ only — overlap-based matching.
-# compare_methods aggregates results into methods/ovlp/comparison_table.tsv.
+# Default: comparison/comb/ only — combined overlap+bwem matching (alpha=0.8).
+# compare_methods aggregates results into methods/comb/comparison_table.tsv.
 
 
 _VARIANT_SUFFIX = {

@@ -47,7 +47,6 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
 from utils import METHOD_ORDER, DISPLAY_NAMES
-from match import emission_cosine_mapping
 
 
 # ---------------------------------------------------------------------------
@@ -335,18 +334,25 @@ def plot_gini_summary(df, datasets, outpath):
 # Inter-dataset binarized emission cosine similarity
 # ---------------------------------------------------------------------------
 
+def _cosine_sim(vec_a, vec_b):
+    """Cosine similarity between two emission vectors."""
+    na, nb = np.linalg.norm(vec_a), np.linalg.norm(vec_b)
+    if na == 0 or nb == 0:
+        return np.nan
+    return float(np.dot(vec_a, vec_b) / (na * nb))
+
+
 def collect_inter_dataset_binem_records(datasets, analysis_dirs, methods,
                                         group_a=None, group_b=None):
     """For each method and dataset pair, compute mean cosine similarity between
-    optimally-matched state binarized emission vectors (Hungarian matching,
-    consistent with compare.py's emission_similarity_matrix.tsv).
+    same-named state binarized emission vectors (name-based matching on
+    comb-matched state labels — no additional Hungarian rematch).
 
     group_a / group_b: when both are given, only pairs with one dataset from
     each group are included (used for ChIP↔Mint-ChIP cross-assay filtering).
 
     Returns DataFrame with columns: method, ds_a, ds_b, mean_sim.
     """
-    # Load (states_list, matrix) per (dataset, method) — keep as arrays for Hungarian
     emissions = {}
     for ds, adir in zip(datasets, analysis_dirs):
         for method in methods:
@@ -355,7 +361,7 @@ def collect_inter_dataset_binem_records(datasets, analysis_dirs, methods,
             result = _load_emissions_tsv(path)
             if result is not None:
                 states, mat = result
-                emissions[(ds, method)] = (states, mat)
+                emissions[(ds, method)] = {s: mat[i] for i, s in enumerate(states)}
 
     records = []
     n = len(datasets)
@@ -371,16 +377,17 @@ def collect_inter_dataset_binem_records(datasets, analysis_dirs, methods,
                 em_b = emissions.get((ds_b, method))
                 if em_a is None or em_b is None:
                     continue
-                states_a, mat_a = em_a
-                states_b, mat_b = em_b
-                # Hungarian optimal matching — same as compare.py emission_similarity_matrix
-                avg_sim, _ = emission_cosine_mapping(states_a, mat_a, states_b, mat_b)
-                if not np.isnan(avg_sim):
+                common = set(em_a) & set(em_b)
+                if not common:
+                    continue
+                sims = [_cosine_sim(em_a[s], em_b[s]) for s in common]
+                sims = [s for s in sims if not np.isnan(s)]
+                if sims:
                     records.append({
                         "method":   method,
                         "ds_a":     ds_a,
                         "ds_b":     ds_b,
-                        "mean_sim": float(avg_sim),
+                        "mean_sim": float(np.mean(sims)),
                     })
     return pd.DataFrame(records)
 

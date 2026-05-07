@@ -22,16 +22,16 @@ INTER_DS_METHODS = [
 
 
 def _inter_ds_bed(ds, method):
-    """Pooled ovlp_matched BED for *method* in *ds*."""
+    """Pooled comb_matched BED for *method* in *ds*."""
     cell = DATASETS[ds]["cell"]
     if method == "chromhmm_default":
-        return f"{ds}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed"
+        return f"{ds}/chromhmm_default_result/{cell}_{NSTATES}_dense_comb_matched.bed"
     parts  = method.split("_")           # ["chromhmm","omni"] or ["kmeans","homer"]
     model  = parts[0]                    # chromhmm | kmeans
     caller = parts[1]                    # omni | homer | macs2
     if model == "chromhmm":
-        return f"{ds}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed"
-    return f"{ds}/{caller}/kmeans_states_ovlp_matched.bed"
+        return f"{ds}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed"
+    return f"{ds}/{caller}/kmeans_states_comb_matched.bed"
 
 
 def _inter_ds_bin(method):
@@ -119,15 +119,15 @@ _SUMMARY_PLOTS = [
 rule inter_dataset_summary_plots:
     """Cross-dataset summary bar plots with mean ± std across all datasets."""
     input:
-        expand("{ds}/methods/ovlp/comparison_table.tsv", ds=list(DATASETS)),
+        expand("{ds}/methods/comb/comparison_table.tsv", ds=list(DATASETS)),
     output:
         _SUMMARY_PLOTS,
     conda: "../envs/python.yaml"
     params:
         scripts_dir   = SCRIPTS_DIR,
         datasets      = " ".join(list(DATASETS)),
-        methods_dirs  = " ".join(f"{ds}/methods/ovlp"   for ds in DATASETS),
-        analysis_dirs = " ".join(f"{ds}/analysis/ovlp"  for ds in DATASETS),
+        methods_dirs  = " ".join(f"{ds}/methods/comb"   for ds in DATASETS),
+        analysis_dirs = " ".join(f"{ds}/analysis/comb"  for ds in DATASETS),
         outdir        = "inter_dataset/summary_plots",
     shell:
         r"""
@@ -382,7 +382,7 @@ _REP_CONSISTENCY_PLOTS = [
 rule inter_dataset_rep_consistency_plots:
     """Replicate consistency bar plots: Kappa/Jaccard/AMI (raw) across datasets."""
     input:
-        expand("{ds}/methods/ovlp/comparison_table.tsv", ds=_REP_DATASETS),
+        expand("{ds}/methods/comb/comparison_table.tsv", ds=_REP_DATASETS),
     output:
         _REP_CONSISTENCY_PLOTS,
     conda: "../envs/python.yaml"
@@ -390,7 +390,7 @@ rule inter_dataset_rep_consistency_plots:
         scripts_dir     = SCRIPTS_DIR,
         repo_plots_dir  = os.path.join(workflow.basedir, "plots", "summary"),
         datasets        = " ".join(_REP_DATASETS),
-        methods_dirs    = " ".join(f"{ds}/methods/ovlp" for ds in _REP_DATASETS),
+        methods_dirs    = " ".join(f"{ds}/methods/comb" for ds in _REP_DATASETS),
         outdir          = "inter_dataset/summary_plots",
     shell:
         r"""
@@ -488,14 +488,14 @@ rule inter_dataset_emission_similarity:
     of overlap-based label transfer as the primary matching strategy.
     """
     input:
-        expand("{ds}/methods/ovlp/comparison_table.tsv", ds=list(DATASETS)),
+        expand("{ds}/methods/comb/comparison_table.tsv", ds=list(DATASETS)),
     output:
         _EMISSION_SIM_PLOTS,
     conda: "../envs/python.yaml"
     params:
         scripts_dir   = SCRIPTS_DIR,
         datasets      = " ".join(list(DATASETS)),
-        analysis_dirs = " ".join(f"{ds}/analysis/ovlp" for ds in DATASETS),
+        analysis_dirs = " ".join(f"{ds}/analysis/comb" for ds in DATASETS),
         methods       = " ".join(INTER_DS_METHODS),
         outdir        = "inter_dataset/summary_plots",
         repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
@@ -518,7 +518,7 @@ _CROSS_ASSAY_BINEM_PLOT   = "inter_dataset/summary_plots/cross_assay_binem_simil
 rule inter_dataset_binem_similarity:
     """Inter-dataset and cross-assay binarized emission cosine similarity per method."""
     input:
-        expand("{ds}/methods/ovlp/comparison_table.tsv", ds=list(DATASETS)),
+        expand("{ds}/methods/comb/comparison_table.tsv", ds=list(DATASETS)),
     output:
         inter_ds   = _INTER_DS_BINEM_PLOT,
         cross_assay = _CROSS_ASSAY_BINEM_PLOT,
@@ -527,7 +527,7 @@ rule inter_dataset_binem_similarity:
         scripts_dir    = SCRIPTS_DIR,
         repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
         datasets       = " ".join(list(DATASETS)),
-        analysis_dirs  = " ".join(f"{ds}/analysis/ovlp" for ds in DATASETS),
+        analysis_dirs  = " ".join(f"{ds}/analysis/comb" for ds in DATASETS),
         methods        = " ".join(INTER_DS_METHODS),
         outdir         = "inter_dataset/summary_plots",
         chip_datasets  = " ".join(_CHIP_DATASETS),
