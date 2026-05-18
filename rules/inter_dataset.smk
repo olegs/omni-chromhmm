@@ -13,12 +13,15 @@ from pathlib import Path
 #   {method}/kappa_noqh_matrix.tsv  — NOQH variant
 #   comparison_table.tsv            — one row per method × dataset-pair
 
-INTER_DS_METHODS = [
-    "chromhmm_default",
-    "chromhmm_omni",  "kmeans_omni",
-    "chromhmm_homer", "kmeans_homer",
-    "chromhmm_macs2", "kmeans_macs2",
-]
+INTER_DS_METHODS = (
+    ["chromhmm_default"]
+    + (["chromhmm_omni"]  if DO_CHROMHMM_PEAKS and DO_OMNIPEAK else [])
+    + (["chromhmm_homer"] if DO_CHROMHMM_PEAKS and DO_HOMER    else [])
+    + (["chromhmm_macs2"] if DO_CHROMHMM_PEAKS and DO_MACS2    else [])
+    + (["kmeans_omni"]    if DO_OMNIPEAK else [])
+    + (["kmeans_homer"]   if DO_HOMER    else [])
+    + (["kmeans_macs2"]   if DO_MACS2    else [])
+)
 
 
 def _inter_ds_bed(ds, method):
@@ -380,7 +383,7 @@ rule inter_dataset_method_similarity_distribution_chip_vs_mint:
         """
 
 
-_REP_DATASETS = [ds for ds in DATASETS if DATASETS[ds].get("replicates")]
+_REP_DATASETS = [ds for ds in DATASETS if DO_REPLICATES and DATASETS[ds].get("replicates")]
 
 _REP_CONSISTENCY_PLOTS = [
     "inter_dataset/summary_plots/rep_consistency_kappa_noqh_rep1_vs_rep2.png",

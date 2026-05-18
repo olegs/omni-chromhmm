@@ -18,9 +18,14 @@ params:
   n_states: 15
   genome: "hg38"
   marks: [H3K36me3, H3K9me3, H3K4me1, H3K27ac, H3K27me3, H3K4me3]
-  analyze: false   # run per-segmentation analysis (analyze.smk)
-  compare: false   # run cross-segmentation comparison (compare.smk)
-  inter: false     # run inter-dataset comparison and summary plots
+  analyze: false        # run per-segmentation analysis (analyze.smk)
+  compare: false        # run cross-segmentation comparison (compare.smk)
+  inter: false          # run inter-dataset comparison and summary plots
+  chromhmm_peaks: false # apply ChromHMM LearnModel to peak-caller binarizations (omni/homer/macs2)
+  replicates: false     # process per-replicate folders (rep1/rep2) for datasets that have them
+  homer: false          # run HOMER-based binarization and segmentation
+  macs2: false          # run MACS2-based binarization and segmentation
+  omnipeak: false       # run OmniPeak-based binarization and segmentation
 
 datasets:
 

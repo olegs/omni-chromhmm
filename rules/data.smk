@@ -51,39 +51,61 @@ rule download_gencode_gtf:
 rule download_control_bam:
     """Download a control/input BAM from ENCODE."""
     output: "{ds}/downloaded/{acc}_control.bam"
+    wildcard_constraints:
+        acc = r"ENCFF[A-Z0-9]+"
     params:
         url = lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.bam"
     shell:
         "wget -q {params.url} -O {output}"
 
 
-rule pool_controls:
-    """Pool per-mark control BAMs into {ds}/controls/{mark}.bam.
+rule merge_control_bams:
+    """Merge multiple control BAMs into one canonical file keyed by sorted accessions.
 
-    Symlinks when there is only one source BAM; merges with samtools when
-    multiple control BAMs exist.
+    Output path encodes the sorted accession list joined by '+', so the same
+    set of controls is merged only once regardless of how many marks reference it.
     """
-    input:  lambda w: controls_for_mark(w.ds, w.mark)
-    output: "{ds}/controls/{mark}.bam"
+    input: lambda w: [f"{w.ds}/downloaded/{a}_control.bam" for a in w.accs.split("+")]
+    output: "{ds}/downloaded/{accs}_merged_control.bam"
+    wildcard_constraints:
+        accs = r"ENCFF[A-Z0-9]+(\+ENCFF[A-Z0-9]+)+"
     conda: "../envs/bio.yaml"
+    shell: "samtools merge -f {output} {input}"
+
+
+def _canonical_control(ds, mark, rep=None):
+    """Return the canonical control BAM path for a (ds, mark[, rep]) combination.
+
+    Single-control marks resolve to the downloaded file directly; multi-control
+    marks resolve to the canonical merged file (sorted accessions joined by '+').
+    """
+    accs = control_accs_for_mark(ds, mark, rep)
+    if len(accs) == 1:
+        return f"{ds}/downloaded/{accs[0]}_control.bam"
+    return f"{ds}/downloaded/{'+'.join(sorted(accs))}_merged_control.bam"
+
+
+rule pool_controls:
+    """Symlink {ds}/controls/{mark}.bam to the canonical control BAM.
+
+    The canonical BAM is either the single downloaded file or the deduplicated
+    merged BAM produced by merge_control_bams — so the same merge is never
+    repeated for marks that share the same control set.
+    """
+    input:  lambda w: _canonical_control(w.ds, w.mark)
+    output: "{ds}/controls/{mark}.bam"
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
-        if len(input) == 1:
-            os.symlink(os.path.abspath(input[0]), output[0])
-        else:
-            shell("samtools merge -f {output} {input}")
+        os.symlink(os.path.abspath(input[0]), output[0])
 
 
 rule rep_link_control:
-    """Symlink a per-replicate control BAM into {ds}/{rep}/controls/{mark}.bam."""
-    input:  lambda w: controls_for_mark(w.ds, w.mark, rep=w.rep)
+    """Symlink {ds}/{rep}/controls/{mark}.bam to the canonical control BAM."""
+    input:  lambda w: _canonical_control(w.ds, w.mark, rep=w.rep)
     output: "{ds}/{rep}/controls/{mark}.bam"
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
-        if len(input) == 1:
-            os.symlink(os.path.abspath(input[0]), output[0])
-        else:
-            shell("samtools merge -f {output} {input}")
+        os.symlink(os.path.abspath(input[0]), output[0])
 
 
 rule pool_bams:

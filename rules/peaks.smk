@@ -10,9 +10,8 @@ def _peak_analysis_inputs(w):
     files = []
     for folder in _folders(ds):
         for mark in MARKS:
-            files.append(peak_file(folder, "omni",  mark))
-            files.append(peak_file(folder, "homer", mark))
-            files.append(peak_file(folder, "macs2", mark))
+            for caller in CALLERS:
+                files.append(peak_file(folder, caller, mark))
         # ChromHMM binary files (one representative chrom is enough as input
         # sentinel; analyze_peaks.py globs all of them at runtime)
         files += [f"{folder}/chromhmm_default/{cell}_{c}_binary.txt" for c in CHROMS]

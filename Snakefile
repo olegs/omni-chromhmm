@@ -4,54 +4,69 @@ import os
 
 configfile: "config.yaml"
 
-workdir: os.path.expanduser(config.get("workdir", "."))
+workdir: os.path.expanduser(config.get("workdir","."))
 
-TOOLS =     config["tools"]
-P =         config["params"]
-MARKS      =  P["marks"]
-CHROMHMM_BIN =  P["chromhmm_bin"]
-OMNI_BIN   =  P["omni_bin"]
-HOMER_BIN  =  P["homer_bin"]
-MACS2_BIN  =  P.get("macs2_bin", 100)
-NSTATES    =  P["n_states"]
-GENOME     =  P["genome"]
+TOOLS = config["tools"]
+P = config["params"]
+MARKS = P["marks"]
+CHROMHMM_BIN = P["chromhmm_bin"]
+OMNI_BIN = P["omni_bin"]
+HOMER_BIN = P["homer_bin"]
+MACS2_BIN = P.get("macs2_bin",100)
+NSTATES = P["n_states"]
+GENOME = P["genome"]
 
 # Per-caller binarization bin sizes.
 CALLER_BIN = {"omni": OMNI_BIN, "homer": HOMER_BIN, "macs2": MACS2_BIN}
+
+
 def _flag(key, default=True):
     """Read a boolean flag from --config key=... (top-level) or params.key (yaml).
 
     CLI values arrive as strings ('True'/'False'), so handle both.
     """
-    val = config.get(key, P.get(key, default))
-    if isinstance(val, str):
+    val = config.get(key,P.get(key,default))
+    if isinstance(val,str):
         return val.lower() not in ("false", "0", "no", "")
     return bool(val)
 
+
 DO_ANALYZE = _flag("analyze")
 DO_COMPARE = _flag("compare")
-DO_INTER   = _flag("inter")
+DO_INTER = _flag("inter")
+DO_CHROMHMM_PEAKS = _flag("chromhmm_peaks")
+DO_REPLICATES = _flag("replicates")
+DO_OMNIPEAK = _flag("omnipeak")
+DO_HOMER = _flag("homer")
+DO_MACS2 = _flag("macs2")
+
+# Callers enabled by the config flags above.
+CALLERS = (
+        (["omni"] if DO_OMNIPEAK else [])
+        + (["homer"] if DO_HOMER else [])
+        + (["macs2"] if DO_MACS2 else [])
+)
 
 CHROMHMM = f"java {TOOLS['java_opts']} -jar {TOOLS['chromhmm_jar']}"
 OMNIPEAK = f"java -Xmx8G --add-modules=jdk.incubator.vector -jar {TOOLS['omnipeak_jar']}"
 
 DATASETS = config["datasets"]
 
-SCRIPTS_DIR = os.path.join(workflow.basedir, "scripts")
+SCRIPTS_DIR = os.path.join(workflow.basedir,"scripts")
 
 # Global wildcard constraints.
 # {folder} covers both the pooled root ({ds}) and per-replicate subdirs ({ds}/rep1,
 # {ds}/rep2), so it may contain a single path separator.
 # {caller} is the peak-calling algorithm: omni or homer.
 wildcard_constraints:
-    ds     = r"[A-Za-z0-9_]+",
-    acc    = r"ENCFF[A-Z0-9]+",
-    mark   = r"H3K[0-9]+(me[0-9]|ac)",
-    caller = r"omni|homer|macs2",
-    rep    = r"rep[12]",
-    folder = r"[A-Za-z0-9_]+(/rep[12])?",
-    chr    = r"chr[0-9XYM]+",
-    cell   = r"[A-Za-z0-9]+",
+    ds=r"[A-Za-z0-9_]+",
+    acc=r"ENCFF[A-Z0-9]+",
+    mark=r"H3K[0-9]+(me[0-9]|ac)",
+    caller=r"omni|homer|macs2",
+    rep=r"rep[12]",
+    folder=r"[A-Za-z0-9_]+(/rep[12])?",
+    chr=r"chr[0-9XYM]+",
+    cell=r"[A-Za-z0-9]+",
 
 
 # --- helpers shared by every included rules/*.smk ------------------------
@@ -79,12 +94,12 @@ def bam_path(ds, acc):
 
 
 def bams_for_mark(ds, mark, rep=None):
-    accs = accs_of(ds, mark=mark, rep=rep)
+    accs = accs_of(ds,mark=mark,rep=rep)
     if not accs and rep is not None:
         # Fall back to untagged BAMs for marks that have no replicate-specific entry
         accs = [a for a, meta in DATASETS[ds]["bams"].items()
                 if meta["mark"] == mark and "rep" not in meta]
-    return [bam_path(ds, a) for a in accs]
+    return [bam_path(ds,a) for a in accs]
 
 
 # --- Control BAM helpers ---------------------------------------------------
@@ -110,7 +125,7 @@ def control_accs_for_mark(ds, mark, rep=None):
 
 def controls_for_mark(ds, mark, rep=None):
     """Return downloaded control BAM paths for a mark."""
-    return [f"{ds}/downloaded/{a}_control.bam" for a in control_accs_for_mark(ds, mark, rep)]
+    return [f"{ds}/downloaded/{a}_control.bam" for a in control_accs_for_mark(ds,mark,rep)]
 
 
 def folder_has_controls(folder):
@@ -129,11 +144,12 @@ def read_chromsizes(path):
                     chroms.append(name)
     return chroms
 
+
 # Prefer the live chromsizes file so we stay in sync with the ChromHMM install;
 # fall back to the canonical hg38 primary assembly list so the DAG is complete
 # before the file exists on disk.
 CHROMS = read_chromsizes(TOOLS["chromsizes"]) or (
-    [f"chr{i}" for i in range(1, 23)] + ["chrX", "chrY"]
+        [f"chr{i}" for i in range(1,23)] + ["chrX", "chrY"]
 )
 
 
@@ -145,7 +161,7 @@ def _ref_bed(ds):
 def _folders(ds):
     """All processing folders for a dataset: pooled root + per-replicate subdirs."""
     folders = [ds]
-    if DATASETS[ds].get("replicates"):
+    if DO_REPLICATES and DATASETS[ds].get("replicates"):
         folders += [f"{ds}/rep1", f"{ds}/rep2"]
     return folders
 
@@ -184,13 +200,14 @@ def all_results(ds):
         t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
         for mark in MARKS:
             t.append(f"{folder}/chromhmm_default_result/{mark}.bed")
-        for caller in ["omni", "homer", "macs2"]:
-            t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
-            t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
-            t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
+        for caller in CALLERS:
+            if DO_CHROMHMM_PEAKS:
+                t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
+                t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
+                t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed")
             t.append(f"{folder}/{caller}/kmeans_states_ovlp_matched.bed")
             t.append(f"{folder}/{caller}/kmeans_states_bwem_matched.bed")
-            t.append(f"{folder}/{caller}/kmeans_states_ovlp_matched.bed")
+            t.append(f"{folder}/{caller}/kmeans_states_comb_matched.bed")
 
     return t
 
@@ -198,7 +215,7 @@ def all_results(ds):
 rule all:
     input:
         lambda wildcards: [f"{ds}/.done" for ds in DATASETS]
-                        + (list(rules.inter_dataset_all.input) if DO_INTER else []),
+                          + (list(rules.inter_dataset_all.input) if DO_INTER else []),
 
 
 def _dataset_analysis_outputs(ds):

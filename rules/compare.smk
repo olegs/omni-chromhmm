@@ -29,8 +29,9 @@ def _compare_beds_for_folder(folder, variant):
     suffix = _VARIANT_SUFFIX[variant]
     cell = DATASETS[ds_of(folder)]["cell"]
     beds = [f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_{suffix}.bed"]
-    for caller in ["omni", "homer", "macs2"]:
-        beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_{suffix}.bed")
+    for caller in CALLERS:
+        if DO_CHROMHMM_PEAKS:
+            beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_{suffix}.bed")
         beds.append(f"{folder}/{caller}/kmeans_states_{suffix}.bed")
     return beds
 
