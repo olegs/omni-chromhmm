@@ -86,6 +86,37 @@ def bams_for_mark(ds, mark, rep=None):
     return [bam_path(ds, a) for a in accs]
 
 
+# --- Control BAM helpers ---------------------------------------------------
+
+def has_controls(ds):
+    """True if any BAM in the dataset has a non-empty control accession."""
+    return any(meta.get("control") for meta in DATASETS[ds]["bams"].values())
+
+
+def control_accs_for_mark(ds, mark, rep=None):
+    """Return deduplicated control accessions for a dataset's mark (optionally per rep)."""
+    out = set()
+    for acc, meta in DATASETS[ds]["bams"].items():
+        if meta["mark"] != mark:
+            continue
+        if rep is not None and meta.get("rep") != rep:
+            continue
+        ctrl = meta.get("control")
+        if ctrl:
+            out.add(ctrl)
+    return sorted(out)
+
+
+def controls_for_mark(ds, mark, rep=None):
+    """Return downloaded control BAM paths for a mark."""
+    return [f"{ds}/downloaded/{a}_control.bam" for a in control_accs_for_mark(ds, mark, rep)]
+
+
+def folder_has_controls(folder):
+    """Check whether the dataset behind a folder path has controls."""
+    return has_controls(ds_of(folder))
+
+
 def read_chromsizes(path):
     """Chromosomes with '_' filtered out (matches the `grep -v _` in the PDF)."""
     chroms = []

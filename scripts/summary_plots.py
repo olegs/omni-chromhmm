@@ -443,6 +443,68 @@ def _peak_bar(data, col, ylabel, title, outpath):
     print(f"  saved {outpath}")
 
 
+def _load_gap_frames(datasets, workdir):
+    frames = []
+    for ds in datasets:
+        path = os.path.join(workdir, ds, "peaks", "gap_lengths.tsv.gz")
+        if not os.path.exists(path):
+            print(f"  skipping {path}: not found")
+            continue
+        df = pd.read_csv(path, sep="\t", compression="gzip")[["method", "mark", "gap_length"]]
+        df["dataset"] = ds
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True) if frames else None
+
+
+def _plot_peak_gap_violin(datasets, workdir, outpath):
+    """Violin plot: distribution of gap lengths between adjacent binarized elements.
+
+    x-axis: method; hue: histone modification (mark); y-axis: log10(gap_length+1).
+    Data pooled across all datasets.
+    """
+    data = _load_gap_frames(datasets, workdir)
+    if data is None:
+        print(f"  skipping {outpath}: no data")
+        return
+
+    marks   = [m for m in _MARK_ORDER if m in data["mark"].unique()]
+    methods = [m for m in _PEAK_METHOD_ORDER if m in data["method"].unique()]
+
+    data = data[data["method"].isin(methods) & data["mark"].isin(marks)].copy()
+    data["log_gap"] = np.log10(data["gap_length"].values + 1)
+    data["method"] = pd.Categorical(data["method"], categories=methods, ordered=True)
+    data["mark"]   = pd.Categorical(data["mark"],   categories=marks,   ordered=True)
+
+    mark_palette = sns.color_palette("tab10", n_colors=len(marks))
+    mark_colors  = {m: mark_palette[i] for i, m in enumerate(marks)}
+
+    fig, ax = plt.subplots(figsize=(max(8, len(methods) * len(marks) * 0.35 + 2), 5))
+    sns.violinplot(
+        data=data, x="method", y="log_gap", hue="mark",
+        order=methods, hue_order=marks,
+        palette=mark_colors,
+        linewidth=0.4, density_norm="width", inner="quartile", cut=0,
+        ax=ax,
+    )
+    ax.set_xlabel("Binarization method", fontsize=9)
+    ax.set_ylabel("log₁₀(gap length + 1)  [bp]", fontsize=9)
+    ax.tick_params(axis="x", labelsize=8)
+    ax.grid(axis="y", alpha=0.3, linewidth=0.5)
+    ax.legend(title="Mark", fontsize=7, title_fontsize=8,
+              bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
+    n = len(datasets)
+    ax.set_title(
+        f"Gap lengths between adjacent binarized elements\n"
+        f"(pooled across {n} datasets)",
+        fontsize=10, fontweight="bold",
+    )
+    os.makedirs(os.path.dirname(os.path.abspath(outpath)), exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved {outpath}")
+
+
 def _plot_peak_count(datasets, workdir, outpath):
     """Grouped bar chart: n_peaks per mark per method, mean ± std across datasets."""
     data = _load_peak_frames(datasets, workdir)
@@ -927,6 +989,8 @@ def main():
                     help="Output PNG for peak count bar chart")
     ap.add_argument("--peak-length-outfile", default=None, dest="peak_length_outfile",
                     help="Output PNG for mean peak length bar chart")
+    ap.add_argument("--peak-gap-violin-outfile", default=None, dest="peak_gap_violin_outfile",
+                    help="Output PNG for gap-length violin plot per mark per method")
     # Reference distribution plot args (optional)
     ap.add_argument("--ref-composition-outfile", default=None, dest="ref_composition_outfile",
                     help="Output PNG for stacked state composition across ENCODE references")
@@ -1045,6 +1109,12 @@ def main():
             ap.error("--workdir is required for --peak-length-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.peak_length_outfile)), exist_ok=True)
         _plot_peak_length(args.datasets, args.workdir, args.peak_length_outfile)
+
+    # --- gap-length violin -------------------------------------------------
+    if args.peak_gap_violin_outfile:
+        if not args.workdir:
+            ap.error("--workdir is required for --peak-gap-violin-outfile")
+        _plot_peak_gap_violin(args.datasets, args.workdir, args.peak_gap_violin_outfile)
 
     # --- inter-reference state composition ----------------------------------
     if args.ref_composition_outfile:

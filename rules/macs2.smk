@@ -3,7 +3,8 @@
 # Narrow marks (sharp peaks): H3K4me3, H3K27ac
 # Broad marks (diffuse domains): H3K27me3, H3K36me3, H3K9me3, H3K4me1
 #
-# No control BAM is required; --nolambda disables local lambda estimation.
+# When a control BAM is available it is passed via -c; otherwise MACS2 runs
+# without a control.
 # Output: {folder}/macs2/{mark}.bed  (3-column BED, sorted)
 
 MACS2_NARROW_MARKS = {"H3K4me3", "H3K27ac"}
@@ -18,21 +19,24 @@ def _macs2_mode(mark):
 rule macs2_callpeak:
     """Call peaks with MACS2 (narrow for H3K4me3/H3K27ac, broad for others)."""
     input:
-        bam = "{folder}/bams/{mark}.bam",
+        bam     = "{folder}/bams/{mark}.bam",
+        control = lambda w: [f"{w.folder}/controls/{w.mark}.bam"] if folder_has_controls(w.folder) else [],
     output:
         bed = "{folder}/macs2/{mark}.bed",
     conda: "../envs/macs2.yaml"
     log:   "{folder}/macs2/{mark}.log"
     params:
-        genome = {"hg38": "hs", "hg19": "hs", "mm10": "mm", "mm9": "mm"}.get(GENOME, GENOME),
-        mode   = lambda w: _macs2_mode(w.mark),
-        outdir = "{folder}/macs2",
-        name   = "{mark}",
+        genome  = {"hg38": "hs", "hg19": "hs", "mm10": "mm", "mm9": "mm"}.get(GENOME, GENOME),
+        mode    = lambda w: _macs2_mode(w.mark),
+        control = lambda w: f"-c {w.folder}/controls/{w.mark}.bam" if folder_has_controls(w.folder) else "",
+        outdir  = "{folder}/macs2",
+        name    = "{mark}",
     shell:
         r"""
         mkdir -p {params.outdir}
         macs2 callpeak \
             -t {input.bam} \
+            {params.control} \
             -f BAM \
             -g {params.genome} \
             {params.mode} \

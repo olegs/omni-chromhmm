@@ -45,14 +45,31 @@ rule homer_tagdir:
         "{input.tool} {output} {input.bam} &> {log}"
 
 
+rule homer_control_tagdir:
+    """Create a Homer tag directory from the control BAM for a mark."""
+    input:
+        bam  = "{folder}/controls/{mark}.bam",
+        tool = f"{HOMER_EXEDIR}/makeTagDirectory",
+    output: temp(directory("{folder}/homer/{mark}_control_tagdir"))
+    conda: "../envs/bio.yaml"
+    log:    "{folder}/homer/{mark}_control_tagdir.log"
+    shell:
+        "{input.tool} {output} {input.bam} &> {log}"
+
+
 rule homer_findpeaks:
     input:
-        tagdir = "{folder}/homer/{mark}_tagdir",
-        tool   = f"{HOMER_EXEDIR}/findPeaks",
+        tagdir      = "{folder}/homer/{mark}_tagdir",
+        control_tag = lambda w: [f"{w.folder}/homer/{w.mark}_control_tagdir"]
+                                if folder_has_controls(w.folder) else [],
+        tool        = f"{HOMER_EXEDIR}/findPeaks",
     output: temp("{folder}/homer/{mark}.peaks.txt")
     log:    "{folder}/homer/{mark}_findPeaks.log"
+    params:
+        control = lambda w: f"-i {w.folder}/homer/{w.mark}_control_tagdir"
+                             if folder_has_controls(w.folder) else "",
     shell:
-        "{input.tool} {input.tagdir} -style histone -o {output} &> {log}"
+        "{input.tool} {input.tagdir} -style histone {params.control} -o {output} &> {log}"
 
 
 rule homer_peak_to_bed:

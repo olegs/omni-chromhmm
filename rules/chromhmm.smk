@@ -24,30 +24,40 @@ rule download_markups:
 # --- Default ChromHMM binarization ---------------------------------------
 
 rule make_cellmark_table:
-    input:  lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS]
+    input:
+        bams = lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS],
+        controls = lambda w: ([f"{w.folder}/controls/{m}.bam" for m in MARKS]
+                              if folder_has_controls(w.folder) else []),
     output: "{folder}/chromhmm_default/cellmarkfiletable.tsv"
     params: cell = lambda w: DATASETS[ds_of(w.folder)]["cell"]
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
+        _has_ctrl = folder_has_controls(wildcards.folder)
         with open(output[0], "w") as f:
             for m in MARKS:
-                f.write(f"{params.cell}\t{m}\t{m}.bam\n")
+                if _has_ctrl:
+                    f.write(f"{params.cell}\t{m}\t{m}.bam\t{m}.bam\n")
+                else:
+                    f.write(f"{params.cell}\t{m}\t{m}.bam\n")
 
 
 rule chromhmm_binarize_bam:
     input:
-        table = "{folder}/chromhmm_default/cellmarkfiletable.tsv",
-        bams  = lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS],
+        table    = "{folder}/chromhmm_default/cellmarkfiletable.tsv",
+        bams     = lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS],
+        controls = lambda w: ([f"{w.folder}/controls/{m}.bam" for m in MARKS]
+                              if folder_has_controls(w.folder) else []),
     output:
         bins = expand("{{folder}}/chromhmm_default/{{cell}}_{chr}_binary.txt", chr=CHROMS)
     params:
-        bin    = CHROMHMM_BIN,
-        cs     = TOOLS["chromsizes"],
-        bamdir = "{folder}/bams",
-        outdir = "{folder}/chromhmm_default",
+        bin        = CHROMHMM_BIN,
+        cs         = TOOLS["chromsizes"],
+        bamdir     = "{folder}/bams",
+        controldir = lambda w: f"-c {w.folder}/controls" if folder_has_controls(w.folder) else "",
+        outdir     = "{folder}/chromhmm_default",
     shell:
         "mkdir -p {params.outdir} && "
-        "{CHROMHMM} BinarizeBam -b {params.bin} {params.cs} "
+        "{CHROMHMM} BinarizeBam -b {params.bin} {params.controldir} {params.cs} "
         "{params.bamdir} {input.table} {params.outdir}"
 
 

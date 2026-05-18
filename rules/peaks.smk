@@ -24,6 +24,7 @@ rule analyze_peaks:
     input: _peak_analysis_inputs
     output:
         stats   = "{ds}/peaks/peak_stats.tsv",
+        gaps    = "{ds}/peaks/gap_lengths.tsv.gz",
         n_peaks = "{ds}/peaks/n_peaks.png",
         mean    = "{ds}/peaks/mean_length.png",
         median  = "{ds}/peaks/median_length.png",

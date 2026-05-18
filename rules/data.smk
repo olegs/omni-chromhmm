@@ -48,6 +48,44 @@ rule download_gencode_gtf:
         "wget -q {params.url} -O {output}"
 
 
+rule download_control_bam:
+    """Download a control/input BAM from ENCODE."""
+    output: "{ds}/downloaded/{acc}_control.bam"
+    params:
+        url = lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.bam"
+    shell:
+        "wget -q {params.url} -O {output}"
+
+
+rule pool_controls:
+    """Pool per-mark control BAMs into {ds}/controls/{mark}.bam.
+
+    Symlinks when there is only one source BAM; merges with samtools when
+    multiple control BAMs exist.
+    """
+    input:  lambda w: controls_for_mark(w.ds, w.mark)
+    output: "{ds}/controls/{mark}.bam"
+    conda: "../envs/bio.yaml"
+    run:
+        os.makedirs(os.path.dirname(output[0]), exist_ok=True)
+        if len(input) == 1:
+            os.symlink(os.path.abspath(input[0]), output[0])
+        else:
+            shell("samtools merge -f {output} {input}")
+
+
+rule rep_link_control:
+    """Symlink a per-replicate control BAM into {ds}/{rep}/controls/{mark}.bam."""
+    input:  lambda w: controls_for_mark(w.ds, w.mark, rep=w.rep)
+    output: "{ds}/{rep}/controls/{mark}.bam"
+    run:
+        os.makedirs(os.path.dirname(output[0]), exist_ok=True)
+        if len(input) == 1:
+            os.symlink(os.path.abspath(input[0]), output[0])
+        else:
+            shell("samtools merge -f {output} {input}")
+
+
 rule pool_bams:
     """Pool per-mark downloaded BAMs into {ds}/bams/{mark}.bam.
 

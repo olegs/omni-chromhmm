@@ -141,6 +141,7 @@ _STATE_LENGTH_PLOT    = "inter_dataset/summary_plots/state_length_comparison.png
 _STATE_COVERAGE_PLOT  = "inter_dataset/summary_plots/state_coverage.png"
 _PEAK_COUNT_PLOT      = "inter_dataset/summary_plots/peak_count.png"
 _PEAK_LENGTH_PLOT     = "inter_dataset/summary_plots/peak_length.png"
+_PEAK_GAP_VIOLIN_PLOT = "inter_dataset/summary_plots/peak_gap_violin.png"
 
 
 rule inter_dataset_segment_lengths_comparison:
@@ -234,6 +235,26 @@ rule inter_dataset_peak_length:
             --datasets              {params.datasets} \
             --workdir               {params.workdir} \
             --peak-length-outfile   {output}
+        """
+
+
+rule inter_dataset_peak_gap_violin:
+    """Violin plot: gap lengths between adjacent binarized elements, per mark (hue) × method."""
+    input:
+        expand("{ds}/peaks/gap_lengths.tsv.gz", ds=list(DATASETS)),
+    output:
+        _PEAK_GAP_VIOLIN_PLOT,
+    conda: "../envs/python.yaml"
+    params:
+        scripts_dir = SCRIPTS_DIR,
+        workdir     = lambda w: config.get("workdir", "."),
+        datasets    = " ".join(list(DATASETS)),
+    shell:
+        r"""
+        python {params.scripts_dir}/summary_plots.py \
+            --datasets                   {params.datasets} \
+            --workdir                    {params.workdir} \
+            --peak-gap-violin-outfile    {output}
         """
 
 
@@ -549,6 +570,7 @@ rule inter_dataset_all:
         _STATE_COVERAGE_PLOT,
         _PEAK_COUNT_PLOT,
         _PEAK_LENGTH_PLOT,
+        _PEAK_GAP_VIOLIN_PLOT,
         _REF_DIST_PLOT,
         _REF_DIST_NOQH_PLOT,
         _REF_COMPOSITION_PLOT,

@@ -31,18 +31,18 @@ datasets:
     omnipeak_extra: ""
     replicates: true
     bams:
-      ENCFF021CLP: {mark: H3K4me3,  rep: rep1}
-      ENCFF064XTS: {mark: H3K27ac,  rep: rep1}
-      ENCFF078EHX: {mark: H3K9me3,  rep: rep1}
-      ENCFF084CZB: {mark: H3K27me3, rep: rep1}
-      ENCFF197BAZ: {mark: H3K36me3, rep: rep1}
-      ENCFF812CWF: {mark: H3K4me1,  rep: rep1}
-      ENCFF355WLE: {mark: H3K4me3,  rep: rep2}
-      ENCFF547BFL: {mark: H3K27me3, rep: rep2}
-      ENCFF827KCG: {mark: H3K27ac,  rep: rep2}
-      ENCFF927WHP: {mark: H3K4me1,  rep: rep2}
-      ENCFF942QOQ: {mark: H3K9me3,  rep: rep2}
-      ENCFF994SJM: {mark: H3K36me3, rep: rep2}
+      ENCFF021CLP: {mark: H3K4me3,  rep: rep1, control: ENCFF528QYK}
+      ENCFF355WLE: {mark: H3K4me3,  rep: rep2, control: ENCFF686YSU}
+      ENCFF064XTS: {mark: H3K27ac,  rep: rep1, control: ENCFF686YSU}
+      ENCFF827KCG: {mark: H3K27ac,  rep: rep2, control: ENCFF821GNU}
+      ENCFF812CWF: {mark: H3K4me1,  rep: rep1, control: ENCFF528QYK}
+      ENCFF927WHP: {mark: H3K4me1,  rep: rep2, control: ENCFF686YSU}
+      ENCFF197BAZ: {mark: H3K36me3, rep: rep1, control: ENCFF686YSU}
+      ENCFF994SJM: {mark: H3K36me3, rep: rep2, control: ENCFF821GNU}
+      ENCFF084CZB: {mark: H3K27me3, rep: rep1, control: ENCFF528QYK}
+      ENCFF547BFL: {mark: H3K27me3, rep: rep2, control: ENCFF686YSU}
+      ENCFF078EHX: {mark: H3K9me3,  rep: rep1, control: ENCFF528QYK}
+      ENCFF942QOQ: {mark: H3K9me3,  rep: rep2, control: ENCFF686YSU}
 
   monocytes:
     cell: "Monocyte"
@@ -52,17 +52,17 @@ datasets:
     omnipeak_extra: ""
     replicates: true
     bams:
-      ENCFF144PKE: {mark: H3K4me3, rep: rep1}
-      ENCFF640GCK: {mark: H3K4me3, rep: rep2}
-      ENCFF014BCD: {mark: H3K27ac, rep: rep2}
-      ENCFF872QFO: {mark: H3K27ac, rep: rep1}
-      ENCFF141KHX: {mark: H3K4me1, rep: rep1}
-      ENCFF573MNS: {mark: H3K4me1, rep: rep2}
-      ENCFF150SGV: {mark: H3K36me3, rep: rep1}
-      ENCFF629ODR: {mark: H3K36me3, rep: rep2}
-      ENCFF168UCU: {mark: H3K9me3, rep: rep1}
-      ENCFF537BKE: {mark: H3K9me3, rep: rep2}
-      ENCFF225KQA: {mark: H3K27me3} # Rep1 only
+      ENCFF144PKE: {mark: H3K4me3, rep: rep1, control: ENCFF421DXL}
+      ENCFF640GCK: {mark: H3K4me3, rep: rep2, control: ENCFF662FMZ}
+      ENCFF872QFO: {mark: H3K27ac, rep: rep1, control: ENCFF421DXL}
+      ENCFF014BCD: {mark: H3K27ac, rep: rep2, control: ENCFF662FMZ}
+      ENCFF141KHX: {mark: H3K4me1, rep: rep1, control: ENCFF421DXL}
+      ENCFF573MNS: {mark: H3K4me1, rep: rep2, control: ENCFF662FMZ}
+      ENCFF150SGV: {mark: H3K36me3, rep: rep1, control: ENCFF421DXL}
+      ENCFF629ODR: {mark: H3K36me3, rep: rep2, control: ENCFF662FMZ}
+      ENCFF225KQA: {mark: H3K27me3, control: ENCFF134CHO} # Rep1 only
+      ENCFF168UCU: {mark: H3K9me3, rep: rep1, control: ENCFF421DXL}
+      ENCFF537BKE: {mark: H3K9me3, rep: rep2, control: ENCFF662FMZ}
 
   monocytes_mint:
     cell: "MonocyteMint"
@@ -73,12 +73,12 @@ datasets:
     omnipeak_extra: "--fragmentation 0"
     replicates: false
     bams:
-      ENCFF128UWF: {mark: H3K36me3}
-      ENCFF438HLV: {mark: H3K27ac}
-      ENCFF507NNO: {mark: H3K27me3}
-      ENCFF600ZLL: {mark: H3K4me3}
-      ENCFF613TME: {mark: H3K9me3}
-      ENCFF668OLF: {mark: H3K4me1}
+      ENCFF600ZLL: {mark: H3K4me3, control: ENCFF041EUP}
+      ENCFF438HLV: {mark: H3K27ac, control: ENCFF041EUP}
+      ENCFF668OLF: {mark: H3K4me1, control: ENCFF041EUP}
+      ENCFF128UWF: {mark: H3K36me3, control: ENCFF041EUP}
+      ENCFF507NNO: {mark: H3K27me3, control: ENCFF041EUP}
+      ENCFF613TME: {mark: H3K9me3, control: ENCFF041EUP}
 
   gm12878_mint:
     cell: "GM12878Mint"
@@ -89,12 +89,12 @@ datasets:
     omnipeak_extra: "--fragmentation 0"
     replicates: false
     bams:
-      ENCFF241BPW: {mark: H3K27ac}
-      ENCFF304ZNG: {mark: H3K9me3}
-      ENCFF545WJH: {mark: H3K27me3}
-      ENCFF641VOI: {mark: H3K4me3}
-      ENCFF869PBS: {mark: H3K36me3}
-      ENCFF934GLQ: {mark: H3K4me1}
+      ENCFF641VOI: {mark: H3K4me3, control: ENCFF369DNR}
+      ENCFF241BPW: {mark: H3K27ac, control: ENCFF369DNR}
+      ENCFF934GLQ: {mark: H3K4me1, control: ENCFF369DNR}
+      ENCFF869PBS: {mark: H3K36me3, control: ENCFF369DNR}
+      ENCFF304ZNG: {mark: H3K9me3, control: ENCFF369DNR}
+      ENCFF545WJH: {mark: H3K27me3, control: ENCFF369DNR}
 
   spleen:
     cell: "Spleen"
@@ -104,18 +104,18 @@ datasets:
     omnipeak_extra: ""
     replicates: true
     bams:
-      ENCFF702ICJ: {mark: H3K4me1, rep: rep2}
-      ENCFF915NOI: {mark: H3K4me1, rep: rep1}
-      ENCFF464ZDR: {mark: H3K4me3, rep: rep2}
-      ENCFF838OPW: {mark: H3K4me3, rep: rep1}
-      ENCFF472TSV: {mark: H3K27ac, rep: rep2}
-      ENCFF185DQS: {mark: H3K27ac, rep: rep1}
-      ENCFF488FJX: {mark: H3K27me3, rep: rep2}
-      ENCFF811PTP: {mark: H3K27me3, rep: rep1}
-      ENCFF934RMM: {mark: H3K36me3, rep: rep2}
-      ENCFF877UDA: {mark: H3K36me3, rep: rep1}
-      ENCFF425JOG: {mark: H3K9me3, rep: rep2}
-      ENCFF865ORP: {mark: H3K9me3, rep: rep1}
+      ENCFF838OPW: {mark: H3K4me3, rep: rep1, control: ENCFF921FHW}
+      ENCFF464ZDR: {mark: H3K4me3, rep: rep2, control: ENCFF125VUN}
+      ENCFF185DQS: {mark: H3K27ac, rep: rep1, control: ENCFF921FHW}
+      ENCFF472TSV: {mark: H3K27ac, rep: rep2, control: ENCFF125VUN}
+      ENCFF915NOI: {mark: H3K4me1, rep: rep1, control: ENCFF921FHW}
+      ENCFF702ICJ: {mark: H3K4me1, rep: rep2, control: ENCFF125VUN}
+      ENCFF877UDA: {mark: H3K36me3, rep: rep1, control: ENCFF921FHW}
+      ENCFF934RMM: {mark: H3K36me3, rep: rep2, control: ENCFF125VUN}
+      ENCFF865ORP: {mark: H3K9me3, rep: rep1, control: ENCFF921FHW}
+      ENCFF425JOG: {mark: H3K9me3, rep: rep2, control: ENCFF125VUN}
+      ENCFF811PTP: {mark: H3K27me3, rep: rep1, control: ENCFF921FHW}
+      ENCFF488FJX: {mark: H3K27me3, rep: rep2, control: ENCFF125VUN}
 
 #  heart_right_ventricle:
 #    cell: "HeartRightVentricle"
@@ -125,12 +125,12 @@ datasets:
 #    omnipeak_extra: ""
 #    replicates: false
 #    bams:
-#      ENCFF857EPZ: {mark: H3K4me1}
 #      ENCFF613ARJ: {mark: H3K4me3}
 #      ENCFF337BMH: {mark: H3K27ac}
-#      ENCFF534HLX: {mark: H3K27me3}
+#      ENCFF857EPZ: {mark: H3K4me1}
 #      ENCFF667SEX: {mark: H3K36me3}
 #      ENCFF126JDQ: {mark: H3K9me3}
+#      ENCFF534HLX: {mark: H3K27me3}
 #
 #  neurosphere:
 #    cell: "Neurosphere"
@@ -140,12 +140,12 @@ datasets:
 #    omnipeak_extra: ""
 #    replicates: false
 #    bams:
-#      ENCFF451LXC: {mark: H3K4me1}   # redacted alignments (15-week embryo donor)
 #      ENCFF345SEO: {mark: H3K4me3}
 #      ENCFF888LGJ: {mark: H3K27ac}
-#      ENCFF540GNQ: {mark: H3K27me3}
+#      ENCFF451LXC: {mark: H3K4me1}   # redacted alignments (15-week embryo donor)
 #      ENCFF141LZS: {mark: H3K36me3}
 #      ENCFF124GYP: {mark: H3K9me3}
+#      ENCFF540GNQ: {mark: H3K27me3}
 #
 #  sigmoid_colon:
 #    cell: "SigmoidColon"
@@ -155,12 +155,12 @@ datasets:
 #    omnipeak_extra: ""
 #    replicates: false
 #    bams:
-#      ENCFF053HVD: {mark: H3K4me1}
 #      ENCFF113NNR: {mark: H3K4me3}
 #      ENCFF633SJK: {mark: H3K27ac}
-#      ENCFF149XIX: {mark: H3K27me3}
+#      ENCFF053HVD: {mark: H3K4me1}
 #      ENCFF299QLA: {mark: H3K36me3}
 #      ENCFF662QPM: {mark: H3K9me3}
+#      ENCFF149XIX: {mark: H3K27me3}
 #
 #  adrenal_gland:
 #    cell: "AdrenalGland"
@@ -170,12 +170,12 @@ datasets:
 #    omnipeak_extra: ""
 #    replicates: false
 #    bams:
-#      ENCFF636MLS: {mark: H3K4me1}
 #      ENCFF792QXD: {mark: H3K4me3}
 #      ENCFF330SJO: {mark: H3K27ac}
-#      ENCFF934KYU: {mark: H3K27me3}
+#      ENCFF636MLS: {mark: H3K4me1}
 #      ENCFF874WZT: {mark: H3K36me3}
 #      ENCFF875QEV: {mark: H3K9me3}
+#      ENCFF934KYU: {mark: H3K27me3}
 #
 #  thyroid_gland:
 #    cell: "ThyroidGland"
@@ -185,12 +185,12 @@ datasets:
 #    omnipeak_extra: ""
 #    replicates: false
 #    bams:
-#      ENCFF401CCX: {mark: H3K4me1}
 #      ENCFF993OFD: {mark: H3K4me3}
 #      ENCFF408NBC: {mark: H3K27ac}
-#      ENCFF451FTP: {mark: H3K27me3}
+#      ENCFF401CCX: {mark: H3K4me1}
 #      ENCFF166JAN: {mark: H3K36me3}
 #      ENCFF910RQR: {mark: H3K9me3}
+#      ENCFF451FTP: {mark: H3K27me3}
 #
 #  uterus:
 #    cell: "Uterus"
@@ -200,13 +200,13 @@ datasets:
 #    omnipeak_extra: ""
 #    replicates: false
 #    bams:
-#      ENCFF175TLF: {mark: H3K4me1}
 #      ENCFF781UFS: {mark: H3K4me3}
 #      ENCFF980GJI: {mark: H3K4me3}
 #      ENCFF568VJD: {mark: H3K27ac}
-#      ENCFF334GYE: {mark: H3K27me3}
+#      ENCFF175TLF: {mark: H3K4me1}
 #      ENCFF693PGT: {mark: H3K36me3}
 #      ENCFF520GBN: {mark: H3K9me3}
+#      ENCFF334GYE: {mark: H3K27me3}
 #
 #  tibial_nerve:
 #    cell: "TibialNerve"
@@ -216,12 +216,12 @@ datasets:
 #    omnipeak_extra: ""
 #    replicates: false
 #    bams:
-#      ENCFF513KEZ: {mark: H3K4me1}
 #      ENCFF089YNU: {mark: H3K4me3}
 #      ENCFF233QEC: {mark: H3K27ac}
-#      ENCFF785JGT: {mark: H3K27me3}
+#      ENCFF513KEZ: {mark: H3K4me1}
 #      ENCFF658UFR: {mark: H3K36me3}
 #      ENCFF525VJO: {mark: H3K9me3}
+#      ENCFF785JGT: {mark: H3K27me3}
 #
 #  heart_left_ventricle:
 #    cell: "HeartLeftVentricle"
@@ -231,12 +231,12 @@ datasets:
 #    omnipeak_extra: ""
 #    replicates: false
 #    bams:
-#      ENCFF451FGF: {mark: H3K4me1}
 #      ENCFF080RUF: {mark: H3K4me3}
 #      ENCFF065CTN: {mark: H3K27ac}
-#      ENCFF482IDO: {mark: H3K27me3}
+#      ENCFF451FGF: {mark: H3K4me1}
 #      ENCFF526UZK: {mark: H3K36me3}
 #      ENCFF255BHA: {mark: H3K9me3}
+#      ENCFF482IDO: {mark: H3K27me3}
 #
 #  substantia_nigra:
 #    cell: "SubstantiaNigra"
@@ -246,13 +246,13 @@ datasets:
 #    omnipeak_extra: ""
 #    replicates: false
 #    bams:
-#      ENCFF232AJZ: {mark: H3K4me1}   # ENCODE3; original ENCFF326YFL was revoked
 #      ENCFF009SQK: {mark: H3K4me3}
 #      ENCFF750MOL: {mark: H3K27ac}   # rep1
 #      ENCFF608CJW: {mark: H3K27ac}   # rep2
-#      ENCFF277JBP: {mark: H3K27me3}
+#      ENCFF232AJZ: {mark: H3K4me1}   # ENCODE3; original ENCFF326YFL was revoked
 #      ENCFF723KKW: {mark: H3K36me3}
 #      ENCFF234BHH: {mark: H3K9me3}
+#      ENCFF277JBP: {mark: H3K27me3}
 #
 #  temporal_lobe:
 #    cell: "TemporalLobe"
@@ -262,9 +262,9 @@ datasets:
 #    omnipeak_extra: ""
 #    replicates: false
 #    bams:
-#      ENCFF967XVG: {mark: H3K4me1}   # redacted alignments (Roadmap Epigenomics)
 #      ENCFF442BZF: {mark: H3K4me3}
 #      ENCFF259YFQ: {mark: H3K27ac}
-#      ENCFF527KGU: {mark: H3K27me3}
+#      ENCFF967XVG: {mark: H3K4me1}   # redacted alignments (Roadmap Epigenomics)
 #      ENCFF123LMF: {mark: H3K36me3}
 #      ENCFF579GDZ: {mark: H3K9me3}
+#      ENCFF527KGU: {mark: H3K27me3}
