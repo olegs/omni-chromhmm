@@ -30,6 +30,7 @@ def _flag(key, default=True):
 
 DO_ANALYZE = _flag("analyze")
 DO_COMPARE = _flag("compare")
+DO_INTER   = _flag("inter")
 
 CHROMHMM = f"java {TOOLS['java_opts']} -jar {TOOLS['chromhmm_jar']}"
 OMNIPEAK = f"java -Xmx8G --add-modules=jdk.incubator.vector -jar {TOOLS['omnipeak_jar']}"
@@ -197,7 +198,7 @@ def all_results(ds):
 rule all:
     input:
         lambda wildcards: [f"{ds}/.done" for ds in DATASETS]
-                        + list(rules.inter_dataset_all.input),
+                        + (list(rules.inter_dataset_all.input) if DO_INTER else []),
 
 
 def _dataset_analysis_outputs(ds):

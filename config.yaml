@@ -20,6 +20,7 @@ params:
   marks: [H3K36me3, H3K9me3, H3K4me1, H3K27ac, H3K27me3, H3K4me3]
   analyze: false   # run per-segmentation analysis (analyze.smk)
   compare: false   # run cross-segmentation comparison (compare.smk)
+  inter: false     # run inter-dataset comparison and summary plots
 
 datasets:
 
