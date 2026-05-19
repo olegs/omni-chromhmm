@@ -66,7 +66,7 @@ rule merge_control_bams:
     set of controls is merged only once regardless of how many marks reference it.
     """
     input: lambda w: [f"{w.ds}/downloaded/{a}_control.bam" for a in w.accs.split("+")]
-    output: "{ds}/downloaded/{accs}_merged_control.bam"
+    output: temp("{ds}/downloaded/{accs}_merged_control.bam")
     wildcard_constraints:
         accs = r"ENCFF[A-Z0-9]+(\+ENCFF[A-Z0-9]+)+"
     conda: "../envs/bio.yaml"
@@ -93,7 +93,7 @@ rule pool_controls:
     repeated for marks that share the same control set.
     """
     input:  lambda w: _canonical_control(w.ds, w.mark)
-    output: "{ds}/controls/{mark}.bam"
+    output: temp("{ds}/controls/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
         os.symlink(os.path.abspath(input[0]), output[0])
@@ -102,7 +102,7 @@ rule pool_controls:
 rule rep_link_control:
     """Symlink {ds}/{rep}/controls/{mark}.bam to the canonical control BAM."""
     input:  lambda w: _canonical_control(w.ds, w.mark, rep=w.rep)
-    output: "{ds}/{rep}/controls/{mark}.bam"
+    output: temp("{ds}/{rep}/controls/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
         os.symlink(os.path.abspath(input[0]), output[0])
@@ -115,7 +115,7 @@ rule pool_bams:
     replicates); merges with samtools when multiple BAMs exist.
     """
     input:  lambda w: bams_for_mark(w.ds, w.mark)
-    output: "{ds}/bams/{mark}.bam"
+    output: temp("{ds}/bams/{mark}.bam")
     conda: "../envs/bio.yaml"
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
@@ -128,7 +128,7 @@ rule pool_bams:
 rule rep_link_bam:
     """Symlink a per-replicate downloaded BAM into {ds}/{rep}/bams/{mark}.bam."""
     input:  lambda w: bams_for_mark(w.ds, w.mark, rep=w.rep)
-    output: "{ds}/{rep}/bams/{mark}.bam"
+    output: temp("{ds}/{rep}/bams/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
         os.symlink(os.path.abspath(input[0]), output[0])
@@ -137,7 +137,7 @@ rule rep_link_bam:
 rule index_folder_bam:
     """Index a BAM in any {folder}/bams/ directory."""
     input:  "{folder}/bams/{mark}.bam"
-    output: "{folder}/bams/{mark}.bam.bai"
+    output: temp("{folder}/bams/{mark}.bam.bai")
     conda: "../envs/bio.yaml"
     shell:  "samtools index {input}"
 
