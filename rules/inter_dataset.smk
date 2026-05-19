@@ -151,7 +151,9 @@ rule inter_dataset_segment_lengths_comparison:
     """Per-state segment length violin: ENCODE reference vs de-novo methods, all datasets."""
     input:
         _MARKUPS_DIR,
-        expand("{ds}/omni/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)),
+        *(expand("{ds}/omni/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
+        *(expand("{ds}/homer/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
+        *(expand("{ds}/macs2/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
     output:
         _STATE_LENGTH_PLOT,
     conda: "../envs/python.yaml"
@@ -178,7 +180,9 @@ rule inter_dataset_state_coverage:
     """Per-state genomic coverage fraction: ENCODE reference vs de-novo methods, all datasets."""
     input:
         _MARKUPS_DIR,
-        expand("{ds}/omni/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)),
+        *(expand("{ds}/omni/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
+        *(expand("{ds}/homer/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
+        *(expand("{ds}/macs2/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
     output:
         _STATE_COVERAGE_PLOT,
     conda: "../envs/python.yaml"
