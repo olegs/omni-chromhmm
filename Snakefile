@@ -12,7 +12,7 @@ MARKS = P["marks"]
 CHROMHMM_BIN = P["chromhmm_bin"]
 OMNI_BIN = P["omni_bin"]
 HOMER_BIN = P["homer_bin"]
-MACS2_BIN = P.get("macs2_bin",100)
+MACS2_BIN = P.get("macs2_bin")
 NSTATES = P["n_states"]
 GENOME = P["genome"]
 
