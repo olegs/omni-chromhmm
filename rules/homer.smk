@@ -44,10 +44,13 @@ rule homer_tagdir:
     resources: homer_tagdir=1, disk_mb=20000
     shell:
         # makeTagDirectory creates a temp SAM at the BAM path minus ".bam".
-        # The trap ensures it is removed on both success and failure.
+        # trap EXIT  removes it on both success and failure.
+        # trap ERR   removes the incomplete output directory on failure so
+        #            Snakemake does not reuse a corrupt tagdir on the next run.
         """
         _tmp=$(dirname {input.bam})/$(basename {input.bam} .bam)
         trap "rm -f $_tmp" EXIT
+        trap "rm -rf {output}" ERR
         {input.tool} {output} {input.bam} &> {log}
         """
 
@@ -63,10 +66,13 @@ rule homer_control_tagdir:
     resources: homer_tagdir=1, disk_mb=20000
     shell:
         # makeTagDirectory creates a temp SAM at the BAM path minus ".bam".
-        # The trap ensures it is removed on both success and failure.
+        # trap EXIT  removes it on both success and failure.
+        # trap ERR   removes the incomplete output directory on failure so
+        #            Snakemake does not reuse a corrupt tagdir on the next run.
         """
-        _tmp=$(dirname {input.bam})/$(basename {input.bam} .bam)
-        trap "rm -f $_tmp" EXIT
+        tmp=$(dirname {input.bam})/$(basename {input.bam} .bam)
+        trap "rm -f $tmp" EXIT
+        trap "rm -rf {output}" ERR
         {input.tool} {output} {input.bam} &> {log}
         """
 

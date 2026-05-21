@@ -114,8 +114,7 @@ rule pool_bams:
     Symlinks when there is only one source BAM (single replicate or no
     replicates); merges with samtools when multiple BAMs exist.
 
-    Each merge claims 10 GB (disk_mb=10000); HOMER tagdirs claim the same.
-    Pass --resources disk_mb=30000 to cap total concurrent disk use at ~30 GB.
+    Pass --resources disk_mb=N to cap total concurrent disk use.
     """
     input: lambda w: bams_for_mark(w.ds,w.mark)
     output: temp("{ds}/bams/{mark}.bam")
@@ -126,7 +125,12 @@ rule pool_bams:
         if len(input) == 1:
             os.symlink(os.path.abspath(input[0]),output[0])
         else:
-            shell("samtools merge -f {output} {input}")
+            try:
+                shell("samtools merge -f {output} {input}")
+            except Exception:
+                if os.path.exists(output[0]):
+                    os.remove(output[0])
+                raise
 
 
 rule rep_link_bam:

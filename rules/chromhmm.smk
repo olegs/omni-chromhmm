@@ -56,9 +56,12 @@ rule chromhmm_binarize_bam:
         controldir=lambda w: f"-c {w.folder}/controls" if folder_has_controls(w.folder) else "",
         outdir="{folder}/chromhmm_default",
     shell:
-        "mkdir -p {params.outdir} && "
-        "{CHROMHMM} BinarizeBam -b {params.bin} {params.controldir} {params.cs} "
-        "{params.bamdir} {input.table} {params.outdir}"
+        r"""
+        trap "rm -f {output.bins}" ERR
+        mkdir -p {params.outdir}
+        {CHROMHMM} BinarizeBam -b {params.bin} {params.controldir} {params.cs} \
+            {params.bamdir} {input.table} {params.outdir}
+        """
 
 
 rule chromhmm_learn_default:
@@ -107,7 +110,10 @@ rule multiinter:
     output: temp("{folder}/{caller}/chromhmm_peaks/multiinter.tsv")
     conda: "../envs/bio.yaml"
     shell:
-        "bash {SCRIPTS_DIR}/multiinter.sh {output} {input.bins} {input.peaks}"
+        r"""
+        trap "rm -f {output}" ERR
+        bash {SCRIPTS_DIR}/multiinter.sh {output} {input.bins} {input.peaks}
+        """
 
 
 rule binarize_per_chr:
