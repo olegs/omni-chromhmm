@@ -17,11 +17,11 @@ HOMER_EXEDIR = f"{HOMER_DIR}/bin"
 rule install_homer:
     """Fetch configureHomer.pl and install the core Homer package locally."""
     output:
-        make = f"{HOMER_EXEDIR}/makeTagDirectory",
-        find = f"{HOMER_EXEDIR}/findPeaks",
+        make=f"{HOMER_EXEDIR}/makeTagDirectory",
+        find=f"{HOMER_EXEDIR}/findPeaks",
     params:
-        dir = HOMER_DIR,
-        url = "http://homer.ucsd.edu/homer/configureHomer.pl",
+        dir=HOMER_DIR,
+        url="http://homer.ucsd.edu/homer/configureHomer.pl",
     log: f"{HOMER_DIR}/install.log"
     shell:
         r"""
@@ -36,11 +36,11 @@ rule install_homer:
 
 rule homer_tagdir:
     input:
-        bam  = "{folder}/bams/{mark}.bam",
-        tool = f"{HOMER_EXEDIR}/makeTagDirectory",
+        bam="{folder}/bams/{mark}.bam",
+        tool=f"{HOMER_EXEDIR}/makeTagDirectory",
     output: temp(directory("{folder}/homer/{mark}_tagdir"))
     conda: "../envs/bio.yaml"  # provides samtools
-    log:    "{folder}/homer/{mark}_tagdir.log"
+    log: "{folder}/homer/{mark}_tagdir.log"
     resources: homer_tagdir=1
     shell:
         "{input.tool} {output} {input.bam} &> {log}"
@@ -49,11 +49,11 @@ rule homer_tagdir:
 rule homer_control_tagdir:
     """Create a Homer tag directory from the control BAM for a mark."""
     input:
-        bam  = "{folder}/controls/{mark}.bam",
-        tool = f"{HOMER_EXEDIR}/makeTagDirectory",
+        bam="{folder}/controls/{mark}.bam",
+        tool=f"{HOMER_EXEDIR}/makeTagDirectory",
     output: temp(directory("{folder}/homer/{mark}_control_tagdir"))
     conda: "../envs/bio.yaml"
-    log:    "{folder}/homer/{mark}_control_tagdir.log"
+    log: "{folder}/homer/{mark}_control_tagdir.log"
     resources: homer_tagdir=1
     shell:
         "{input.tool} {output} {input.bam} &> {log}"
@@ -61,21 +61,21 @@ rule homer_control_tagdir:
 
 rule homer_findpeaks:
     input:
-        tagdir      = "{folder}/homer/{mark}_tagdir",
-        control_tag = lambda w: [f"{w.folder}/homer/{w.mark}_control_tagdir"]
-                                if folder_has_controls(w.folder) else [],
-        tool        = f"{HOMER_EXEDIR}/findPeaks",
+        tagdir="{folder}/homer/{mark}_tagdir",
+        control_tag=lambda w: [f"{w.folder}/homer/{w.mark}_control_tagdir"]
+        if folder_has_controls(w.folder) else [],
+        tool=f"{HOMER_EXEDIR}/findPeaks",
     output: temp("{folder}/homer/{mark}.peaks.txt")
-    log:    "{folder}/homer/{mark}_findPeaks.log"
+    log: "{folder}/homer/{mark}_findPeaks.log"
     params:
-        control = lambda w: f"-i {w.folder}/homer/{w.mark}_control_tagdir"
-                             if folder_has_controls(w.folder) else "",
+        control=lambda w: f"-i {w.folder}/homer/{w.mark}_control_tagdir"
+        if folder_has_controls(w.folder) else "",
     shell:
         "{input.tool} {input.tagdir} -style histone {params.control} -o {output} &> {log}"
 
 
 rule homer_peak_to_bed:
-    input:  "{folder}/homer/{mark}.peaks.txt"
+    input: "{folder}/homer/{mark}.peaks.txt"
     output: "{folder}/homer/{mark}.bed"
     shell:
         r"""

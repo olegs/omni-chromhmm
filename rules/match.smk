@@ -38,11 +38,11 @@ ruleorder: match_segmentation_em > match_segmentation_ovlp > match_segmentation
 rule match_segmentation_ovlp:
     """Overlap-only matching: {name}.bed → {name}_ovlp_matched.bed."""
     input:
-        ref  = lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
-        work = "{bedpath}.bed",
+        ref=lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
+        work="{bedpath}.bed",
     output: "{bedpath}_ovlp_matched.bed"
     wildcard_constraints:
-        bedpath = r"[A-Za-z0-9_./-]+",
+        bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/python.yaml"
     shell:
         "python {SCRIPTS_DIR}/match.py match --alpha 1.0 --ref {input.ref} --work {input.work} > {output}"
@@ -57,16 +57,16 @@ rule compute_emissions:
     The bams/ folder for bigwig lookup is derived from the leading path components.
     """
     input:
-        bed     = "{bedpath}.bed",
-        bigwigs = lambda w: _folder_bigwigs(_emissions_folder(w.bedpath)),
+        bed="{bedpath}.bed",
+        bigwigs=lambda w: _folder_bigwigs(_emissions_folder(w.bedpath)),
     output: "{bedpath}.bw_emissions.npz"
     wildcard_constraints:
-        bedpath = r"[A-Za-z0-9_./-]+",
+        bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/bio.yaml"
     params:
-        marks   = " ".join(MARKS),
-        bigwigs = lambda w: " ".join(_folder_bigwigs(_emissions_folder(w.bedpath))),
-        bin     = CHROMHMM_BIN,
+        marks=" ".join(MARKS),
+        bigwigs=lambda w: " ".join(_folder_bigwigs(_emissions_folder(w.bedpath))),
+        bin=CHROMHMM_BIN,
     shell:
         "python {SCRIPTS_DIR}/match.py compute "
         "--bed {input.bed} --bigwigs {params.bigwigs} --marks {params.marks} "
@@ -78,13 +78,13 @@ rule compute_emissions:
 rule match_segmentation:
     """Combined matching (overlap + bw-emission, alpha=0.8): {name}.bed → {name}_comb_matched.bed."""
     input:
-        ref     = lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
-        ref_em  = lambda w: _ref_emissions(ds_of(_emissions_folder(w.bedpath))),
-        work    = "{bedpath}.bed",
-        work_em = "{bedpath}.bw_emissions.npz",
+        ref=lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
+        ref_em=lambda w: _ref_emissions(ds_of(_emissions_folder(w.bedpath))),
+        work="{bedpath}.bed",
+        work_em="{bedpath}.bw_emissions.npz",
     output: "{bedpath}_comb_matched.bed"
     wildcard_constraints:
-        bedpath = r"[A-Za-z0-9_./-]+",
+        bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/bio.yaml"
     shell:
         "python {SCRIPTS_DIR}/match.py match "
@@ -97,13 +97,13 @@ rule match_segmentation:
 rule match_segmentation_em:
     """Bigwig-emission-only matching (alpha=0): {name}.bed → {name}_bwem_matched.bed."""
     input:
-        ref     = lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
-        ref_em  = lambda w: _ref_emissions(ds_of(_emissions_folder(w.bedpath))),
-        work    = "{bedpath}.bed",
-        work_em = "{bedpath}.bw_emissions.npz",
+        ref=lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
+        ref_em=lambda w: _ref_emissions(ds_of(_emissions_folder(w.bedpath))),
+        work="{bedpath}.bed",
+        work_em="{bedpath}.bw_emissions.npz",
     output: "{bedpath}_bwem_matched.bed"
     wildcard_constraints:
-        bedpath = r"[A-Za-z0-9_./-]+",
+        bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/bio.yaml"
     shell:
         "python {SCRIPTS_DIR}/match.py match --alpha 0 "
