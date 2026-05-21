@@ -102,17 +102,18 @@ def sort_states(states):
     return sorted(states, key=lambda s: (STATE_IDX.get(s, 999), s))
 
 
-def ds_method_bed(workdir, ds, cell, nstates, method_key):
-    """Return Path for a single (dataset, method) ovlp-matched BED."""
+def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method="comb"):
+    """Return Path for a single (dataset, method) {match_method}_matched BED."""
     root = Path(workdir) / ds
+    sfx = f"{match_method}_matched"
     mapping = {
-        "chromhmm_default": root / "chromhmm_default_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
-        "chromhmm_omni":    root / "omni"  / "chromhmm_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
-        "kmeans_omni":      root / "omni"  / "omni_kmeans_states_ovlp_matched.bed",
-        "chromhmm_homer":   root / "homer" / "chromhmm_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
-        "kmeans_homer":     root / "homer" / "homer_kmeans_states_ovlp_matched.bed",
-        "chromhmm_macs2":   root / "macs2" / "chromhmm_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
-        "kmeans_macs2":     root / "macs2" / "macs2_kmeans_states_ovlp_matched.bed",
+        "chromhmm_default": root / "chromhmm_default_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
+        "chromhmm_omni":    root / "omni"  / "chromhmm_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
+        "kmeans_omni":      root / "omni"  / f"omni_kmeans_states_{sfx}.bed",
+        "chromhmm_homer":   root / "homer" / "chromhmm_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
+        "kmeans_homer":     root / "homer" / f"homer_kmeans_states_{sfx}.bed",
+        "chromhmm_macs2":   root / "macs2" / "chromhmm_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
+        "kmeans_macs2":     root / "macs2" / f"macs2_kmeans_states_{sfx}.bed",
     }
     return mapping[method_key]
 
@@ -531,7 +532,7 @@ def _plot_peak_length(datasets, workdir, outpath):
 # State coverage (total bp per state)
 # ---------------------------------------------------------------------------
 
-def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile):
+def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile, match_method="comb"):
     """Grouped bar chart: fraction of genome per chromatin state, method as hue, all datasets pooled."""
     from analyze import load_bed_df
 
@@ -561,7 +562,7 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
                 per_ds.append({s: bp / total for s, bp in cov.items()})
         else:
             for ds, cell in zip(datasets, cells):
-                p = ds_method_bed(workdir, ds, cell, nstates, key)
+                p = ds_method_bed(workdir, ds, cell, nstates, key, match_method)
                 cov = _coverage([p])
                 if cov:
                     total = sum(cov.values())
@@ -657,7 +658,7 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
 # Main
 # ---------------------------------------------------------------------------
 
-def _plot_violin(datasets, cells, workdir, markups_dir, nstates, outfile):
+def _plot_violin(datasets, cells, workdir, markups_dir, nstates, outfile, match_method="comb"):
     """Single violin panel: per-state segment length, method as hue, all datasets pooled."""
     print("Loading reference ...")
     frames = [load_reference_segments(markups_dir)]
@@ -665,7 +666,7 @@ def _plot_violin(datasets, cells, workdir, markups_dir, nstates, outfile):
     for key, label, _ in INTER_DS_METHODS:
         if key == "reference":
             continue
-        paths = [str(ds_method_bed(workdir, ds, cell, nstates, key))
+        paths = [str(ds_method_bed(workdir, ds, cell, nstates, key, match_method))
                  for ds, cell in zip(datasets, cells)]
         print(f"Loading {key} ...")
         sub = [f for f in (load_bed_segments(p) for p in paths) if not f.empty]
@@ -770,7 +771,7 @@ def _plot_reference_composition(markups_dir, outfile):
     )
 
 
-def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, outfile):
+def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, outfile, match_method="comb"):
     """Stacked bar chart: mean state fraction per method, averaged across datasets."""
     from analyze import load_bed_df
 
@@ -791,7 +792,7 @@ def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, out
             per_ds = [_fracs_from_path(b) for b in beds]
         else:
             per_ds = [
-                _fracs_from_path(ds_method_bed(workdir, ds, cell, nstates, key))
+                _fracs_from_path(ds_method_bed(workdir, ds, cell, nstates, key, match_method))
                 for ds, cell in zip(datasets, cells)
             ]
         per_ds = [d for d in per_ds if d]
@@ -813,7 +814,7 @@ def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, out
 
 
 def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
-                                         method_key, method_label, outfile):
+                                         method_key, method_label, outfile, match_method="comb"):
     """Stacked bar chart: state fraction per dataset for a single method."""
     from analyze import load_bed_df
 
@@ -829,7 +830,7 @@ def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
     coverages = {}
     labels_out = []
     for ds, cell in zip(datasets, cells):
-        bed = ds_method_bed(workdir, ds, cell, nstates, method_key)
+        bed = ds_method_bed(workdir, ds, cell, nstates, method_key, match_method)
         fracs = _fracs_from_path(bed)
         if fracs:
             coverages[ds] = fracs
@@ -981,6 +982,9 @@ def main():
     ap.add_argument("--cells",         nargs="*", default=[],
                     help="Cell name per dataset (for violin plot)")
     ap.add_argument("--nstates",       type=int, default=15)
+    ap.add_argument("--match-method",  default="comb", dest="match_method",
+                    choices=["comb", "bwem", "ovlp"],
+                    help="Match variant used for segmentation BED file names")
     ap.add_argument("--violin-outfile",          default=None, dest="violin_outfile",
                     help="Output PNG for per-state segment length violin")
     ap.add_argument("--state-coverage-outfile", default=None, dest="state_coverage_outfile",
@@ -1090,11 +1094,11 @@ def main():
         if args.violin_outfile:
             os.makedirs(os.path.dirname(os.path.abspath(args.violin_outfile)), exist_ok=True)
             _plot_violin(args.datasets, args.cells, args.workdir, args.markups_dir,
-                         args.nstates, args.violin_outfile)
+                         args.nstates, args.violin_outfile, args.match_method)
         if args.state_coverage_outfile:
             os.makedirs(os.path.dirname(os.path.abspath(args.state_coverage_outfile)), exist_ok=True)
             _plot_state_coverage(args.datasets, args.cells, args.workdir, args.markups_dir,
-                                 args.nstates, args.state_coverage_outfile)
+                                 args.nstates, args.state_coverage_outfile, args.match_method)
 
     # --- peak count bar chart ----------------------------------------------
     if args.peak_count_outfile:
@@ -1196,7 +1200,7 @@ def main():
             ap.error("--markups-dir is required for --method-composition-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.method_composition_outfile)), exist_ok=True)
         _plot_method_composition(args.datasets, args.cells, args.workdir, args.markups_dir,
-                                 args.nstates, args.method_composition_outfile)
+                                 args.nstates, args.method_composition_outfile, args.match_method)
 
     # --- per-dataset method state composition (4 supplementary plots) -------
     if args.method_ds_composition_outdir:
@@ -1220,7 +1224,7 @@ def main():
                                    f"method_ds_composition_{method_key}.png")
             _plot_per_dataset_method_composition(
                 args.datasets, args.cells, args.workdir, args.nstates,
-                method_key, method_label, outfile,
+                method_key, method_label, outfile, args.match_method,
             )
 
 

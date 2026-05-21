@@ -158,6 +158,7 @@ rule inter_dataset_segment_lengths_comparison:
         datasets=" ".join(list(DATASETS)),
         cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
         nstates=NSTATES,
+        match_method=MATCH_METHOD,
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -166,6 +167,7 @@ rule inter_dataset_segment_lengths_comparison:
             --workdir         {params.workdir} \
             --markups-dir     {params.markups_dir} \
             --nstates         {params.nstates} \
+            --match-method    {params.match_method} \
             --violin-outfile  {output}
         """
 
@@ -187,6 +189,7 @@ rule inter_dataset_state_coverage:
         datasets=" ".join(list(DATASETS)),
         cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
         nstates=NSTATES,
+        match_method=MATCH_METHOD,
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -195,6 +198,7 @@ rule inter_dataset_state_coverage:
             --workdir                {params.workdir} \
             --markups-dir            {params.markups_dir} \
             --nstates                {params.nstates} \
+            --match-method           {params.match_method} \
             --state-coverage-outfile {output}
         """
 
@@ -437,6 +441,7 @@ rule inter_dataset_method_composition:
         cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
         nstates=NSTATES,
         outdir="inter_dataset/summary_plots",
+        match_method=MATCH_METHOD,
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -444,6 +449,7 @@ rule inter_dataset_method_composition:
             --cells                        {params.cells} \
             --workdir                      {params.workdir} \
             --nstates                      {params.nstates} \
+            --match-method                 {params.match_method} \
             --method-ds-composition-outdir {params.outdir}
         mkdir -p {params.repo_plots_dir}
         cp {params.outdir}/method_ds_composition_*.png {params.repo_plots_dir}/
@@ -466,6 +472,7 @@ rule inter_dataset_method_state_composition:
         cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
         nstates=NSTATES,
         markups_dir=_MARKUPS_DIR,
+        match_method=MATCH_METHOD,
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -474,6 +481,7 @@ rule inter_dataset_method_state_composition:
             --workdir                    {params.workdir} \
             --markups-dir                {params.markups_dir} \
             --nstates                    {params.nstates} \
+            --match-method               {params.match_method} \
             --method-composition-outfile {output}
         mkdir -p {params.repo_plots_dir}
         cp {output} {params.repo_plots_dir}/
