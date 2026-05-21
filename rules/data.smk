@@ -114,13 +114,12 @@ rule pool_bams:
     Symlinks when there is only one source BAM (single replicate or no
     replicates); merges with samtools when multiple BAMs exist.
 
-    The merge_bam resource (default 1) limits concurrent merges to prevent
-    filling the disk when many large BAMs are pooled simultaneously.
-    Pass --resources merge_bam=N on the command line to allow N parallel merges.
+    Each merge claims 10 GB (disk_mb=10000); HOMER tagdirs claim the same.
+    Pass --resources disk_mb=30000 to cap total concurrent disk use at ~30 GB.
     """
     input: lambda w: bams_for_mark(w.ds,w.mark)
     output: temp("{ds}/bams/{mark}.bam")
-    resources: merge_bam=1
+    resources: merge_bam=1, disk_mb=20000
     conda: "../envs/bio.yaml"
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)

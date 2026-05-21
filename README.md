@@ -62,13 +62,13 @@ wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.3.6762.jar
 snakemake -p all --use-conda --cores all --directory $(pwd) \
   --snakefile ~/work/omni-chromhmm/Snakefile \
   --configfile ~/work/omni-chromhmm/config.yaml \
-  --resources homer_tagdir=2 merge_bam=2 -n
+  --resources homer_tagdir=2 merge_bam=2 disk_mb=40000 -n
 
 # Single dataset
 snakemake -p imr90/.done --use-conda --cores all --directory $(pwd) \
   --snakefile ~/work/omni-chromhmm/Snakefile \
   --configfile ~/work/omni-chromhmm/config.yaml \
-  --resources homer_tagdir=2 merge_bam=2
+  --resources homer_tagdir=2 merge_bam=2 disk_mb=40000 -n
 ```
 
 Resource limits (pass via `--resources`):
