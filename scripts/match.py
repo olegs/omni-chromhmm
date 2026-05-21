@@ -377,10 +377,14 @@ def cmd_match(args):
     ref_segs  = load_bed(args.ref)
     work_segs = load_bed(args.work)
 
-    states_ref = mat_ref = states_work = mat_work = None
+    states_ref = mat_ref = states_work = mat_work = marks_work = None
     if args.ref_emissions and args.work_emissions:
-        states_ref,  _, mat_ref  = _load_emissions_npz(args.ref_emissions)
-        states_work, _, mat_work = _load_emissions_npz(args.work_emissions)
+        states_ref,  _,           mat_ref   = _load_emissions_npz(args.ref_emissions)
+        states_work, marks_work,  mat_work  = _load_emissions_npz(args.work_emissions)
+    elif args.work_emissions:
+        # Load work emissions even when ref_emissions is absent (ovlp-only matching)
+        # so the remapped emissions can still be written out.
+        states_work, marks_work, mat_work = _load_emissions_npz(args.work_emissions)
 
     work_states = sorted({x[3] for x in work_segs})
     ref_states  = sorted({x[3] for x in ref_segs})
@@ -401,6 +405,10 @@ def cmd_match(args):
         new_name  = mapping.get(name, name)
         new_color = colors.get(new_name, color)
         print(f"{chrom}\t{s}\t{e}\t{new_name}\t0\t.\t{s}\t{e}\t{new_color}")
+
+    if args.remap_emissions and states_work is not None:
+        remapped = [mapping.get(s, s) for s in states_work]
+        _save_emissions_npz(args.remap_emissions, remapped, marks_work, mat_work)
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +438,8 @@ def main():
                     help="Pre-computed work emissions .npz (enables combined/bwem matching)")
     mp.add_argument("--alpha",          type=float, default=0.8,
                     help="Overlap weight: 1.0=overlap-only, 0.0=emission-only, 0.8=combined/comb (default)")
+    mp.add_argument("--remap-emissions", default=None, dest="remap_emissions",
+                    help="Save work emissions .npz with remapped state names to this path")
     mp.add_argument("--compare-only",   default=None, dest="compare_only",
                     help="Write Jaccard heatmap to this directory instead of rewriting BED")
 

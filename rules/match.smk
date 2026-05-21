@@ -29,23 +29,30 @@ def _emissions_folder(bedpath):
 
 
 # Rule priority: more specific *_bwem_matched / *_ovlp_matched patterns take
-# precedence over the generic *_matched pattern.
-ruleorder: match_segmentation_em > match_segmentation_ovlp > match_segmentation
+# precedence over the generic *_matched pattern; all match rules take priority
+# over the generic compute_emissions rule so that _matched.bw_emissions.npz
+# files are produced by state-name remapping rather than recomputing from bigwigs.
+ruleorder: match_segmentation_em > match_segmentation_ovlp > match_segmentation > compute_emissions
 
 
 # --- Overlap-only matching ------------------------------------------------
 
 rule match_segmentation_ovlp:
-    """Overlap-only matching: {name}.bed → {name}_ovlp_matched.bed."""
+    """Overlap-only matching: {name}.bed → {name}_ovlp_matched.bed + remapped emissions."""
     input:
         ref=lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
         work="{bedpath}.bed",
-    output: "{bedpath}_ovlp_matched.bed"
+        work_em="{bedpath}.bw_emissions.npz",
+    output:
+        bed="{bedpath}_ovlp_matched.bed",
+        em="{bedpath}_ovlp_matched.bw_emissions.npz",
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/python.yaml"
     shell:
-        "python {SCRIPTS_DIR}/match.py match --alpha 1.0 --ref {input.ref} --work {input.work} > {output}"
+        "python {SCRIPTS_DIR}/match.py match --alpha 1.0 "
+        "--ref {input.ref} --work {input.work} "
+        "--work-emissions {input.work_em} --remap-emissions {output.em} > {output.bed}"
 
 
 # --- Emissions pre-computation --------------------------------------------
@@ -76,36 +83,42 @@ rule compute_emissions:
 # --- Combined matching (default) ------------------------------------------
 
 rule match_segmentation:
-    """Combined matching (overlap + bw-emission, alpha=0.8): {name}.bed → {name}_comb_matched.bed."""
+    """Combined matching (overlap + bw-emission, alpha=0.8): {name}.bed → {name}_comb_matched.bed + remapped emissions."""
     input:
         ref=lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
         ref_em=lambda w: _ref_emissions(ds_of(_emissions_folder(w.bedpath))),
         work="{bedpath}.bed",
         work_em="{bedpath}.bw_emissions.npz",
-    output: "{bedpath}_comb_matched.bed"
+    output:
+        bed="{bedpath}_comb_matched.bed",
+        em="{bedpath}_comb_matched.bw_emissions.npz",
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/bio.yaml"
     shell:
         "python {SCRIPTS_DIR}/match.py match "
         "--ref {input.ref} --ref-emissions {input.ref_em} "
-        "--work {input.work} --work-emissions {input.work_em} > {output}"
+        "--work {input.work} --work-emissions {input.work_em} "
+        "--remap-emissions {output.em} > {output.bed}"
 
 
 # --- Emissions-only matching ----------------------------------------------
 
 rule match_segmentation_em:
-    """Bigwig-emission-only matching (alpha=0): {name}.bed → {name}_bwem_matched.bed."""
+    """Bigwig-emission-only matching (alpha=0): {name}.bed → {name}_bwem_matched.bed + remapped emissions."""
     input:
         ref=lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
         ref_em=lambda w: _ref_emissions(ds_of(_emissions_folder(w.bedpath))),
         work="{bedpath}.bed",
         work_em="{bedpath}.bw_emissions.npz",
-    output: "{bedpath}_bwem_matched.bed"
+    output:
+        bed="{bedpath}_bwem_matched.bed",
+        em="{bedpath}_bwem_matched.bw_emissions.npz",
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/bio.yaml"
     shell:
         "python {SCRIPTS_DIR}/match.py match --alpha 0 "
         "--ref {input.ref} --ref-emissions {input.ref_em} "
-        "--work {input.work} --work-emissions {input.work_em} > {output}"
+        "--work {input.work} --work-emissions {input.work_em} "
+        "--remap-emissions {output.em} > {output.bed}"

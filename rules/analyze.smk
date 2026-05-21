@@ -31,7 +31,9 @@ def _folder_seg_files(w):
         beds.append(f"{folder}/{caller}/kmeans_states_comb_matched.bed")
         beds.append(f"{folder}/{caller}/kmeans_states_bwem_matched.bed")
         beds.append(f"{folder}/{caller}/kmeans_states_ovlp_matched.bed")
-    # Require the bw_emissions.npz for every BED so Snakemake builds them first.
+    # Require bw_emissions.npz for every BED.  For unmatched beds this triggers
+    # compute_emissions (bigwig re-read); for _matched beds the match rules produce
+    # a remapped copy without re-reading bigwigs (via --remap-emissions).
     npzs = [b.replace(".bed", ".bw_emissions.npz") for b in beds]
     return beds + npzs
 
