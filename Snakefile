@@ -12,12 +12,21 @@ MARKS = P["marks"]
 CHROMHMM_BIN = P["chromhmm_bin"]
 OMNI_BIN = P["omni_bin"]
 HOMER_BIN = P["homer_bin"]
-MACS2_BIN = P.get("macs2_bin")
+MACS2_BIN = P["macs2_bin"]
 NSTATES = P["n_states"]
 GENOME = P["genome"]
+MATCH_METHOD = P["match_method"]
 
 # Per-caller binarization bin sizes.
 CALLER_BIN = {"omni": OMNI_BIN, "homer": HOMER_BIN, "macs2": MACS2_BIN}
+
+
+def _seg_bin(path):
+    """Native bin size for a segmentation BED path."""
+    for caller, size in CALLER_BIN.items():
+        if f"/{caller}/" in path:
+            return size
+    return CHROMHMM_BIN
 
 
 def _flag(key, default=True):
@@ -208,7 +217,7 @@ def all_results(ds):
     for folder in _folders(ds):
         t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
         t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
-        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
+        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_comb_matched.bed")
         for mark in MARKS:
             t.append(f"{folder}/chromhmm_default_result/{mark}.bed")
         for caller in CALLERS:

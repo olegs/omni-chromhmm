@@ -43,7 +43,13 @@ rule homer_tagdir:
     log: "{folder}/homer/{mark}_tagdir.log"
     resources: homer_tagdir=1
     shell:
-        "{input.tool} {output} {input.bam} &> {log}"
+        # makeTagDirectory creates a temp SAM at the BAM path minus ".bam".
+        # The trap ensures it is removed on both success and failure.
+        """
+        _tmp=$(dirname {input.bam})/$(basename {input.bam} .bam)
+        trap "rm -f $_tmp" EXIT
+        {input.tool} {output} {input.bam} &> {log}
+        """
 
 
 rule homer_control_tagdir:
@@ -56,7 +62,13 @@ rule homer_control_tagdir:
     log: "{folder}/homer/{mark}_control_tagdir.log"
     resources: homer_tagdir=1
     shell:
-        "{input.tool} {output} {input.bam} &> {log}"
+        # makeTagDirectory creates a temp SAM at the BAM path minus ".bam".
+        # The trap ensures it is removed on both success and failure.
+        """
+        _tmp=$(dirname {input.bam})/$(basename {input.bam} .bam)
+        trap "rm -f $_tmp" EXIT
+        {input.tool} {output} {input.bam} &> {log}
+        """
 
 
 rule homer_findpeaks:

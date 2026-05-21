@@ -15,14 +15,6 @@ _VARIANT_SUFFIX = {
 }
 
 
-def _seg_bin(path):
-    """Native bin size for a segmentation BED path."""
-    if "/omni/" in path:
-        return OMNI_BIN
-    if "/homer/" in path:
-        return HOMER_BIN
-    return CHROMHMM_BIN  # chromhmm_default and reference
-
 
 def _compare_beds_for_folder(folder, variant):
     """Matched BED files for one folder for a given variant."""

@@ -26,6 +26,7 @@ params:
   homer: false          # run HOMER-based binarization and segmentation
   macs2: false          # run MACS2-based binarization and segmentation
   omnipeak: false       # run OmniPeak-based binarization and segmentation
+  match_method: comb    # default match variant for inter-dataset comparison: comb | bwem | ovlp
 
 datasets:
 

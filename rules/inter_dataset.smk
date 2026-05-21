@@ -2,7 +2,7 @@ from pathlib import Path
 
 # Inter-dataset reproducibility: compare the same method across all datasets.
 #
-# For each method the pooled ovlp_matched segmentation from every dataset is fed
+# For each method the pooled {MATCH_METHOD}_matched segmentation from every dataset is fed
 # into compare.py with --all-pairs, so every cross-dataset pair is evaluated.
 # Labels are prefixed with the dataset name (e.g. "imr90:chromhmm_omni") to
 # avoid collisions when the same method key appears in multiple datasets.
@@ -24,23 +24,18 @@ INTER_DS_METHODS = (
 
 
 def _inter_ds_bed(ds, method):
-    """Pooled comb_matched BED for *method* in *ds*."""
+    """Pooled {MATCH_METHOD}_matched BED for *method* in *ds*."""
     cell = DATASETS[ds]["cell"]
+    sfx = f"{MATCH_METHOD}_matched"
     if method == "chromhmm_default":
-        return f"{ds}/chromhmm_default_result/{cell}_{NSTATES}_dense_comb_matched.bed"
+        return f"{ds}/chromhmm_default_result/{cell}_{NSTATES}_dense_{sfx}.bed"
     parts = method.split("_")  # ["chromhmm","omni"] or ["kmeans","homer"]
     model = parts[0]  # chromhmm | kmeans
     caller = parts[1]  # omni | homer | macs2
     if model == "chromhmm":
-        return f"{ds}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed"
-    return f"{ds}/{caller}/kmeans_states_comb_matched.bed"
+        return f"{ds}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_{sfx}.bed"
+    return f"{ds}/{caller}/kmeans_states_{sfx}.bed"
 
-
-def _inter_ds_bin(method):
-    """Native bin size for a method."""
-    if "omni" in method or "macs2" in method:
-        return OMNI_BIN  # 100 bp
-    return CHROMHMM_BIN  # 200 bp
 
 
 def _inter_ds_inputs(method):
@@ -68,7 +63,7 @@ rule inter_dataset_compare_method:
         scripts_dir=SCRIPTS_DIR,
         segs=lambda w: " ".join(_inter_ds_inputs(w.method)),
         bins=lambda w: " ".join(
-            str(_inter_ds_bin(w.method)) for _ in DATASETS),
+            str(_seg_bin(_inter_ds_bed(ds, w.method))) for ds in DATASETS),
         labels=lambda w: " ".join(
             f"{ds}:{w.method}" for ds in DATASETS),
     shell:
@@ -119,15 +114,15 @@ _SUMMARY_PLOTS = [
 rule inter_dataset_summary_plots:
     """Cross-dataset summary bar plots with mean ± std across all datasets."""
     input:
-        expand("{ds}/methods/comb/comparison_table.tsv",ds=list(DATASETS)),
+        expand("{ds}/methods/" + MATCH_METHOD + "/comparison_table.tsv", ds=list(DATASETS)),
     output:
         _SUMMARY_PLOTS,
     conda: "../envs/python.yaml"
     params:
         scripts_dir=SCRIPTS_DIR,
         datasets=" ".join(list(DATASETS)),
-        methods_dirs=" ".join(f"{ds}/methods/comb" for ds in DATASETS),
-        analysis_dirs=" ".join(f"{ds}/analysis/comb" for ds in DATASETS),
+        methods_dirs=" ".join(f"{ds}/methods/{MATCH_METHOD}" for ds in DATASETS),
+        analysis_dirs=" ".join(f"{ds}/analysis/{MATCH_METHOD}" for ds in DATASETS),
         outdir="inter_dataset/summary_plots",
     shell:
         r"""
@@ -150,9 +145,9 @@ rule inter_dataset_segment_lengths_comparison:
     """Per-state segment length violin: ENCODE reference vs de-novo methods, all datasets."""
     input:
         _MARKUPS_DIR,
-        *(expand("{ds}/omni/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_OMNIPEAK else []),
-        *(expand("{ds}/homer/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_HOMER else []),
-        *(expand("{ds}/macs2/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_MACS2 else []),
+        *(expand("{ds}/omni/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
+        *(expand("{ds}/homer/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
+        *(expand("{ds}/macs2/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
     output:
         _STATE_LENGTH_PLOT,
     conda: "../envs/python.yaml"
@@ -179,9 +174,9 @@ rule inter_dataset_state_coverage:
     """Per-state genomic coverage fraction: ENCODE reference vs de-novo methods, all datasets."""
     input:
         _MARKUPS_DIR,
-        *(expand("{ds}/omni/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_OMNIPEAK else []),
-        *(expand("{ds}/homer/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_HOMER else []),
-        *(expand("{ds}/macs2/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_MACS2 else []),
+        *(expand("{ds}/omni/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
+        *(expand("{ds}/homer/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
+        *(expand("{ds}/macs2/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
     output:
         _STATE_COVERAGE_PLOT,
     conda: "../envs/python.yaml"
