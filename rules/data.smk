@@ -66,7 +66,7 @@ rule merge_control_bams:
     set of controls is merged only once regardless of how many marks reference it.
     """
     input: lambda w: [f"{w.ds}/downloaded/{a}_control.bam" for a in w.accs.split("+")]
-    output: temp("{ds}/downloaded/{accs}_merged_control.bam")
+    output: "{ds}/downloaded/{accs}_merged_control.bam"
     wildcard_constraints:
         accs = r"ENCFF[A-Z0-9]+(\+ENCFF[A-Z0-9]+)+"
     conda: "../envs/bio.yaml"
@@ -93,7 +93,7 @@ rule pool_controls:
     repeated for marks that share the same control set.
     """
     input:  lambda w: _canonical_control(w.ds, w.mark)
-    output: temp("{ds}/controls/{mark}.bam")
+    output: "{ds}/controls/{mark}.bam"
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
         os.symlink(os.path.abspath(input[0]), output[0])
@@ -102,7 +102,7 @@ rule pool_controls:
 rule rep_link_control:
     """Symlink {ds}/{rep}/controls/{mark}.bam to the canonical control BAM."""
     input:  lambda w: _canonical_control(w.ds, w.mark, rep=w.rep)
-    output: temp("{ds}/{rep}/controls/{mark}.bam")
+    output: "{ds}/{rep}/controls/{mark}.bam"
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
         os.symlink(os.path.abspath(input[0]), output[0])
@@ -113,9 +113,14 @@ rule pool_bams:
 
     Symlinks when there is only one source BAM (single replicate or no
     replicates); merges with samtools when multiple BAMs exist.
+
+    The merge_bam resource (default 1) limits concurrent merges to prevent
+    filling the disk when many large BAMs are pooled simultaneously.
+    Pass --resources merge_bam=N on the command line to allow N parallel merges.
     """
     input:  lambda w: bams_for_mark(w.ds, w.mark)
     output: temp("{ds}/bams/{mark}.bam")
+    resources: merge_bam=1
     conda: "../envs/bio.yaml"
     run:
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)

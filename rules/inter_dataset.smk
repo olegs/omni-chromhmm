@@ -1,4 +1,3 @@
-import glob as _glob
 from pathlib import Path
 
 # Inter-dataset reproducibility: compare the same method across all datasets.
@@ -14,13 +13,13 @@ from pathlib import Path
 #   comparison_table.tsv            — one row per method × dataset-pair
 
 INTER_DS_METHODS = (
-    ["chromhmm_default"]
-    + (["chromhmm_omni"]  if DO_CHROMHMM_PEAKS and DO_OMNIPEAK else [])
-    + (["chromhmm_homer"] if DO_CHROMHMM_PEAKS and DO_HOMER    else [])
-    + (["chromhmm_macs2"] if DO_CHROMHMM_PEAKS and DO_MACS2    else [])
-    + (["kmeans_omni"]    if DO_OMNIPEAK else [])
-    + (["kmeans_homer"]   if DO_HOMER    else [])
-    + (["kmeans_macs2"]   if DO_MACS2    else [])
+        ["chromhmm_default"]
+        + (["chromhmm_omni"] if DO_CHROMHMM_PEAKS and DO_OMNIPEAK else [])
+        + (["chromhmm_homer"] if DO_CHROMHMM_PEAKS and DO_HOMER else [])
+        + (["chromhmm_macs2"] if DO_CHROMHMM_PEAKS and DO_MACS2 else [])
+        + (["kmeans_omni"] if DO_OMNIPEAK else [])
+        + (["kmeans_homer"] if DO_HOMER else [])
+        + (["kmeans_macs2"] if DO_MACS2 else [])
 )
 
 
@@ -29,9 +28,9 @@ def _inter_ds_bed(ds, method):
     cell = DATASETS[ds]["cell"]
     if method == "chromhmm_default":
         return f"{ds}/chromhmm_default_result/{cell}_{NSTATES}_dense_comb_matched.bed"
-    parts  = method.split("_")           # ["chromhmm","omni"] or ["kmeans","homer"]
-    model  = parts[0]                    # chromhmm | kmeans
-    caller = parts[1]                    # omni | homer | macs2
+    parts = method.split("_")  # ["chromhmm","omni"] or ["kmeans","homer"]
+    model = parts[0]  # chromhmm | kmeans
+    caller = parts[1]  # omni | homer | macs2
     if model == "chromhmm":
         return f"{ds}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed"
     return f"{ds}/{caller}/kmeans_states_comb_matched.bed"
@@ -40,12 +39,12 @@ def _inter_ds_bed(ds, method):
 def _inter_ds_bin(method):
     """Native bin size for a method."""
     if "omni" in method or "macs2" in method:
-        return OMNI_BIN    # 100 bp
-    return CHROMHMM_BIN    # 200 bp
+        return OMNI_BIN  # 100 bp
+    return CHROMHMM_BIN  # 200 bp
 
 
 def _inter_ds_inputs(method):
-    return [_inter_ds_bed(ds, method) for ds in DATASETS]
+    return [_inter_ds_bed(ds,method) for ds in DATASETS]
 
 
 rule inter_dataset_compare_method:
@@ -53,25 +52,25 @@ rule inter_dataset_compare_method:
     input:
         lambda w: _inter_ds_inputs(w.method),
     output:
-        entropy  = "inter_dataset/{method}/entropy_summary.tsv",
-        kappa    = "inter_dataset/{method}/kappa_matrix.tsv",
-        jaccard  = "inter_dataset/{method}/jaccard_similarity_matrix.tsv",
-        overlap  = "inter_dataset/{method}/overlap_matrix.tsv",
-        stats    = "inter_dataset/{method}/segment_stats.tsv",
-        kappa_noqh   = "inter_dataset/{method}/kappa_noqh_matrix.tsv",
-        jaccard_noqh = "inter_dataset/{method}/jaccard_noqh_matrix.tsv",
-        overlap_noqh = "inter_dataset/{method}/overlap_noqh_matrix.tsv",
+        entropy="inter_dataset/{method}/entropy_summary.tsv",
+        kappa="inter_dataset/{method}/kappa_matrix.tsv",
+        jaccard="inter_dataset/{method}/jaccard_similarity_matrix.tsv",
+        overlap="inter_dataset/{method}/overlap_matrix.tsv",
+        stats="inter_dataset/{method}/segment_stats.tsv",
+        kappa_noqh="inter_dataset/{method}/kappa_noqh_matrix.tsv",
+        jaccard_noqh="inter_dataset/{method}/jaccard_noqh_matrix.tsv",
+        overlap_noqh="inter_dataset/{method}/overlap_noqh_matrix.tsv",
     wildcard_constraints:
-        method = "|".join(INTER_DS_METHODS),
+        method="|".join(INTER_DS_METHODS),
     threads: workflow.cores
     conda: "../envs/python.yaml"
     params:
-        scripts_dir = SCRIPTS_DIR,
-        segs   = lambda w: " ".join(_inter_ds_inputs(w.method)),
-        bins   = lambda w: " ".join(
-                     str(_inter_ds_bin(w.method)) for _ in DATASETS),
-        labels = lambda w: " ".join(
-                     f"{ds}:{w.method}" for ds in DATASETS),
+        scripts_dir=SCRIPTS_DIR,
+        segs=lambda w: " ".join(_inter_ds_inputs(w.method)),
+        bins=lambda w: " ".join(
+            str(_inter_ds_bin(w.method)) for _ in DATASETS),
+        labels=lambda w: " ".join(
+            f"{ds}:{w.method}" for ds in DATASETS),
     shell:
         r"""
         python {params.scripts_dir}/compare.py \
@@ -88,14 +87,14 @@ rule inter_dataset_compare_summary:
     """Aggregate per-method kappa matrices into one cross-dataset comparison table."""
     input:
         expand("inter_dataset/{method}/kappa_noqh_matrix.tsv",
-               method=INTER_DS_METHODS),
+            method=INTER_DS_METHODS),
     output:
         "inter_dataset/comparison_table.tsv",
     conda: "../envs/python.yaml"
     params:
-        scripts_dir = SCRIPTS_DIR,
-        methods     = " ".join(INTER_DS_METHODS),
-        indir       = "inter_dataset",
+        scripts_dir=SCRIPTS_DIR,
+        methods=" ".join(INTER_DS_METHODS),
+        indir="inter_dataset",
     shell:
         r"""
         python {params.scripts_dir}/compare_inter_dataset.py \
@@ -120,16 +119,16 @@ _SUMMARY_PLOTS = [
 rule inter_dataset_summary_plots:
     """Cross-dataset summary bar plots with mean ± std across all datasets."""
     input:
-        expand("{ds}/methods/comb/comparison_table.tsv", ds=list(DATASETS)),
+        expand("{ds}/methods/comb/comparison_table.tsv",ds=list(DATASETS)),
     output:
         _SUMMARY_PLOTS,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir   = SCRIPTS_DIR,
-        datasets      = " ".join(list(DATASETS)),
-        methods_dirs  = " ".join(f"{ds}/methods/comb"   for ds in DATASETS),
-        analysis_dirs = " ".join(f"{ds}/analysis/comb"  for ds in DATASETS),
-        outdir        = "inter_dataset/summary_plots",
+        scripts_dir=SCRIPTS_DIR,
+        datasets=" ".join(list(DATASETS)),
+        methods_dirs=" ".join(f"{ds}/methods/comb" for ds in DATASETS),
+        analysis_dirs=" ".join(f"{ds}/analysis/comb" for ds in DATASETS),
+        outdir="inter_dataset/summary_plots",
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -140,10 +139,10 @@ rule inter_dataset_summary_plots:
         """
 
 
-_STATE_LENGTH_PLOT    = "inter_dataset/summary_plots/state_length_comparison.png"
-_STATE_COVERAGE_PLOT  = "inter_dataset/summary_plots/state_coverage.png"
-_PEAK_COUNT_PLOT      = "inter_dataset/summary_plots/peak_count.png"
-_PEAK_LENGTH_PLOT     = "inter_dataset/summary_plots/peak_length.png"
+_STATE_LENGTH_PLOT = "inter_dataset/summary_plots/state_length_comparison.png"
+_STATE_COVERAGE_PLOT = "inter_dataset/summary_plots/state_coverage.png"
+_PEAK_COUNT_PLOT = "inter_dataset/summary_plots/peak_count.png"
+_PEAK_LENGTH_PLOT = "inter_dataset/summary_plots/peak_length.png"
 _PEAK_GAP_VIOLIN_PLOT = "inter_dataset/summary_plots/peak_gap_violin.png"
 
 
@@ -151,19 +150,19 @@ rule inter_dataset_segment_lengths_comparison:
     """Per-state segment length violin: ENCODE reference vs de-novo methods, all datasets."""
     input:
         _MARKUPS_DIR,
-        *(expand("{ds}/omni/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
-        *(expand("{ds}/homer/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
-        *(expand("{ds}/macs2/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
+        *(expand("{ds}/omni/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_OMNIPEAK else []),
+        *(expand("{ds}/homer/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_HOMER else []),
+        *(expand("{ds}/macs2/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_MACS2 else []),
     output:
         _STATE_LENGTH_PLOT,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir  = SCRIPTS_DIR,
-        workdir      = lambda w: config.get("workdir", "."),
-        markups_dir  = _MARKUPS_DIR,
-        datasets     = " ".join(list(DATASETS)),
-        cells        = " ".join(DATASETS[ds]["cell"] for ds in DATASETS),
-        nstates      = NSTATES,
+        scripts_dir=SCRIPTS_DIR,
+        workdir=lambda w: config.get("workdir","."),
+        markups_dir=_MARKUPS_DIR,
+        datasets=" ".join(list(DATASETS)),
+        cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
+        nstates=NSTATES,
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -180,19 +179,19 @@ rule inter_dataset_state_coverage:
     """Per-state genomic coverage fraction: ENCODE reference vs de-novo methods, all datasets."""
     input:
         _MARKUPS_DIR,
-        *(expand("{ds}/omni/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
-        *(expand("{ds}/homer/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
-        *(expand("{ds}/macs2/kmeans_states_ovlp_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
+        *(expand("{ds}/omni/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_OMNIPEAK else []),
+        *(expand("{ds}/homer/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_HOMER else []),
+        *(expand("{ds}/macs2/kmeans_states_ovlp_matched.bed",ds=list(DATASETS)) if DO_MACS2 else []),
     output:
         _STATE_COVERAGE_PLOT,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir  = SCRIPTS_DIR,
-        workdir      = lambda w: config.get("workdir", "."),
-        markups_dir  = _MARKUPS_DIR,
-        datasets     = " ".join(list(DATASETS)),
-        cells        = " ".join(DATASETS[ds]["cell"] for ds in DATASETS),
-        nstates      = NSTATES,
+        scripts_dir=SCRIPTS_DIR,
+        workdir=lambda w: config.get("workdir","."),
+        markups_dir=_MARKUPS_DIR,
+        datasets=" ".join(list(DATASETS)),
+        cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
+        nstates=NSTATES,
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -208,14 +207,14 @@ rule inter_dataset_state_coverage:
 rule inter_dataset_peak_count:
     """Peak count per mark per method, mean ± std across datasets."""
     input:
-        expand("{ds}/peaks/peak_stats.tsv", ds=list(DATASETS)),
+        expand("{ds}/peaks/peak_stats.tsv",ds=list(DATASETS)),
     output:
         _PEAK_COUNT_PLOT,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir = SCRIPTS_DIR,
-        workdir     = lambda w: config.get("workdir", "."),
-        datasets    = " ".join(list(DATASETS)),
+        scripts_dir=SCRIPTS_DIR,
+        workdir=lambda w: config.get("workdir","."),
+        datasets=" ".join(list(DATASETS)),
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -228,14 +227,14 @@ rule inter_dataset_peak_count:
 rule inter_dataset_peak_length:
     """Mean peak length per mark per method, mean ± std across datasets."""
     input:
-        expand("{ds}/peaks/peak_stats.tsv", ds=list(DATASETS)),
+        expand("{ds}/peaks/peak_stats.tsv",ds=list(DATASETS)),
     output:
         _PEAK_LENGTH_PLOT,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir = SCRIPTS_DIR,
-        workdir     = lambda w: config.get("workdir", "."),
-        datasets    = " ".join(list(DATASETS)),
+        scripts_dir=SCRIPTS_DIR,
+        workdir=lambda w: config.get("workdir","."),
+        datasets=" ".join(list(DATASETS)),
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -248,14 +247,14 @@ rule inter_dataset_peak_length:
 rule inter_dataset_peak_gap_violin:
     """Violin plot: gap lengths between adjacent binarized elements, per mark (hue) × method."""
     input:
-        expand("{ds}/peaks/gap_lengths.tsv.gz", ds=list(DATASETS)),
+        expand("{ds}/peaks/gap_lengths.tsv.gz",ds=list(DATASETS)),
     output:
         _PEAK_GAP_VIOLIN_PLOT,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir = SCRIPTS_DIR,
-        workdir     = lambda w: config.get("workdir", "."),
-        datasets    = " ".join(list(DATASETS)),
+        scripts_dir=SCRIPTS_DIR,
+        workdir=lambda w: config.get("workdir","."),
+        datasets=" ".join(list(DATASETS)),
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -265,13 +264,13 @@ rule inter_dataset_peak_gap_violin:
         """
 
 
-_REF_KAPPA_MATRIX        = "inter_dataset/reference/kappa_matrix.tsv"
-_REF_JACCARD_MATRIX      = "inter_dataset/reference/jaccard_similarity_matrix.tsv"
-_REF_KAPPA_NOQH_MATRIX   = "inter_dataset/reference/kappa_noqh_matrix.tsv"
+_REF_KAPPA_MATRIX = "inter_dataset/reference/kappa_matrix.tsv"
+_REF_JACCARD_MATRIX = "inter_dataset/reference/jaccard_similarity_matrix.tsv"
+_REF_KAPPA_NOQH_MATRIX = "inter_dataset/reference/kappa_noqh_matrix.tsv"
 _REF_JACCARD_NOQH_MATRIX = "inter_dataset/reference/jaccard_noqh_matrix.tsv"
-_REF_DIST_PLOT           = "inter_dataset/reference/similarity_distribution.png"
-_REF_DIST_NOQH_PLOT      = "inter_dataset/reference/similarity_distribution_noqh.png"
-_REF_COMPOSITION_PLOT    = "inter_dataset/reference/state_composition.png"
+_REF_DIST_PLOT = "inter_dataset/reference/similarity_distribution.png"
+_REF_DIST_NOQH_PLOT = "inter_dataset/reference/similarity_distribution_noqh.png"
+_REF_COMPOSITION_PLOT = "inter_dataset/reference/state_composition.png"
 
 
 rule inter_reference_compare:
@@ -279,30 +278,30 @@ rule inter_reference_compare:
     input:
         _MARKUPS_DIR,
     output:
-        kappa        = _REF_KAPPA_MATRIX,
-        jaccard      = _REF_JACCARD_MATRIX,
-        kappa_noqh   = _REF_KAPPA_NOQH_MATRIX,
-        jaccard_noqh = _REF_JACCARD_NOQH_MATRIX,
-        dist         = _REF_DIST_PLOT,
-        dist_noqh    = _REF_DIST_NOQH_PLOT,
-        composition  = _REF_COMPOSITION_PLOT,
+        kappa=_REF_KAPPA_MATRIX,
+        jaccard=_REF_JACCARD_MATRIX,
+        kappa_noqh=_REF_KAPPA_NOQH_MATRIX,
+        jaccard_noqh=_REF_JACCARD_NOQH_MATRIX,
+        dist=_REF_DIST_PLOT,
+        dist_noqh=_REF_DIST_NOQH_PLOT,
+        composition=_REF_COMPOSITION_PLOT,
     threads: workflow.cores
     conda: "../envs/python.yaml"
     params:
-        scripts_dir = SCRIPTS_DIR,
-        markups_dir = _MARKUPS_DIR,
-        bin_size    = CHROMHMM_BIN,
-        segs        = lambda w: " ".join(
-                          str(p) for p in sorted(
-                              Path(_MARKUPS_DIR, "15state").glob("*.bed.gz")
-                          )
-                      ),
-        labels      = lambda w: " ".join(
-                          "_".join(p.name.replace(".bed.gz", "").split("_")[1:])
-                          for p in sorted(
-                              Path(_MARKUPS_DIR, "15state").glob("*.bed.gz")
-                          )
-                      ),
+        scripts_dir=SCRIPTS_DIR,
+        markups_dir=_MARKUPS_DIR,
+        bin_size=CHROMHMM_BIN,
+        segs=lambda w: " ".join(
+            str(p) for p in sorted(
+                Path(_MARKUPS_DIR,"15state").glob("*.bed.gz")
+            )
+        ),
+        labels=lambda w: " ".join(
+            "_".join(p.name.replace(".bed.gz","").split("_")[1:])
+            for p in sorted(
+                Path(_MARKUPS_DIR,"15state").glob("*.bed.gz")
+            )
+        ),
     shell:
         r"""
         python {params.scripts_dir}/compare.py \
@@ -324,9 +323,9 @@ rule inter_reference_compare:
         """
 
 
-_METHOD_SIM_DIST_PLOT             = "inter_dataset/summary_plots/method_similarity_distribution.png"
-_METHOD_SIM_DIST_NOQH_PLOT        = "inter_dataset/summary_plots/method_similarity_distribution_noqh.png"
-_METHOD_SIM_DIST_CHIP_MINT_PLOT      = "inter_dataset/summary_plots/method_similarity_distribution_chip_vs_mint.png"
+_METHOD_SIM_DIST_PLOT = "inter_dataset/summary_plots/method_similarity_distribution.png"
+_METHOD_SIM_DIST_NOQH_PLOT = "inter_dataset/summary_plots/method_similarity_distribution_noqh.png"
+_METHOD_SIM_DIST_CHIP_MINT_PLOT = "inter_dataset/summary_plots/method_similarity_distribution_chip_vs_mint.png"
 _METHOD_SIM_DIST_CHIP_MINT_NOQH_PLOT = "inter_dataset/summary_plots/method_similarity_distribution_chip_vs_mint_noqh.png"
 
 _CHIP_DATASETS = [ds for ds in DATASETS if not ds.endswith("_mint")]
@@ -336,16 +335,16 @@ _MINT_DATASETS = [ds for ds in DATASETS if ds.endswith("_mint")]
 rule inter_dataset_method_similarity_distribution:
     """Violin plots of inter-dataset pairwise similarity (kappa/Jaccard) per de-novo method."""
     input:
-        expand("inter_dataset/{method}/kappa_noqh_matrix.tsv", method=INTER_DS_METHODS),
+        expand("inter_dataset/{method}/kappa_noqh_matrix.tsv",method=INTER_DS_METHODS),
     output:
-        dist      = _METHOD_SIM_DIST_PLOT,
-        dist_noqh = _METHOD_SIM_DIST_NOQH_PLOT,
+        dist=_METHOD_SIM_DIST_PLOT,
+        dist_noqh=_METHOD_SIM_DIST_NOQH_PLOT,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir    = SCRIPTS_DIR,
-        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
-        indir          = "inter_dataset",
-        methods        = " ".join(INTER_DS_METHODS),
+        scripts_dir=SCRIPTS_DIR,
+        repo_plots_dir=os.path.join(workflow.basedir,"plots","summary"),
+        indir="inter_dataset",
+        methods=" ".join(INTER_DS_METHODS),
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -361,18 +360,18 @@ rule inter_dataset_method_similarity_distribution:
 rule inter_dataset_method_similarity_distribution_chip_vs_mint:
     """Violin plots of inter-dataset similarity filtered to ChIP↔Mint-ChIP pairs only."""
     input:
-        expand("inter_dataset/{method}/kappa_noqh_matrix.tsv", method=INTER_DS_METHODS),
+        expand("inter_dataset/{method}/kappa_noqh_matrix.tsv",method=INTER_DS_METHODS),
     output:
-        dist      = _METHOD_SIM_DIST_CHIP_MINT_PLOT,
-        dist_noqh = _METHOD_SIM_DIST_CHIP_MINT_NOQH_PLOT,
+        dist=_METHOD_SIM_DIST_CHIP_MINT_PLOT,
+        dist_noqh=_METHOD_SIM_DIST_CHIP_MINT_NOQH_PLOT,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir    = SCRIPTS_DIR,
-        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
-        indir          = "inter_dataset",
-        methods        = " ".join(INTER_DS_METHODS),
-        chip_datasets  = " ".join(_CHIP_DATASETS),
-        mint_datasets  = " ".join(_MINT_DATASETS),
+        scripts_dir=SCRIPTS_DIR,
+        repo_plots_dir=os.path.join(workflow.basedir,"plots","summary"),
+        indir="inter_dataset",
+        methods=" ".join(INTER_DS_METHODS),
+        chip_datasets=" ".join(_CHIP_DATASETS),
+        mint_datasets=" ".join(_MINT_DATASETS),
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -400,16 +399,16 @@ _REP_CONSISTENCY_PLOTS = [
 rule inter_dataset_rep_consistency_plots:
     """Replicate consistency bar plots: Kappa/Jaccard (raw) across datasets."""
     input:
-        expand("{ds}/methods/comb/comparison_table.tsv", ds=_REP_DATASETS),
+        expand("{ds}/methods/comb/comparison_table.tsv",ds=_REP_DATASETS),
     output:
         _REP_CONSISTENCY_PLOTS,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir     = SCRIPTS_DIR,
-        repo_plots_dir  = os.path.join(workflow.basedir, "plots", "summary"),
-        datasets        = " ".join(_REP_DATASETS),
-        methods_dirs    = " ".join(f"{ds}/methods/comb" for ds in _REP_DATASETS),
-        outdir          = "inter_dataset/summary_plots",
+        scripts_dir=SCRIPTS_DIR,
+        repo_plots_dir=os.path.join(workflow.basedir,"plots","summary"),
+        datasets=" ".join(_REP_DATASETS),
+        methods_dirs=" ".join(f"{ds}/methods/comb" for ds in _REP_DATASETS),
+        outdir="inter_dataset/summary_plots",
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -436,13 +435,13 @@ rule inter_dataset_method_composition:
         _METHOD_DS_COMPOSITION_PLOTS,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir    = SCRIPTS_DIR,
-        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
-        workdir        = lambda w: config.get("workdir", "."),
-        datasets       = " ".join(list(DATASETS)),
-        cells          = " ".join(DATASETS[ds]["cell"] for ds in DATASETS),
-        nstates        = NSTATES,
-        outdir         = "inter_dataset/summary_plots",
+        scripts_dir=SCRIPTS_DIR,
+        repo_plots_dir=os.path.join(workflow.basedir,"plots","summary"),
+        workdir=lambda w: config.get("workdir","."),
+        datasets=" ".join(list(DATASETS)),
+        cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
+        nstates=NSTATES,
+        outdir="inter_dataset/summary_plots",
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -459,19 +458,19 @@ rule inter_dataset_method_composition:
 rule inter_dataset_method_state_composition:
     """Mean state composition across datasets per method (single summary plot)."""
     input:
-        [_inter_ds_bed(ds, m) for ds in DATASETS for m in (list(INTER_DS_METHODS))],
+        [_inter_ds_bed(ds,m) for ds in DATASETS for m in (list(INTER_DS_METHODS))],
         _MARKUPS_DIR,
     output:
         "inter_dataset/summary_plots/method_state_composition.png",
     conda: "../envs/python.yaml"
     params:
-        scripts_dir    = SCRIPTS_DIR,
-        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
-        workdir        = lambda w: config.get("workdir", "."),
-        datasets       = " ".join(list(DATASETS)),
-        cells          = " ".join(DATASETS[ds]["cell"] for ds in DATASETS),
-        nstates        = NSTATES,
-        markups_dir    = _MARKUPS_DIR,
+        scripts_dir=SCRIPTS_DIR,
+        repo_plots_dir=os.path.join(workflow.basedir,"plots","summary"),
+        workdir=lambda w: config.get("workdir","."),
+        datasets=" ".join(list(DATASETS)),
+        cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
+        nstates=NSTATES,
+        markups_dir=_MARKUPS_DIR,
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
@@ -487,14 +486,14 @@ rule inter_dataset_method_state_composition:
 
 
 _EMISSION_SIM_PLOTS = (
-    expand("inter_dataset/summary_plots/emission_cosine_sim_{ds}.png",
-           ds=list(DATASETS))
-    + expand("inter_dataset/summary_plots/emission_gini_{ds}.png",
-             ds=list(DATASETS))
-    + [
-        "inter_dataset/summary_plots/emission_cosine_sim_summary.png",
-        "inter_dataset/summary_plots/emission_gini_summary.png",
-    ]
+        expand("inter_dataset/summary_plots/emission_cosine_sim_{ds}.png",
+            ds=list(DATASETS))
+        + expand("inter_dataset/summary_plots/emission_gini_{ds}.png",
+    ds=list(DATASETS))
+        + [
+            "inter_dataset/summary_plots/emission_cosine_sim_summary.png",
+            "inter_dataset/summary_plots/emission_gini_summary.png",
+        ]
 )
 
 
@@ -506,17 +505,17 @@ rule inter_dataset_emission_similarity:
     of overlap-based label transfer as the primary matching strategy.
     """
     input:
-        expand("{ds}/methods/comb/comparison_table.tsv", ds=list(DATASETS)),
+        expand("{ds}/methods/comb/comparison_table.tsv",ds=list(DATASETS)),
     output:
         _EMISSION_SIM_PLOTS,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir   = SCRIPTS_DIR,
-        datasets      = " ".join(list(DATASETS)),
-        analysis_dirs = " ".join(f"{ds}/analysis/comb" for ds in DATASETS),
-        methods       = " ".join(INTER_DS_METHODS),
-        outdir        = "inter_dataset/summary_plots",
-        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
+        scripts_dir=SCRIPTS_DIR,
+        datasets=" ".join(list(DATASETS)),
+        analysis_dirs=" ".join(f"{ds}/analysis/comb" for ds in DATASETS),
+        methods=" ".join(INTER_DS_METHODS),
+        outdir="inter_dataset/summary_plots",
+        repo_plots_dir=os.path.join(workflow.basedir,"plots","summary"),
     shell:
         r"""
         python {params.scripts_dir}/emission_similarity.py \
@@ -529,27 +528,27 @@ rule inter_dataset_emission_similarity:
         """
 
 
-_INTER_DS_BINEM_PLOT      = "inter_dataset/summary_plots/inter_dataset_binem_similarity.png"
-_CROSS_ASSAY_BINEM_PLOT   = "inter_dataset/summary_plots/cross_assay_binem_similarity.png"
+_INTER_DS_BINEM_PLOT = "inter_dataset/summary_plots/inter_dataset_binem_similarity.png"
+_CROSS_ASSAY_BINEM_PLOT = "inter_dataset/summary_plots/cross_assay_binem_similarity.png"
 
 
 rule inter_dataset_binem_similarity:
     """Inter-dataset and cross-assay binarized emission cosine similarity per method."""
     input:
-        expand("{ds}/methods/comb/comparison_table.tsv", ds=list(DATASETS)),
+        expand("{ds}/methods/comb/comparison_table.tsv",ds=list(DATASETS)),
     output:
-        inter_ds   = _INTER_DS_BINEM_PLOT,
-        cross_assay = _CROSS_ASSAY_BINEM_PLOT,
+        inter_ds=_INTER_DS_BINEM_PLOT,
+        cross_assay=_CROSS_ASSAY_BINEM_PLOT,
     conda: "../envs/python.yaml"
     params:
-        scripts_dir    = SCRIPTS_DIR,
-        repo_plots_dir = os.path.join(workflow.basedir, "plots", "summary"),
-        datasets       = " ".join(list(DATASETS)),
-        analysis_dirs  = " ".join(f"{ds}/analysis/comb" for ds in DATASETS),
-        methods        = " ".join(INTER_DS_METHODS),
-        outdir         = "inter_dataset/summary_plots",
-        chip_datasets  = " ".join(_CHIP_DATASETS),
-        mint_datasets  = " ".join(_MINT_DATASETS),
+        scripts_dir=SCRIPTS_DIR,
+        repo_plots_dir=os.path.join(workflow.basedir,"plots","summary"),
+        datasets=" ".join(list(DATASETS)),
+        analysis_dirs=" ".join(f"{ds}/analysis/comb" for ds in DATASETS),
+        methods=" ".join(INTER_DS_METHODS),
+        outdir="inter_dataset/summary_plots",
+        chip_datasets=" ".join(_CHIP_DATASETS),
+        mint_datasets=" ".join(_MINT_DATASETS),
     shell:
         r"""
         python {params.scripts_dir}/emission_similarity.py \
@@ -571,7 +570,7 @@ rule inter_dataset_all:
     input:
         "inter_dataset/comparison_table.tsv",
         expand("inter_dataset/{method}/kappa_noqh_matrix.tsv",
-               method=INTER_DS_METHODS),
+            method=INTER_DS_METHODS),
         _SUMMARY_PLOTS,
         _STATE_LENGTH_PLOT,
         _STATE_COVERAGE_PLOT,

@@ -48,7 +48,7 @@ rule chromhmm_binarize_bam:
         controls = lambda w: ([f"{w.folder}/controls/{m}.bam" for m in MARKS]
                               if folder_has_controls(w.folder) else []),
     output:
-        bins = expand("{{folder}}/chromhmm_default/{{cell}}_{chr}_binary.txt", chr=CHROMS)
+        bins = temp(expand("{{folder}}/chromhmm_default/{{cell}}_{chr}_binary.txt", chr=CHROMS))
     params:
         bin        = CHROMHMM_BIN,
         cs         = TOOLS["chromsizes"],
@@ -96,7 +96,7 @@ rule chromhmm_default_mark_beds:
 rule cat_peaks_per_mark:
     """Sort peaks for a given folder+caller and mark into the binary matrix input."""
     input:  lambda w: peak_file(w.folder, w.caller, w.mark)
-    output: "{folder}/{caller}/chromhmm_peaks/{mark}"
+    output: temp("{folder}/{caller}/chromhmm_peaks/{mark}")
     shell:  "sort -k1,1 -k2,2n {input} > {output}"
 
 
@@ -104,7 +104,7 @@ rule multiinter:
     input:
         bins  = lambda w: f"bins{CALLER_BIN[w.caller]}.bed",
         peaks = lambda w: [f"{w.folder}/{w.caller}/chromhmm_peaks/{m}" for m in MARKS],
-    output: "{folder}/{caller}/chromhmm_peaks/multiinter.tsv"
+    output: temp("{folder}/{caller}/chromhmm_peaks/multiinter.tsv")
     conda: "../envs/bio.yaml"
     shell:
         "bash {SCRIPTS_DIR}/multiinter.sh {output} {input.bins} {input.peaks}"
@@ -113,7 +113,7 @@ rule multiinter:
 rule binarize_per_chr:
     """Extract per-chromosome binary matrix (mark columns) and gzip."""
     input:  "{folder}/{caller}/chromhmm_peaks/multiinter.tsv"
-    output: "{folder}/{caller}/chromhmm_peaks/{cell}_{chr}_binary.txt.gz"
+    output: temp("{folder}/{caller}/chromhmm_peaks/{cell}_{chr}_binary.txt.gz")
     shell:
         "bash {SCRIPTS_DIR}/binarize_per_chr.sh {input} {wildcards.cell} {wildcards.chr} {output}"
 

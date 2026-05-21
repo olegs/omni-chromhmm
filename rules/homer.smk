@@ -41,6 +41,7 @@ rule homer_tagdir:
     output: temp(directory("{folder}/homer/{mark}_tagdir"))
     conda: "../envs/bio.yaml"  # provides samtools
     log:    "{folder}/homer/{mark}_tagdir.log"
+    resources: homer_tagdir=1
     shell:
         "{input.tool} {output} {input.bam} &> {log}"
 
@@ -53,6 +54,7 @@ rule homer_control_tagdir:
     output: temp(directory("{folder}/homer/{mark}_control_tagdir"))
     conda: "../envs/bio.yaml"
     log:    "{folder}/homer/{mark}_control_tagdir.log"
+    resources: homer_tagdir=1
     shell:
         "{input.tool} {output} {input.bam} &> {log}"
 

@@ -60,14 +60,23 @@ wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.3.6762.jar
 ```bash
 # Dry run
 snakemake -p all --use-conda --cores all --directory $(pwd) \
-  --snakefile ~/work/claude/omnichromhmm/Snakefile \
-  --configfile ~/work/claude/omnichromhmm/config.yaml -n
+  --snakefile ~/work/omni-chromhmm/Snakefile \
+  --configfile ~/work/omni-chromhmm/config.yaml \
+  --resources homer_tagdir=2 merge_bam=2 -n
 
 # Single dataset
 snakemake -p imr90/.done --use-conda --cores all --directory $(pwd) \
-  --snakefile ~/work/claude/omnichromhmm/Snakefile \
-  --configfile ~/work/claude/omnichromhmm/config.yaml
+  --snakefile ~/work/omni-chromhmm/Snakefile \
+  --configfile ~/work/omni-chromhmm/config.yaml \
+  --resources homer_tagdir=2 merge_bam=2
 ```
+
+Resource limits (pass via `--resources`):
+- `homer_tagdir=2` — limits Homer to 2 concurrent tag directories.
+- `merge_bam=2` — limits concurrent BAM merges in `pool_bams`. Each merge writes a
+  multi-GB temporary file; running too many in parallel can fill the disk. Default is 1
+  (sequential); increase if disk space allows.
+
 
 Useful flags: `-p` (echo commands), `-r` (reasons), `--dag | dot -Tpng > dag.png` (DAG visualization).
 

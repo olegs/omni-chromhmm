@@ -110,7 +110,11 @@ def has_controls(ds):
 
 
 def control_accs_for_mark(ds, mark, rep=None):
-    """Return deduplicated control accessions for a dataset's mark (optionally per rep)."""
+    """Return deduplicated control accessions for a dataset's mark (optionally per rep).
+
+    When rep is given but no rep-specific entry exists for the mark, falls back to
+    untagged BAMs (marks with no 'rep' field) — mirroring bams_for_mark behaviour.
+    """
     out = set()
     for acc, meta in DATASETS[ds]["bams"].items():
         if meta["mark"] != mark:
@@ -120,6 +124,13 @@ def control_accs_for_mark(ds, mark, rep=None):
         ctrl = meta.get("control")
         if ctrl:
             out.add(ctrl)
+    if not out and rep is not None:
+        # Fall back to untagged BAMs for marks that have no replicate-specific entry
+        for acc, meta in DATASETS[ds]["bams"].items():
+            if meta["mark"] == mark and "rep" not in meta:
+                ctrl = meta.get("control")
+                if ctrl:
+                    out.add(ctrl)
     return sorted(out)
 
 
