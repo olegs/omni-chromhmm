@@ -28,9 +28,9 @@ def _folder_seg_files(w):
             beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed")
             beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
             beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
-        beds.append(f"{folder}/{caller}/kmeans_states_comb_matched.bed")
-        beds.append(f"{folder}/{caller}/kmeans_states_bwem_matched.bed")
-        beds.append(f"{folder}/{caller}/kmeans_states_ovlp_matched.bed")
+        beds.append(f"{folder}/{caller}/{caller}_kmeans_states_comb_matched.bed")
+        beds.append(f"{folder}/{caller}/{caller}_kmeans_states_bwem_matched.bed")
+        beds.append(f"{folder}/{caller}/{caller}_kmeans_states_ovlp_matched.bed")
     # Require bw_emissions.npz for every BED.  For unmatched beds this triggers
     # compute_emissions (bigwig re-read); for _matched beds the match rules produce
     # a remapped copy without re-reading bigwigs (via --remap-emissions).
@@ -79,9 +79,9 @@ def _analysis_inputs(w):
                 files.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed")
                 files.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
                 files.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
-            files.append(f"{folder}/{caller}/kmeans_states_comb_matched.bed")
-            files.append(f"{folder}/{caller}/kmeans_states_bwem_matched.bed")
-            files.append(f"{folder}/{caller}/kmeans_states_ovlp_matched.bed")
+            files.append(f"{folder}/{caller}/{caller}_kmeans_states_comb_matched.bed")
+            files.append(f"{folder}/{caller}/{caller}_kmeans_states_bwem_matched.bed")
+            files.append(f"{folder}/{caller}/{caller}_kmeans_states_ovlp_matched.bed")
     if cfg.get("rnaseq"):
         files.append(f"{ds}/rnaseq_{cfg['rnaseq']}.tsv")
         files.append(TOOLS["gencode_gtf"])
@@ -158,7 +158,7 @@ rule analyze_segmentations:
             peaks_dir="{wildcards.folder}/${{caller}}/chromhmm_peaks"
             for variant in comb bwem ovlp; do
                 run_analyze "$cbin" \
-                    {wildcards.folder}/${{caller}}/kmeans_states_${{variant}}_matched.bed \
+                    {wildcards.folder}/${{caller}}/${{caller}}_kmeans_states_${{variant}}_matched.bed \
                     {wildcards.folder}/analysis/${{variant}}/kmeans_${{caller}} \
                     --inputs "$peaks_dir"/*.txt.gz
                 if [ -f "{wildcards.folder}/${{caller}}/chromhmm_result/{params.cell}_{params.n}_dense_${{variant}}_matched.bed" ]; then

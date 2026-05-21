@@ -108,11 +108,11 @@ def ds_method_bed(workdir, ds, cell, nstates, method_key):
     mapping = {
         "chromhmm_default": root / "chromhmm_default_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
         "chromhmm_omni":    root / "omni"  / "chromhmm_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
-        "kmeans_omni":      root / "omni"  / "kmeans_states_ovlp_matched.bed",
+        "kmeans_omni":      root / "omni"  / "omni_kmeans_states_ovlp_matched.bed",
         "chromhmm_homer":   root / "homer" / "chromhmm_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
-        "kmeans_homer":     root / "homer" / "kmeans_states_ovlp_matched.bed",
+        "kmeans_homer":     root / "homer" / "homer_kmeans_states_ovlp_matched.bed",
         "chromhmm_macs2":   root / "macs2" / "chromhmm_result" / f"{cell}_{nstates}_dense_ovlp_matched.bed",
-        "kmeans_macs2":     root / "macs2" / "kmeans_states_ovlp_matched.bed",
+        "kmeans_macs2":     root / "macs2" / "macs2_kmeans_states_ovlp_matched.bed",
     }
     return mapping[method_key]
 

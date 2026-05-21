@@ -24,7 +24,7 @@ def _compare_beds_for_folder(folder, variant):
     for caller in CALLERS:
         if DO_CHROMHMM_PEAKS:
             beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_{suffix}.bed")
-        beds.append(f"{folder}/{caller}/kmeans_states_{suffix}.bed")
+        beds.append(f"{folder}/{caller}/{caller}_kmeans_states_{suffix}.bed")
     return beds
 
 

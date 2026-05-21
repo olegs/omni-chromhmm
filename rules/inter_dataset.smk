@@ -34,7 +34,7 @@ def _inter_ds_bed(ds, method):
     caller = parts[1]  # omni | homer | macs2
     if model == "chromhmm":
         return f"{ds}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_{sfx}.bed"
-    return f"{ds}/{caller}/kmeans_states_{sfx}.bed"
+    return f"{ds}/{caller}/{caller}_kmeans_states_{sfx}.bed"
 
 
 
@@ -145,9 +145,9 @@ rule inter_dataset_segment_lengths_comparison:
     """Per-state segment length violin: ENCODE reference vs de-novo methods, all datasets."""
     input:
         _MARKUPS_DIR,
-        *(expand("{ds}/omni/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
-        *(expand("{ds}/homer/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
-        *(expand("{ds}/macs2/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
+        *(expand("{ds}/omni/omni_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
+        *(expand("{ds}/homer/homer_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
+        *(expand("{ds}/macs2/macs2_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
     output:
         _STATE_LENGTH_PLOT,
     conda: "../envs/python.yaml"
@@ -174,9 +174,9 @@ rule inter_dataset_state_coverage:
     """Per-state genomic coverage fraction: ENCODE reference vs de-novo methods, all datasets."""
     input:
         _MARKUPS_DIR,
-        *(expand("{ds}/omni/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
-        *(expand("{ds}/homer/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
-        *(expand("{ds}/macs2/kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
+        *(expand("{ds}/omni/omni_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
+        *(expand("{ds}/homer/homer_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
+        *(expand("{ds}/macs2/macs2_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
     output:
         _STATE_COVERAGE_PLOT,
     conda: "../envs/python.yaml"

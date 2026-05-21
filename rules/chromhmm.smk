@@ -9,7 +9,7 @@
 # This file owns:
 #   - Peak -> binary matrix:  {folder}/{caller}/chromhmm_peaks/
 #   - ChromHMM LearnModel over peaks:  {folder}/{caller}/chromhmm_result/
-#   - KMeans segmentation:    {folder}/{caller}/kmeans_states.bed
+#   - KMeans segmentation:    {folder}/{caller}/{caller}_kmeans_states.bed
 
 # Reference ChromHMM markup download.
 
@@ -147,8 +147,8 @@ rule chromhmm_learn_over_peaks:
 
 rule kmeans_states:
     input: _peaks_binary_files
-    output: "{folder}/{caller}/kmeans_states.bed"
-    log: "{folder}/{caller}/kmeans_states.log"
+    output: "{folder}/{caller}/{caller}_kmeans_states.bed"
+    log: "{folder}/{caller}/{caller}_kmeans_states.log"
     conda: "../envs/python.yaml"
     params:
         bin=lambda w: CALLER_BIN[w.caller],

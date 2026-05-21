@@ -225,9 +225,9 @@ def all_results(ds):
                 t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
                 t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
                 t.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed")
-            t.append(f"{folder}/{caller}/kmeans_states_ovlp_matched.bed")
-            t.append(f"{folder}/{caller}/kmeans_states_bwem_matched.bed")
-            t.append(f"{folder}/{caller}/kmeans_states_comb_matched.bed")
+            t.append(f"{folder}/{caller}/{caller}_kmeans_states_ovlp_matched.bed")
+            t.append(f"{folder}/{caller}/{caller}_kmeans_states_bwem_matched.bed")
+            t.append(f"{folder}/{caller}/{caller}_kmeans_states_comb_matched.bed")
 
     return t
 
