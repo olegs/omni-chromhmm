@@ -157,6 +157,7 @@ rule bam_coverage_bw:
         bai="{folder}/bams/{mark}.bam.bai",
     output: "{folder}/bams/{mark}.bw"
     threads: 6
+    resources: disk_mb=10000
     conda: "../envs/bio.yaml"
     shell: "bamCoverage -b {input.bam} -p {threads} -o {output} --normalizeUsing RPKM"
 

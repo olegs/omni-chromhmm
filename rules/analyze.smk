@@ -25,9 +25,9 @@ def _folder_seg_files(w):
     ]
     for caller in CALLERS:
         if DO_CHROMHMM_PEAKS:
-            beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed")
-            beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
-            beds.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
+            beds.append(f"{folder}/{caller}/chromhmm_result/{caller}_{cell}_{NSTATES}_dense_comb_matched.bed")
+            beds.append(f"{folder}/{caller}/chromhmm_result/{caller}_{cell}_{NSTATES}_dense_bwem_matched.bed")
+            beds.append(f"{folder}/{caller}/chromhmm_result/{caller}_{cell}_{NSTATES}_dense_ovlp_matched.bed")
         beds.append(f"{folder}/{caller}/{caller}_kmeans_states_comb_matched.bed")
         beds.append(f"{folder}/{caller}/{caller}_kmeans_states_bwem_matched.bed")
         beds.append(f"{folder}/{caller}/{caller}_kmeans_states_ovlp_matched.bed")
@@ -76,9 +76,9 @@ def _analysis_inputs(w):
         files.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
         for caller in CALLERS:
             if DO_CHROMHMM_PEAKS:
-                files.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_comb_matched.bed")
-                files.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
-                files.append(f"{folder}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
+                files.append(f"{folder}/{caller}/chromhmm_result/{caller}_{cell}_{NSTATES}_dense_comb_matched.bed")
+                files.append(f"{folder}/{caller}/chromhmm_result/{caller}_{cell}_{NSTATES}_dense_bwem_matched.bed")
+                files.append(f"{folder}/{caller}/chromhmm_result/{caller}_{cell}_{NSTATES}_dense_ovlp_matched.bed")
             files.append(f"{folder}/{caller}/{caller}_kmeans_states_comb_matched.bed")
             files.append(f"{folder}/{caller}/{caller}_kmeans_states_bwem_matched.bed")
             files.append(f"{folder}/{caller}/{caller}_kmeans_states_ovlp_matched.bed")
@@ -161,9 +161,9 @@ rule analyze_segmentations:
                     {wildcards.folder}/${{caller}}/${{caller}}_kmeans_states_${{variant}}_matched.bed \
                     {wildcards.folder}/analysis/${{variant}}/kmeans_${{caller}} \
                     --inputs "$peaks_dir"/*.txt.gz
-                if [ -f "{wildcards.folder}/${{caller}}/chromhmm_result/{params.cell}_{params.n}_dense_${{variant}}_matched.bed" ]; then
+                if [ -f "{wildcards.folder}/${{caller}}/chromhmm_result/${{caller}}_{params.cell}_{params.n}_dense_${{variant}}_matched.bed" ]; then
                     run_analyze "$cbin" \
-                        {wildcards.folder}/${{caller}}/chromhmm_result/{params.cell}_{params.n}_dense_${{variant}}_matched.bed \
+                        {wildcards.folder}/${{caller}}/chromhmm_result/${{caller}}_{params.cell}_{params.n}_dense_${{variant}}_matched.bed \
                         {wildcards.folder}/analysis/${{variant}}/chromhmm_${{caller}} \
                         --inputs "$peaks_dir"/*.txt.gz
                 fi

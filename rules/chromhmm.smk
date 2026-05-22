@@ -128,8 +128,8 @@ rule binarize_per_chr:
 rule chromhmm_learn_over_peaks:
     input: _peaks_binary_files
     output:
-        dense="{folder}/{caller}/chromhmm_result/{cell}_" + str(NSTATES) + "_dense.bed",
-    log: "{folder}/{caller}/chromhmm_result/{cell}_learn.log"
+        dense="{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_dense.bed",
+    log: "{folder}/{caller}/chromhmm_result/{caller}_{cell}_learn.log"
     params:
         indir="{folder}/{caller}/chromhmm_peaks",
         outdir="{folder}/{caller}/chromhmm_result",
@@ -138,11 +138,12 @@ rule chromhmm_learn_over_peaks:
         genome=GENOME,
         chromsizes=TOOLS["chromsizes"],
     shell:
-        "mkdir -p {params.outdir} && "
-        "{CHROMHMM} LearnModel -b {params.bin} -l {params.chromsizes} "
-        "{params.indir} {params.outdir} "
-        "{params.n} {params.genome} "
-        "&> {log}"
+        r"""
+        mkdir -p {params.outdir}
+        {CHROMHMM} LearnModel -b {params.bin} -l {params.chromsizes} \
+            {params.indir} {params.outdir} {params.n} {params.genome} &> {log}
+        mv {params.outdir}/{wildcards.cell}_{params.n}_dense.bed {output.dense}
+        """
 
 
 rule kmeans_states:

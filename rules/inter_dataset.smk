@@ -33,7 +33,7 @@ def _inter_ds_bed(ds, method):
     model = parts[0]  # chromhmm | kmeans
     caller = parts[1]  # omni | homer | macs2
     if model == "chromhmm":
-        return f"{ds}/{caller}/chromhmm_result/{cell}_{NSTATES}_dense_{sfx}.bed"
+        return f"{ds}/{caller}/chromhmm_result/{caller}_{cell}_{NSTATES}_dense_{sfx}.bed"
     return f"{ds}/{caller}/{caller}_kmeans_states_{sfx}.bed"
 
 

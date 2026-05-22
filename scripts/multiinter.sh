@@ -25,7 +25,7 @@ for peak in "$@"; do
     mark_name=$(basename "$peak")
     HEADER="${HEADER}	${mark_name}"
     # -c counts overlaps; awk converts count > 0 to 1
-    bedtools intersect -a "$TMP_DIR/base.bed" -b "$peak" -c -sorted \
+    bedtools intersect -a "$TMP_DIR/base.bed" -b "$peak" -c \
         | awk '{print ($4>0)?1:0}' > "$TMP_DIR/mark_$i.txt"
     i=$((i+1))
 done

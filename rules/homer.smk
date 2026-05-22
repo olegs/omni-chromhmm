@@ -52,6 +52,7 @@ rule homer_tagdir:
         trap "rm -f $_tmp" EXIT
         trap "rm -rf {output}" ERR
         {input.tool} {output} {input.bam} &> {log}
+        test -f {output}/tagInfo.txt
         """
 
 
@@ -74,6 +75,7 @@ rule homer_control_tagdir:
         trap "rm -f $tmp" EXIT
         trap "rm -rf {output}" ERR
         {input.tool} {output} {input.bam} &> {log}
+        test -f {output}/tagInfo.txt
         """
 
 
@@ -89,7 +91,10 @@ rule homer_findpeaks:
         control=lambda w: f"-i {w.folder}/homer/{w.mark}_control_tagdir"
         if folder_has_controls(w.folder) else "",
     shell:
-        "{input.tool} {input.tagdir} -style histone {params.control} -o {output} &> {log}"
+        r"""
+        {input.tool} {input.tagdir} -style histone {params.control} -o {output} &> {log}
+        test -f {output}
+        """
 
 
 rule homer_peak_to_bed:

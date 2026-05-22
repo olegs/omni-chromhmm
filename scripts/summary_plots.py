@@ -108,11 +108,11 @@ def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method="comb"):
     sfx = f"{match_method}_matched"
     mapping = {
         "chromhmm_default": root / "chromhmm_default_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
-        "chromhmm_omni":    root / "omni"  / "chromhmm_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
+        "chromhmm_omni":    root / "omni"  / "chromhmm_result" / f"omni_{cell}_{nstates}_dense_{sfx}.bed",
         "kmeans_omni":      root / "omni"  / f"omni_kmeans_states_{sfx}.bed",
-        "chromhmm_homer":   root / "homer" / "chromhmm_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
+        "chromhmm_homer":   root / "homer" / "chromhmm_result" / f"homer_{cell}_{nstates}_dense_{sfx}.bed",
         "kmeans_homer":     root / "homer" / f"homer_kmeans_states_{sfx}.bed",
-        "chromhmm_macs2":   root / "macs2" / "chromhmm_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
+        "chromhmm_macs2":   root / "macs2" / "chromhmm_result" / f"macs2_{cell}_{nstates}_dense_{sfx}.bed",
         "kmeans_macs2":     root / "macs2" / f"macs2_kmeans_states_{sfx}.bed",
     }
     return mapping[method_key]
