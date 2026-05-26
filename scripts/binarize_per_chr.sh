@@ -10,14 +10,13 @@ CHR=$3
 OUTPUT=$4
 
 T=$(printf '\t')
-TMP=$(mktemp)
-trap 'rm -f "$TMP"' EXIT
 
+(
 # Line 1: cell  chr
-echo "${CELL}${T}${CHR}" > "$TMP"
+echo "${CELL}${T}${CHR}"
 # Line 2: mark names (columns 4+)
-head -n 1 "$INPUT" | awk -v OFS="$T" '{for(i=4;i<=NF;i++){printf "%s%s",$i,(i<NF?OFS:"\n")}}' >> "$TMP"
+head -n 1 "$INPUT" | awk -v OFS="$T" '{for(i=4;i<=NF;i++){printf "%s%s",$i,(i<NF?OFS:"\n")}}'
 # Data rows: filter by chromosome, extract mark columns (4+)
 awk -v chr="$CHR" -v OFS="$T" \
-    'NR>1 && $1==chr {for(i=4;i<=NF;i++){printf "%s%s",$i,(i<NF?OFS:"\n")}}' "$INPUT" >> "$TMP"
-gzip -c "$TMP" > "$OUTPUT"
+    'NR>1 && $1==chr {for(i=4;i<=NF;i++){printf "%s%s",$i,(i<NF?OFS:"\n")}}' "$INPUT"
+) | gzip -c > "$OUTPUT"
