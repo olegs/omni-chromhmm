@@ -28,7 +28,7 @@ rule make_cellmark_table:
         bams=lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS],
         controls=lambda w: ([f"{w.folder}/controls/{m}.bam" for m in MARKS]
                             if folder_has_controls(w.folder) else []),
-    output: "{folder}/chromhmm_default/cellmarkfiletable.tsv"
+    output: temp("{folder}/chromhmm_default/cellmarkfiletable.tsv")
     params: cell=lambda w: DATASETS[ds_of(w.folder)]["cell"]
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)
@@ -68,6 +68,9 @@ rule chromhmm_learn_default:
     input: _default_binary_files
     output:
         dense="{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_dense.bed",
+        segments=temp("{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_segments.bed"),
+        emissions=temp("{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_emissions.txt"),
+        transitions=temp("{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_transitions.txt"),
     params:
         indir="{folder}/chromhmm_default",
         outdir="{folder}/chromhmm_default_result",
@@ -75,15 +78,25 @@ rule chromhmm_learn_default:
         n=NSTATES,
         genome=GENOME,
     shell:
-        "mkdir -p {params.outdir} && "
-        "{CHROMHMM} LearnModel -b {params.bin} {params.indir} {params.outdir} "
-        "{params.n} {params.genome}"
+        r"""
+        mkdir -p {params.outdir}
+        {CHROMHMM} LearnModel -b {params.bin} {params.indir} {params.outdir} {params.n} {params.genome}
+        # ChromHMM LearnModel might not prefix emissions/transitions correctly.
+        # Ensure outputs match Snakemake's expectations.
+        [ -f {params.outdir}/emissions_{params.n}.txt ] && mv {params.outdir}/emissions_{params.n}.txt {output.emissions}
+        [ -f {params.outdir}/transitions_{params.n}.txt ] && mv {params.outdir}/transitions_{params.n}.txt {output.transitions}
+        # dense and segments are usually already prefixed if the input files had the cell prefix,
+        # but let's be safe if they aren't.
+        [ -f {params.outdir}/{params.n}_dense.bed ] && mv {params.outdir}/{params.n}_dense.bed {output.dense}
+        [ -f {params.outdir}/{params.n}_segments.bed ] && mv {params.outdir}/{params.n}_segments.bed {output.segments}
+        true
+        """
 
 
 rule chromhmm_default_mark_beds:
     """Extract per-mark BED files from default binarized per-chromosome files."""
     input: _default_binary_files
-    output: expand("{{folder}}/chromhmm_default_result/{mark}.bed",mark=MARKS)
+    output: temp(expand("{{folder}}/chromhmm_default_result/{mark}.bed",mark=MARKS))
     params:
         bin=CHROMHMM_BIN,
         indir="{folder}/chromhmm_default",
@@ -99,14 +112,14 @@ rule chromhmm_default_mark_beds:
 rule cat_peaks_per_mark:
     """Sort peaks for a given folder+caller and mark into the binary matrix input."""
     input: lambda w: peak_file(w.folder,w.caller,w.mark)
-    output: temp("{folder}/{caller}/chromhmm_peaks/{mark}")
+    output: temp("{folder}/{caller}/chromhmm_peaks/{mark}.sorted")
     shell: "sort -k1,1 -k2,2n {input} > {output}"
 
 
 rule multiinter:
     input:
         bins=lambda w: f"bins{CALLER_BIN[w.caller]}.bed",
-        peaks=lambda w: [f"{w.folder}/{w.caller}/chromhmm_peaks/{m}" for m in MARKS],
+        peaks=lambda w: [f"{w.folder}/{w.caller}/chromhmm_peaks/{m}.sorted" for m in MARKS],
     output: temp("{folder}/{caller}/chromhmm_peaks/multiinter.tsv")
     conda: "../envs/bio.yaml"
     shell:
@@ -129,6 +142,9 @@ rule chromhmm_learn_over_peaks:
     input: _peaks_binary_files
     output:
         dense="{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_dense.bed",
+        segments=temp("{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_segments.bed"),
+        emissions=temp("{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_emissions.txt"),
+        transitions=temp("{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_transitions.txt"),
     log: "{folder}/{caller}/chromhmm_result/{caller}_{cell}_learn.log"
     params:
         indir="{folder}/{caller}/chromhmm_peaks",
@@ -143,6 +159,9 @@ rule chromhmm_learn_over_peaks:
         {CHROMHMM} LearnModel -b {params.bin} -l {params.chromsizes} \
             {params.indir} {params.outdir} {params.n} {params.genome} &> {log}
         mv {params.outdir}/{wildcards.cell}_{params.n}_dense.bed {output.dense}
+        mv {params.outdir}/{wildcards.cell}_{params.n}_segments.bed {output.segments}
+        mv {params.outdir}/emissions_{params.n}.txt {output.emissions}
+        mv {params.outdir}/transitions_{params.n}.txt {output.transitions}
         """
 
 

@@ -45,7 +45,7 @@ rule match_segmentation_ovlp:
         work_em="{bedpath}.bw_emissions.npz",
     output:
         bed="{bedpath}_ovlp_matched.bed",
-        em="{bedpath}_ovlp_matched.bw_emissions.npz",
+        em=temp("{bedpath}_ovlp_matched.bw_emissions.npz"),
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/python.yaml"
@@ -66,7 +66,7 @@ rule compute_emissions:
     input:
         bed="{bedpath}.bed",
         bigwigs=lambda w: _folder_bigwigs(_emissions_folder(w.bedpath)),
-    output: "{bedpath}.bw_emissions.npz"
+    output: temp("{bedpath}.bw_emissions.npz")
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/bio.yaml"
@@ -91,7 +91,7 @@ rule match_segmentation:
         work_em="{bedpath}.bw_emissions.npz",
     output:
         bed="{bedpath}_comb_matched.bed",
-        em="{bedpath}_comb_matched.bw_emissions.npz",
+        em=temp("{bedpath}_comb_matched.bw_emissions.npz"),
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/bio.yaml"
@@ -113,7 +113,7 @@ rule match_segmentation_em:
         work_em="{bedpath}.bw_emissions.npz",
     output:
         bed="{bedpath}_bwem_matched.bed",
-        em="{bedpath}_bwem_matched.bw_emissions.npz",
+        em=temp("{bedpath}_bwem_matched.bw_emissions.npz"),
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/bio.yaml"

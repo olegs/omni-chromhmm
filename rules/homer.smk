@@ -43,15 +43,11 @@ rule homer_tagdir:
     log: "{folder}/homer/{mark}_tagdir.log"
     resources: homer_tagdir=1, disk_mb=20000
     shell:
-        # makeTagDirectory creates a temp SAM at the BAM path minus ".bam".
-        # trap EXIT  removes it on both success and failure.
-        # trap ERR   removes the incomplete output directory on failure so
-        #            Snakemake does not reuse a corrupt tagdir on the next run.
+        # Avoid creating large intermediate SAM files on disk by piping BAM directly.
+        # trap ERR removes the incomplete output directory on failure.
         """
-        _tmp=$(dirname {input.bam})/$(basename {input.bam} .bam)
-        trap "rm -f $_tmp" EXIT
         trap "rm -rf {output}" ERR
-        {input.tool} {output} {input.bam} &> {log}
+        samtools view -h {input.bam} | {input.tool} {output} /dev/stdin -format sam &> {log}
         test -f {output}/tagInfo.txt
         """
 
@@ -66,15 +62,11 @@ rule homer_control_tagdir:
     log: "{folder}/homer/{mark}_control_tagdir.log"
     resources: homer_tagdir=1, disk_mb=20000
     shell:
-        # makeTagDirectory creates a temp SAM at the BAM path minus ".bam".
-        # trap EXIT  removes it on both success and failure.
-        # trap ERR   removes the incomplete output directory on failure so
-        #            Snakemake does not reuse a corrupt tagdir on the next run.
+        # Avoid creating large intermediate SAM files on disk by piping BAM directly.
+        # trap ERR removes the incomplete output directory on failure.
         """
-        tmp=$(dirname {input.bam})/$(basename {input.bam} .bam)
-        trap "rm -f $tmp" EXIT
         trap "rm -rf {output}" ERR
-        {input.tool} {output} {input.bam} &> {log}
+        samtools view -h {input.bam} | {input.tool} {output} /dev/stdin -format sam &> {log}
         test -f {output}/tagInfo.txt
         """
 

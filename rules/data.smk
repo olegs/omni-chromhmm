@@ -93,7 +93,7 @@ rule pool_controls:
     repeated for marks that share the same control set.
     """
     input: lambda w: _canonical_control(w.ds,w.mark)
-    output: "{ds}/controls/{mark}.bam"
+    output: temp("{ds}/controls/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)
         os.symlink(os.path.abspath(input[0]),output[0])
@@ -102,7 +102,7 @@ rule pool_controls:
 rule rep_link_control:
     """Symlink {ds}/{rep}/controls/{mark}.bam to the canonical control BAM."""
     input: lambda w: _canonical_control(w.ds,w.mark,rep=w.rep)
-    output: "{ds}/{rep}/controls/{mark}.bam"
+    output: temp("{ds}/{rep}/controls/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)
         os.symlink(os.path.abspath(input[0]),output[0])
@@ -163,7 +163,7 @@ rule bam_coverage_bw:
 
 
 rule make_bins:
-    output: "bins{binsize}.bed"
+    output: temp("bins{binsize}.bed")
     wildcard_constraints:
         binsize=r"\d+",
     params:
