@@ -9,7 +9,7 @@
 
 
 rule download_bam:
-    output: "{ds}/downloaded/{acc}_{mark}.bam"
+    output: temp("{ds}/downloaded/{acc}_{mark}.bam")
     params:
         url=lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.bam"
     shell:
@@ -50,7 +50,7 @@ rule download_gencode_gtf:
 
 rule download_control_bam:
     """Download a control/input BAM from ENCODE."""
-    output: "{ds}/downloaded/{acc}_control.bam"
+    output: temp("{ds}/downloaded/{acc}_control.bam")
     wildcard_constraints:
         acc=r"ENCFF[A-Z0-9]+"
     params:
@@ -66,7 +66,7 @@ rule merge_control_bams:
     set of controls is merged only once regardless of how many marks reference it.
     """
     input: lambda w: [f"{w.ds}/downloaded/{a}_control.bam" for a in w.accs.split("+")]
-    output: "{ds}/downloaded/{accs}_merged_control.bam"
+    output: temp("{ds}/downloaded/{accs}_merged_control.bam")
     wildcard_constraints:
         accs=r"ENCFF[A-Z0-9]+(\+ENCFF[A-Z0-9]+)+"
     conda: "../envs/bio.yaml"
@@ -96,7 +96,9 @@ rule pool_controls:
     output: temp("{ds}/controls/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)
-        os.symlink(os.path.abspath(input[0]),output[0])
+        if os.path.exists(output[0]):
+            os.remove(output[0])
+        os.link(os.path.abspath(input[0]),output[0])
 
 
 rule rep_link_control:
@@ -105,13 +107,15 @@ rule rep_link_control:
     output: temp("{ds}/{rep}/controls/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)
-        os.symlink(os.path.abspath(input[0]),output[0])
+        if os.path.exists(output[0]):
+            os.remove(output[0])
+        os.link(os.path.abspath(input[0]),output[0])
 
 
 rule pool_bams:
     """Pool per-mark downloaded BAMs into {ds}/bams/{mark}.bam.
 
-    Symlinks when there is only one source BAM (single replicate or no
+    Hard-links when there is only one source BAM (single replicate or no
     replicates); merges with samtools when multiple BAMs exist.
 
     Pass --resources disk_mb=N to cap total concurrent disk use.
@@ -120,17 +124,22 @@ rule pool_bams:
     output: temp("{ds}/bams/{mark}.bam")
     resources: merge_bam=1, disk_mb=20000
     conda: "../envs/bio.yaml"
-    run:
-        os.makedirs(os.path.dirname(output[0]),exist_ok=True)
-        if len(input) == 1:
-            os.symlink(os.path.abspath(input[0]),output[0])
-        else:
-            try:
-                shell("samtools merge -f {output} {input}")
-            except Exception:
-                if os.path.exists(output[0]):
-                    os.remove(output[0])
-                raise
+    shell:
+        r"""
+        mkdir -p $(dirname {output})
+        rm -f {output}
+        # Count inputs
+        count=0
+        for i in {input}; do
+            if [ $count -eq 0 ]; then first="$i"; fi
+            count=$((count+1))
+        done
+        if [ $count -eq 1 ]; then
+            ln "$first" {output}
+        else
+            samtools merge -f {output} {input}
+        fi
+        """
 
 
 rule rep_link_bam:
@@ -139,7 +148,9 @@ rule rep_link_bam:
     output: temp("{ds}/{rep}/bams/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)
-        os.symlink(os.path.abspath(input[0]),output[0])
+        if os.path.exists(output[0]):
+            os.remove(output[0])
+        os.link(os.path.abspath(input[0]),output[0])
 
 
 rule index_folder_bam:
