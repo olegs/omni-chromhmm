@@ -57,10 +57,13 @@ rule chromhmm_binarize_bam:
         outdir="{folder}/chromhmm_default",
     shell:
         r"""
-        trap "rm -f {output.bins}" ERR
+        trap "rm -f {output.bins} {params.outdir}/chromsizes.txt" ERR
         mkdir -p {params.outdir}
-        {CHROMHMM} BinarizeBam -b {params.bin} {params.controldir} {params.cs} \
+        # Filter chromsizes to only include canonical chromosomes
+        grep -v "_" {params.cs} > {params.outdir}/chromsizes.txt
+        {CHROMHMM} BinarizeBam -b {params.bin} {params.controldir} {params.outdir}/chromsizes.txt \
             {params.bamdir} {input.table} {params.outdir}
+        rm {params.outdir}/chromsizes.txt
         """
 
 
@@ -96,7 +99,7 @@ rule chromhmm_learn_default:
 rule chromhmm_default_mark_beds:
     """Extract per-mark BED files from default binarized per-chromosome files."""
     input: _default_binary_files
-    output: temp(expand("{{folder}}/chromhmm_default_result/{mark}.bed",mark=MARKS))
+    output: expand("{{folder}}/chromhmm_default_result/{mark}.bed",mark=MARKS)
     params:
         bin=CHROMHMM_BIN,
         indir="{folder}/chromhmm_default",
@@ -104,7 +107,7 @@ rule chromhmm_default_mark_beds:
     conda: "../envs/python.yaml"
     shell:
         "python {SCRIPTS_DIR}/binarized_to_bed.py --bin {params.bin} "
-        "--outdir {params.outdir} {params.indir}/*_binary.txt"
+        "--outdir {params.outdir} {input}"
 
 
 # --- Peak -> ChromHMM binary matrix --------------------------------------
