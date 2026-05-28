@@ -123,6 +123,7 @@ rule inter_dataset_summary_plots:
         datasets=" ".join(list(DATASETS)),
         methods_dirs=" ".join(f"{ds}/methods/{MATCH_METHOD}" for ds in DATASETS),
         analysis_dirs=" ".join(f"{ds}/analysis/{MATCH_METHOD}" for ds in DATASETS),
+        methods=" ".join(INTER_DS_METHODS),
         outdir="inter_dataset/summary_plots",
     shell:
         r"""
@@ -130,6 +131,7 @@ rule inter_dataset_summary_plots:
             --datasets      {params.datasets} \
             --methods-dirs  {params.methods_dirs} \
             --analysis-dirs {params.analysis_dirs} \
+            --methods       {params.methods} \
             --outdir        {params.outdir}
         """
 
@@ -145,9 +147,7 @@ rule inter_dataset_segment_lengths_comparison:
     """Per-state segment length violin: ENCODE reference vs de-novo methods, all datasets."""
     input:
         _MARKUPS_DIR,
-        *(expand("{ds}/omni/omni_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
-        *(expand("{ds}/homer/homer_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
-        *(expand("{ds}/macs2/macs2_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
+        [_inter_ds_bed(ds,m) for ds in DATASETS for m in INTER_DS_METHODS],
     output:
         _STATE_LENGTH_PLOT,
     conda: "../envs/python.yaml"
@@ -157,6 +157,7 @@ rule inter_dataset_segment_lengths_comparison:
         markups_dir=_MARKUPS_DIR,
         datasets=" ".join(list(DATASETS)),
         cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
+        methods=" ".join(INTER_DS_METHODS),
         nstates=NSTATES,
         match_method=MATCH_METHOD,
     shell:
@@ -166,6 +167,7 @@ rule inter_dataset_segment_lengths_comparison:
             --cells           {params.cells} \
             --workdir         {params.workdir} \
             --markups-dir     {params.markups_dir} \
+            --methods         {params.methods} \
             --nstates         {params.nstates} \
             --match-method    {params.match_method} \
             --violin-outfile  {output}
@@ -176,9 +178,7 @@ rule inter_dataset_state_coverage:
     """Per-state genomic coverage fraction: ENCODE reference vs de-novo methods, all datasets."""
     input:
         _MARKUPS_DIR,
-        *(expand("{ds}/omni/omni_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_OMNIPEAK else []),
-        *(expand("{ds}/homer/homer_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_HOMER else []),
-        *(expand("{ds}/macs2/macs2_kmeans_states_" + MATCH_METHOD + "_matched.bed", ds=list(DATASETS)) if DO_MACS2 else []),
+        [_inter_ds_bed(ds,m) for ds in DATASETS for m in INTER_DS_METHODS],
     output:
         _STATE_COVERAGE_PLOT,
     conda: "../envs/python.yaml"
@@ -188,6 +188,7 @@ rule inter_dataset_state_coverage:
         markups_dir=_MARKUPS_DIR,
         datasets=" ".join(list(DATASETS)),
         cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
+        methods=" ".join(INTER_DS_METHODS),
         nstates=NSTATES,
         match_method=MATCH_METHOD,
     shell:
@@ -197,6 +198,7 @@ rule inter_dataset_state_coverage:
             --cells                  {params.cells} \
             --workdir                {params.workdir} \
             --markups-dir            {params.markups_dir} \
+            --methods                {params.methods} \
             --nstates                {params.nstates} \
             --match-method           {params.match_method} \
             --state-coverage-outfile {output}
@@ -214,11 +216,13 @@ rule inter_dataset_peak_count:
         scripts_dir=SCRIPTS_DIR,
         workdir=lambda w: config.get("workdir","."),
         datasets=" ".join(list(DATASETS)),
+        methods=" ".join(INTER_DS_METHODS),
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
             --datasets             {params.datasets} \
             --workdir              {params.workdir} \
+            --methods              {params.methods} \
             --peak-count-outfile   {output}
         """
 
@@ -234,11 +238,13 @@ rule inter_dataset_peak_length:
         scripts_dir=SCRIPTS_DIR,
         workdir=lambda w: config.get("workdir","."),
         datasets=" ".join(list(DATASETS)),
+        methods=" ".join(INTER_DS_METHODS),
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
             --datasets              {params.datasets} \
             --workdir               {params.workdir} \
+            --methods               {params.methods} \
             --peak-length-outfile   {output}
         """
 
@@ -254,11 +260,13 @@ rule inter_dataset_peak_gap_violin:
         scripts_dir=SCRIPTS_DIR,
         workdir=lambda w: config.get("workdir","."),
         datasets=" ".join(list(DATASETS)),
+        methods=" ".join(INTER_DS_METHODS),
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
             --datasets                   {params.datasets} \
             --workdir                    {params.workdir} \
+            --methods                    {params.methods} \
             --peak-gap-violin-outfile    {output}
         """
 
@@ -329,6 +337,11 @@ _METHOD_SIM_DIST_CHIP_MINT_NOQH_PLOT = "inter_dataset/summary_plots/method_simil
 
 _CHIP_DATASETS = [ds for ds in DATASETS if not ds.endswith("_mint")]
 _MINT_DATASETS = [ds for ds in DATASETS if ds.endswith("_mint")]
+
+_METHOD_SIM_DIST_CHIP_MINT_PLOTS = [
+    _METHOD_SIM_DIST_CHIP_MINT_PLOT,
+    _METHOD_SIM_DIST_CHIP_MINT_NOQH_PLOT,
+] if _MINT_DATASETS and _CHIP_DATASETS else []
 
 
 rule inter_dataset_method_similarity_distribution:
@@ -407,12 +420,14 @@ rule inter_dataset_rep_consistency_plots:
         repo_plots_dir=os.path.join(workflow.basedir,"plots","summary"),
         datasets=" ".join(_REP_DATASETS),
         methods_dirs=" ".join(f"{ds}/methods/comb" for ds in _REP_DATASETS),
+        methods=" ".join(INTER_DS_METHODS),
         outdir="inter_dataset/summary_plots",
     shell:
         r"""
         python {params.scripts_dir}/summary_plots.py \
             --datasets              {params.datasets} \
             --methods-dirs          {params.methods_dirs} \
+            --methods               {params.methods} \
             --rep-consistency-outdir {params.outdir}
         mkdir -p {params.repo_plots_dir}
         cp {params.outdir}/rep_consistency_*.png {params.repo_plots_dir}/
@@ -429,7 +444,7 @@ _METHOD_DS_COMPOSITION_PLOTS = [
 rule inter_dataset_method_composition:
     """Per-dataset state composition for each de-novo method (4 supplementary plots)."""
     input:
-        [_inter_ds_bed(ds,m) for ds in DATASETS for m in (list(INTER_DS_METHODS))],
+        [_inter_ds_bed(ds,m) for ds in DATASETS for m in INTER_DS_METHODS],
     output:
         _METHOD_DS_COMPOSITION_PLOTS,
     conda: "../envs/python.yaml"
@@ -439,6 +454,7 @@ rule inter_dataset_method_composition:
         workdir=lambda w: config.get("workdir","."),
         datasets=" ".join(list(DATASETS)),
         cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
+        methods=" ".join(INTER_DS_METHODS),
         nstates=NSTATES,
         outdir="inter_dataset/summary_plots",
         match_method=MATCH_METHOD,
@@ -448,8 +464,9 @@ rule inter_dataset_method_composition:
             --datasets                     {params.datasets} \
             --cells                        {params.cells} \
             --workdir                      {params.workdir} \
+            --methods                      {params.methods} \
             --nstates                      {params.nstates} \
-            --match-method                 {params.match_method} \
+            --match_method                 {params.match_method} \
             --method-ds-composition-outdir {params.outdir}
         mkdir -p {params.repo_plots_dir}
         cp {params.outdir}/method_ds_composition_*.png {params.repo_plots_dir}/
@@ -459,7 +476,7 @@ rule inter_dataset_method_composition:
 rule inter_dataset_method_state_composition:
     """Mean state composition across datasets per method (single summary plot)."""
     input:
-        [_inter_ds_bed(ds,m) for ds in DATASETS for m in (list(INTER_DS_METHODS))],
+        [_inter_ds_bed(ds,m) for ds in DATASETS for m in INTER_DS_METHODS],
         _MARKUPS_DIR,
     output:
         "inter_dataset/summary_plots/method_state_composition.png",
@@ -470,6 +487,7 @@ rule inter_dataset_method_state_composition:
         workdir=lambda w: config.get("workdir","."),
         datasets=" ".join(list(DATASETS)),
         cells=" ".join(DATASETS[ds]["cell"] for ds in DATASETS),
+        methods=" ".join(INTER_DS_METHODS),
         nstates=NSTATES,
         markups_dir=_MARKUPS_DIR,
         match_method=MATCH_METHOD,
@@ -480,6 +498,7 @@ rule inter_dataset_method_state_composition:
             --cells                      {params.cells} \
             --workdir                    {params.workdir} \
             --markups-dir                {params.markups_dir} \
+            --methods                    {params.methods} \
             --nstates                    {params.nstates} \
             --match-method               {params.match_method} \
             --method-composition-outfile {output}
@@ -541,7 +560,7 @@ rule inter_dataset_binem_similarity:
         expand("{ds}/methods/comb/comparison_table.tsv",ds=list(DATASETS)),
     output:
         inter_ds=_INTER_DS_BINEM_PLOT,
-        cross_assay=_CROSS_ASSAY_BINEM_PLOT,
+        cross_assay=(_CROSS_ASSAY_BINEM_PLOT if _MINT_DATASETS and _CHIP_DATASETS else [])
     conda: "../envs/python.yaml"
     params:
         scripts_dir=SCRIPTS_DIR,
@@ -559,12 +578,13 @@ rule inter_dataset_binem_similarity:
             --analysis-dirs                 {params.analysis_dirs} \
             --methods                       {params.methods} \
             --outdir                        {params.outdir} \
-            --inter-dataset-binem-outfile   {output.inter_ds} \
-            --cross-assay-binem-outfile     {output.cross_assay} \
+            {("--inter-dataset-binem-outfile " + output.inter_ds) if hasattr(output, "inter_ds") else ""} \
+            {("--cross-assay-binem-outfile " + output.cross_assay) if hasattr(output, "cross_assay") else ""} \
             --group-a                       {params.chip_datasets} \
             --group-b                       {params.mint_datasets}
         mkdir -p {params.repo_plots_dir}
-        cp {output.inter_ds} {output.cross_assay} {params.repo_plots_dir}/
+        [ -f "{output.inter_ds}" ] && cp {output.inter_ds} {params.repo_plots_dir}/ || true
+        [ -f "{output.cross_assay}" ] && cp {output.cross_assay} {params.repo_plots_dir}/ || true
         """
 
 
@@ -589,7 +609,6 @@ rule inter_dataset_all:
         "inter_dataset/summary_plots/method_state_composition.png",
         _METHOD_SIM_DIST_PLOT,
         _METHOD_SIM_DIST_NOQH_PLOT,
-        _METHOD_SIM_DIST_CHIP_MINT_PLOT,
-        _METHOD_SIM_DIST_CHIP_MINT_NOQH_PLOT,
+        _METHOD_SIM_DIST_CHIP_MINT_PLOTS,
         _INTER_DS_BINEM_PLOT,
-        _CROSS_ASSAY_BINEM_PLOT,
+        (_CROSS_ASSAY_BINEM_PLOT if _CHIP_DATASETS and _MINT_DATASETS else []),

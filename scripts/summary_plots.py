@@ -88,9 +88,12 @@ STATE_COLORS = {
 INTER_DS_METHODS = [
     ("reference",        "ENCODE Ref",      BIN_COLORS["reference"]),
     ("chromhmm_default", "Default ChromHMM", BIN_COLORS["default"]),
-    ("kmeans_omni",      "KMeans OmniPeak",  BIN_COLORS["omnipeak"]),
-    ("kmeans_homer",     "KMeans HOMER",     BIN_COLORS["homer"]),
-    ("chromhmm_macs2",   "ChromHMM MACS2",   BIN_COLORS["macs2"]),
+    ("chromhmm_omni",    "ChromHMM OmniPeak",  BIN_COLORS["omnipeak"]),
+    ("chromhmm_homer",   "ChromHMM HOMER",     BIN_COLORS["homer"]),
+    ("chromhmm_macs2",   "ChromHMM MACS2",     BIN_COLORS["macs2"]),
+    ("kmeans_omni",      "KMeans OmniPeak",    BIN_COLORS["omnipeak"]),
+    ("kmeans_homer",     "KMeans HOMER",       BIN_COLORS["homer"]),
+    ("kmeans_macs2",     "KMeans MACS2",       BIN_COLORS["macs2"]),
 ]
 METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
 
@@ -318,15 +321,26 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False):
         ax.text(x[i], top + yrange * 0.01, lbl,
                 ha="center", va="bottom", fontsize=6)
 
-    legend_elements = [
-        Patch(facecolor=BIN_COLORS["reference"], label="ENCODE reference"),
-        Patch(facecolor=BIN_COLORS["default"],   label="Default binarization"),
-        Patch(facecolor=BIN_COLORS["omnipeak"],  label="OmniPeak binarization"),
-        Patch(facecolor=BIN_COLORS["homer"],     label="Homer binarization"),
-        Patch(facecolor=BIN_COLORS["macs2"],     label="MACS2 binarization"),
-    ]
-    ax.legend(handles=legend_elements, fontsize=6,
-              bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
+    legend_elements = []
+    bin_labels = {
+        "reference": "ENCODE reference",
+        "default":   "Default binarization",
+        "omnipeak":  "OmniPeak binarization",
+        "homer":     "Homer binarization",
+        "macs2":     "MACS2 binarization",
+    }
+    # Only show binarizations that are actually present in the current methods list
+    active_binarizations = []
+    for b in ["reference", "default", "omnipeak", "homer", "macs2"]:
+        if any(METHOD_INFO.get(m[0], (None,))[0] == b for m in INTER_DS_METHODS):
+            active_binarizations.append(b)
+
+    for b in active_binarizations:
+        legend_elements.append(Patch(facecolor=BIN_COLORS[b], label=bin_labels[b]))
+
+    if legend_elements:
+        ax.legend(handles=legend_elements, fontsize=6,
+                  bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
 
     n_note = f"mean ± std across {n_ds} datasets"
     if partial_note:
@@ -981,6 +995,8 @@ def main():
                     help="markups/ directory containing 15state/ (for violin plot)")
     ap.add_argument("--cells",         nargs="*", default=[],
                     help="Cell name per dataset (for violin plot)")
+    ap.add_argument("--methods",       nargs="*", default=[],
+                    help="Method keys to plot (e.g. chromhmm_default kmeans_omni)")
     ap.add_argument("--nstates",       type=int, default=15)
     ap.add_argument("--match-method",  default="comb", dest="match_method",
                     choices=["comb", "bwem", "ovlp"],
@@ -1041,6 +1057,19 @@ def main():
                     help="Output PNG for cross-group filtered similarity distribution (NOQH)")
     args = ap.parse_args()
 
+    if args.methods:
+        # Update global method lists/palettes if requested via CLI
+        methods_map = {m[0]: m for m in INTER_DS_METHODS}
+        new_methods = []
+        for k in args.methods:
+            if k in methods_map:
+                new_methods.append(methods_map[k])
+            else:
+                new_methods.append((k, k.replace("_", " ").title(), "#808080"))
+        INTER_DS_METHODS = new_methods
+        METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
+        METHODS_POOLED = [m[0] for m in INTER_DS_METHODS]
+
     # --- summary bar plots -----------------------------------------------
     if args.outdir:
         if not (len(args.datasets) == len(args.methods_dirs) == len(args.analysis_dirs)):
@@ -1085,12 +1114,12 @@ def main():
         _plot_summary(data, "Total number of segments", "Segments (×10³)",
                       os.path.join(args.outdir, "summary_n_segments.png"))
 
-    # --- violin / state coverage (both need same args) --------------------
     if args.violin_outfile or args.state_coverage_outfile:
         if not (args.workdir and args.markups_dir and args.cells):
             ap.error("--workdir, --markups-dir and --cells are required for violin/coverage plots")
         if len(args.datasets) != len(args.cells):
             ap.error("--datasets and --cells must have equal lengths")
+
         if args.violin_outfile:
             os.makedirs(os.path.dirname(os.path.abspath(args.violin_outfile)), exist_ok=True)
             _plot_violin(args.datasets, args.cells, args.workdir, args.markups_dir,
@@ -1166,27 +1195,30 @@ def main():
 
     # --- cross-group filtered similarity distribution -------------------------
     if args.method_sim_dist_filtered_outfile or args.method_sim_dist_filtered_noqh_outfile:
-        if not (args.method_sim_dist_indir and args.method_sim_dist_methods
-                and args.method_sim_dist_group_a and args.method_sim_dist_group_b):
-            ap.error("--method-sim-dist-indir, --method-sim-dist-methods, "
-                     "--method-sim-dist-group-a and --method-sim-dist-group-b are required "
+        if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
+            ap.error("--method-sim-dist-indir and --method-sim-dist-methods are required "
                      "for --method-sim-dist-filtered-outfile / --method-sim-dist-filtered-noqh-outfile")
-        ga = set(args.method_sim_dist_group_a)
-        gb = set(args.method_sim_dist_group_b)
-        if args.method_sim_dist_filtered_outfile:
-            os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_filtered_outfile)), exist_ok=True)
-            _plot_method_similarity_distribution(
-                args.method_sim_dist_indir, args.method_sim_dist_methods,
-                args.method_sim_dist_filtered_outfile, noqh=False,
-                group_a=ga, group_b=gb,
-            )
-        if args.method_sim_dist_filtered_noqh_outfile:
-            os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_filtered_noqh_outfile)), exist_ok=True)
-            _plot_method_similarity_distribution(
-                args.method_sim_dist_indir, args.method_sim_dist_methods,
-                args.method_sim_dist_filtered_noqh_outfile, noqh=True,
-                group_a=ga, group_b=gb,
-            )
+        if not (args.method_sim_dist_group_a and args.method_sim_dist_group_b):
+            print("  WARNING: skipping filtered similarity distribution: "
+                  "both --method-sim-dist-group-a and --method-sim-dist-group-b "
+                  "must be non-empty", file=sys.stderr)
+        else:
+            ga = set(args.method_sim_dist_group_a)
+            gb = set(args.method_sim_dist_group_b)
+            if args.method_sim_dist_filtered_outfile:
+                os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_filtered_outfile)), exist_ok=True)
+                _plot_method_similarity_distribution(
+                    args.method_sim_dist_indir, args.method_sim_dist_methods,
+                    args.method_sim_dist_filtered_outfile, noqh=False,
+                    group_a=ga, group_b=gb,
+                )
+            if args.method_sim_dist_filtered_noqh_outfile:
+                os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_filtered_noqh_outfile)), exist_ok=True)
+                _plot_method_similarity_distribution(
+                    args.method_sim_dist_indir, args.method_sim_dist_methods,
+                    args.method_sim_dist_filtered_noqh_outfile, noqh=True,
+                    group_a=ga, group_b=gb,
+                )
 
     # --- replicate consistency plots ----------------------------------------
     if args.rep_consistency_outdir:

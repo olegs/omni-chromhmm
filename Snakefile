@@ -244,6 +244,23 @@ def _dataset_analysis_outputs(ds):
     if DO_ANALYZE:
         for folder in _folders(ds):
             t.append(f"{folder}/analysis/ref/report.tsv")
+            # Functional Enrichment, BigWig emissions, and Binarized emissions plots
+            # explicitly tracked to ensure they respect the chromhmm_peaks setting.
+            t.append(f"{folder}/analysis/ref/enrichment/enrichment.png")
+            t.append(f"{folder}/analysis/ref/bw_emissions/state_emissions.png")
+            t.append(f"{folder}/analysis/chromhmm_default_dense/bin_emissions/state_emissions.png")
+            for variant in ["comb", "bwem", "ovlp"]:
+                t.append(f"{folder}/analysis/{variant}/chromhmm_default/enrichment/enrichment.png")
+                t.append(f"{folder}/analysis/{variant}/chromhmm_default/bw_emissions/state_emissions.png")
+                t.append(f"{folder}/analysis/{variant}/chromhmm_default/bin_emissions/state_emissions.png")
+                for caller in CALLERS:
+                    t.append(f"{folder}/analysis/{variant}/kmeans_{caller}/enrichment/enrichment.png")
+                    t.append(f"{folder}/analysis/{variant}/kmeans_{caller}/bw_emissions/state_emissions.png")
+                    t.append(f"{folder}/analysis/{variant}/kmeans_{caller}/bin_emissions/state_emissions.png")
+                    if DO_CHROMHMM_PEAKS:
+                        t.append(f"{folder}/analysis/{variant}/chromhmm_{caller}/enrichment/enrichment.png")
+                        t.append(f"{folder}/analysis/{variant}/chromhmm_{caller}/bw_emissions/state_emissions.png")
+                        t.append(f"{folder}/analysis/{variant}/chromhmm_{caller}/bin_emissions/state_emissions.png")
     if DO_ANALYZE:
         t.append(f"{ds}/peaks/peak_stats.tsv")
     if DO_COMPARE:

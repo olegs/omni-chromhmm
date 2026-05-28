@@ -90,10 +90,29 @@ def _analysis_inputs(w):
     return files
 
 
+# Explicitly track Functional Enrichment and Emissions plots as outputs
+_ANALYZE_OUTPUTS = ["{folder}/analysis/ref/report.tsv",
+                    "{folder}/analysis/ref/enrichment/enrichment.png",
+                    "{folder}/analysis/ref/bw_emissions/state_emissions.png",
+                    "{folder}/analysis/chromhmm_default_dense/bin_emissions/state_emissions.png"]
+for _v in ["comb", "bwem", "ovlp"]:
+    _ANALYZE_OUTPUTS.append(f"{{folder}}/analysis/{_v}/chromhmm_default/enrichment/enrichment.png")
+    _ANALYZE_OUTPUTS.append(f"{{folder}}/analysis/{_v}/chromhmm_default/bw_emissions/state_emissions.png")
+    _ANALYZE_OUTPUTS.append(f"{{folder}}/analysis/{_v}/chromhmm_default/bin_emissions/state_emissions.png")
+    for _c in CALLERS:
+        _ANALYZE_OUTPUTS.append(f"{{folder}}/analysis/{_v}/kmeans_{_c}/enrichment/enrichment.png")
+        _ANALYZE_OUTPUTS.append(f"{{folder}}/analysis/{_v}/kmeans_{_c}/bw_emissions/state_emissions.png")
+        _ANALYZE_OUTPUTS.append(f"{{folder}}/analysis/{_v}/kmeans_{_c}/bin_emissions/state_emissions.png")
+        if DO_CHROMHMM_PEAKS:
+            _ANALYZE_OUTPUTS.append(f"{{folder}}/analysis/{_v}/chromhmm_{_c}/enrichment/enrichment.png")
+            _ANALYZE_OUTPUTS.append(f"{{folder}}/analysis/{_v}/chromhmm_{_c}/bw_emissions/state_emissions.png")
+            _ANALYZE_OUTPUTS.append(f"{{folder}}/analysis/{_v}/chromhmm_{_c}/bin_emissions/state_emissions.png")
+
+
 rule analyze_segmentations:
     """Run analyze.py on every matched segmentation within {folder}."""
     input: _folder_analysis_inputs
-    output: "{folder}/analysis/ref/report.tsv"
+    output: _ANALYZE_OUTPUTS
     conda: "../envs/python.yaml"
     params:
         coords      = TOOLS["coords_dir"],
@@ -102,6 +121,7 @@ rule analyze_segmentations:
         bin         = CHROMHMM_BIN,
         caller_bins = " ".join(f"{c}:{CALLER_BIN[c]}" for c in CALLERS),
         n           = NSTATES,
+        chromhmm_peaks = DO_CHROMHMM_PEAKS,
         scripts_dir = SCRIPTS_DIR,
         rnaseq      = lambda w: (
                           f"{ds_of(w.folder)}/rnaseq_{DATASETS[ds_of(w.folder)]['rnaseq']}.tsv"
@@ -161,7 +181,7 @@ rule analyze_segmentations:
                     {wildcards.folder}/${{caller}}/${{caller}}_kmeans_states_${{variant}}_matched.bed \
                     {wildcards.folder}/analysis/${{variant}}/kmeans_${{caller}} \
                     --inputs "$peaks_dir"/*.txt.gz
-                if [ -f "{wildcards.folder}/${{caller}}/chromhmm_result/${{caller}}_{params.cell}_{params.n}_dense_${{variant}}_matched.bed" ]; then
+                if [ "{params.chromhmm_peaks}" = "True" ] && [ -f "{wildcards.folder}/${{caller}}/chromhmm_result/${{caller}}_{params.cell}_{params.n}_dense_${{variant}}_matched.bed" ]; then
                     run_analyze "$cbin" \
                         {wildcards.folder}/${{caller}}/chromhmm_result/${{caller}}_{params.cell}_{params.n}_dense_${{variant}}_matched.bed \
                         {wildcards.folder}/analysis/${{variant}}/chromhmm_${{caller}} \

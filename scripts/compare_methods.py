@@ -268,6 +268,12 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             if state in jaccard and annotation in jaccard[state]:
                 row[col] = jaccard[state][annotation]
 
+        # Jaccard vs ATAC (any atac_* label)
+        if "Tss" in jaccard:
+            atac_label = next((l for l in jaccard["Tss"] if l.startswith("atac_")), None)
+            if atac_label:
+                row["jaccard_Tss_ATAC"] = jaccard["Tss"][atac_label]
+
         rows.append(row)
 
     return pd.DataFrame(rows)
@@ -363,6 +369,7 @@ def plot_comparison(df, outdir):
     for col, title in [
         ("enrich_Tx_ExpressedGeneBodies",  "Tx enrichment vs expressed gene bodies"),
         ("jaccard_Tx_ExpressedGeneBodies", "Jaccard: Tx state vs expressed gene bodies"),
+        ("jaccard_Tss_ATAC",               "Jaccard: Tss state vs ATAC-seq"),
         ("median_Tx_length",               "Median Tx (transcription) segment length"),
     ]:
         ylabel = "Fold enrichment" if col.startswith("enrich") else \
