@@ -19,8 +19,8 @@ def _macs2_mode(mark):
 rule macs2_callpeak:
     """Call peaks with MACS2 (narrow for H3K4me3/H3K27ac, broad for others)."""
     input:
-        bam     = "{folder}/bams/{mark}.bam",
-        control = lambda w: [f"{w.folder}/controls/{w.mark}.bam"] if folder_has_controls(w.folder) else [],
+        bam     = ancient("{folder}/bams/{mark}.bam"),
+        control = lambda w: [ancient(f"{w.folder}/controls/{w.mark}.bam")] if folder_has_controls(w.folder) else [],
     output:
         bed = "{folder}/macs2/{mark}.bed",
     conda: "../envs/macs2.yaml"

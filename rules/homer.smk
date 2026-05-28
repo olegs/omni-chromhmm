@@ -36,7 +36,7 @@ rule install_homer:
 
 rule homer_tagdir:
     input:
-        bam="{folder}/bams/{mark}.bam",
+        bam=ancient("{folder}/bams/{mark}.bam"),
         tool=f"{HOMER_EXEDIR}/makeTagDirectory",
     output: temp(directory("{folder}/homer/{mark}_tagdir"))
     conda: "../envs/bio.yaml"  # provides samtools
@@ -55,7 +55,7 @@ rule homer_tagdir:
 rule homer_control_tagdir:
     """Create a Homer tag directory from the control BAM for a mark."""
     input:
-        bam="{folder}/controls/{mark}.bam",
+        bam=ancient("{folder}/controls/{mark}.bam"),
         tool=f"{HOMER_EXEDIR}/makeTagDirectory",
     output: temp(directory("{folder}/homer/{mark}_control_tagdir"))
     conda: "../envs/bio.yaml"

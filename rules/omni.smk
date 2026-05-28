@@ -3,8 +3,8 @@
 rule omnipeak_call:
     """Call peaks with Omnipeak on {folder}/bams/{mark}.bam."""
     input:
-        bam="{folder}/bams/{mark}.bam",
-        control=lambda w: [f"{w.folder}/controls/{w.mark}.bam"] if folder_has_controls(w.folder) else [],
+        bam=ancient("{folder}/bams/{mark}.bam"),
+        control=lambda w: [ancient(f"{w.folder}/controls/{w.mark}.bam")] if folder_has_controls(w.folder) else [],
     output:
         peak=f"{{folder}}/omni/{{mark}}_{OMNI_BIN}.peak",
     threads: 8

@@ -65,7 +65,7 @@ rule merge_control_bams:
     Output path encodes the sorted accession list joined by '+', so the same
     set of controls is merged only once regardless of how many marks reference it.
     """
-    input: lambda w: [f"{w.ds}/downloaded/{a}_control.bam" for a in w.accs.split("+")]
+    input: lambda w: [ancient(f"{w.ds}/downloaded/{a}_control.bam") for a in w.accs.split("+")]
     output: temp("{ds}/downloaded/{accs}_merged_control.bam")
     wildcard_constraints:
         accs=r"ENCFF[A-Z0-9]+(\+ENCFF[A-Z0-9]+)+"
@@ -92,7 +92,7 @@ rule pool_controls:
     merged BAM produced by merge_control_bams — so the same merge is never
     repeated for marks that share the same control set.
     """
-    input: lambda w: _canonical_control(w.ds,w.mark)
+    input: lambda w: ancient(_canonical_control(w.ds,w.mark))
     output: temp("{ds}/controls/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)
@@ -103,7 +103,7 @@ rule pool_controls:
 
 rule rep_link_control:
     """Symlink {ds}/{rep}/controls/{mark}.bam to the canonical control BAM."""
-    input: lambda w: _canonical_control(w.ds,w.mark,rep=w.rep)
+    input: lambda w: ancient(_canonical_control(w.ds,w.mark,rep=w.rep))
     output: temp("{ds}/{rep}/controls/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)
@@ -120,7 +120,7 @@ rule pool_bams:
 
     Pass --resources disk_mb=N to cap total concurrent disk use.
     """
-    input: lambda w: bams_for_mark(w.ds,w.mark)
+    input: lambda w: [ancient(f) for f in bams_for_mark(w.ds,w.mark)]
     output: temp("{ds}/bams/{mark}.bam")
     resources: merge_bam=1, disk_mb=20000
     conda: "../envs/bio.yaml"
@@ -144,7 +144,7 @@ rule pool_bams:
 
 rule rep_link_bam:
     """Symlink a per-replicate downloaded BAM into {ds}/{rep}/bams/{mark}.bam."""
-    input: lambda w: bams_for_mark(w.ds,w.mark,rep=w.rep)
+    input: lambda w: [ancient(f) for f in bams_for_mark(w.ds,w.mark,rep=w.rep)]
     output: temp("{ds}/{rep}/bams/{mark}.bam")
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)
@@ -155,7 +155,7 @@ rule rep_link_bam:
 
 rule index_folder_bam:
     """Index a BAM in any {folder}/bams/ directory."""
-    input: "{folder}/bams/{mark}.bam"
+    input: ancient("{folder}/bams/{mark}.bam")
     output: temp("{folder}/bams/{mark}.bam.bai")
     conda: "../envs/bio.yaml"
     shell: "samtools index {input}"
@@ -164,8 +164,8 @@ rule index_folder_bam:
 rule bam_coverage_bw:
     """BigWig track for each mark BAM, produced next to the bams/ folder."""
     input:
-        bam="{folder}/bams/{mark}.bam",
-        bai="{folder}/bams/{mark}.bam.bai",
+        bam=ancient("{folder}/bams/{mark}.bam"),
+        bai=ancient("{folder}/bams/{mark}.bam.bai"),
     output: "{folder}/bams/{mark}.bw"
     threads: 6
     resources: disk_mb=10000

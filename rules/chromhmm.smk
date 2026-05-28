@@ -25,8 +25,8 @@ rule download_markups:
 
 rule make_cellmark_table:
     input:
-        bams=lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS],
-        controls=lambda w: ([f"{w.folder}/controls/{m}.bam" for m in MARKS]
+        bams=lambda w: [ancient(f"{w.folder}/bams/{m}.bam") for m in MARKS],
+        controls=lambda w: ([ancient(f"{w.folder}/controls/{m}.bam") for m in MARKS]
                             if folder_has_controls(w.folder) else []),
     output: temp("{folder}/chromhmm_default/cellmarkfiletable.tsv")
     params: cell=lambda w: DATASETS[ds_of(w.folder)]["cell"]
@@ -44,8 +44,8 @@ rule make_cellmark_table:
 rule chromhmm_binarize_bam:
     input:
         table="{folder}/chromhmm_default/cellmarkfiletable.tsv",
-        bams=lambda w: [f"{w.folder}/bams/{m}.bam" for m in MARKS],
-        controls=lambda w: ([f"{w.folder}/controls/{m}.bam" for m in MARKS]
+        bams=lambda w: [ancient(f"{w.folder}/bams/{m}.bam") for m in MARKS],
+        controls=lambda w: ([ancient(f"{w.folder}/controls/{m}.bam") for m in MARKS]
                             if folder_has_controls(w.folder) else []),
     output:
         bins=temp(expand("{{folder}}/chromhmm_default/{{cell}}_{chr}_binary.txt",chr=CHROMS))
