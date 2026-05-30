@@ -73,8 +73,7 @@ datasets:
 
   monocytes_mint:
     cell: "MonocyteMint"
-#    ref_chromhmm: "ENCFF166IHY" # Don't use this because of a non-standard states naming
-    ref_chromhmm: "ENCFF227EMB"   # same CD14+ monocyte 15-state ref as monocytes dataset
+    ref_chromhmm: "ENCFF166IHY" # non-standard states naming
     rnaseq: null
     atac: null
     omnipeak_extra: "--fragmentation 0"
@@ -89,8 +88,7 @@ datasets:
 
   gm12878_mint:
     cell: "GM12878Mint"
-#    ref_chromhmm: "ENCFF870JAH" # Don't use this because of a non-standard states naming
-    ref_chromhmm: "ENCFF140VIG"   # GM12878 standard 15-state (ENCSR310DFZ)
+    ref_chromhmm: "ENCFF870JAH" # non-standard states naming
     rnaseq: null
     atac: null
     omnipeak_extra: "--fragmentation 0"
