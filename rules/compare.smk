@@ -52,7 +52,7 @@ def _ds_compare_inputs(w):
 
 rule compute_metrics:
     """Dataset-level comparison for one matching strategy: entropy, kappa, Jaccard."""
-    input: _ds_compare_inputs
+    input: lambda w: [ancient(f) for f in _ds_compare_inputs(w)]
     output:
         entropy="{ds}/comparison/{variant}/entropy_summary.tsv",
         kappa="{ds}/comparison/{variant}/kappa_matrix.tsv",

@@ -40,9 +40,9 @@ ruleorder: match_segmentation_em > match_segmentation_ovlp > match_segmentation 
 rule match_segmentation_ovlp:
     """Overlap-only matching: {name}.bed → {name}_ovlp_matched.bed + remapped emissions."""
     input:
-        ref=lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
-        work="{bedpath}.bed",
-        work_em="{bedpath}.bw_emissions.npz",
+        ref=lambda w: ancient(_ref_bed(ds_of(_emissions_folder(w.bedpath)))),
+        work=ancient("{bedpath}.bed"),
+        work_em=ancient("{bedpath}.bw_emissions.npz"),
     output:
         bed="{bedpath}_ovlp_matched.bed",
         em=temp("{bedpath}_ovlp_matched.bw_emissions.npz"),
@@ -64,8 +64,8 @@ rule compute_emissions:
     The bams/ folder for bigwig lookup is derived from the leading path components.
     """
     input:
-        bed="{bedpath}.bed",
-        bigwigs=lambda w: _folder_bigwigs(_emissions_folder(w.bedpath)),
+        bed=ancient("{bedpath}.bed"),
+        bigwigs=lambda w: [ancient(f) for f in _folder_bigwigs(_emissions_folder(w.bedpath))],
     output: temp("{bedpath}.bw_emissions.npz")
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
@@ -85,10 +85,10 @@ rule compute_emissions:
 rule match_segmentation:
     """Combined matching (overlap + bw-emission, alpha=0.8): {name}.bed → {name}_comb_matched.bed + remapped emissions."""
     input:
-        ref=lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
-        ref_em=lambda w: _ref_emissions(ds_of(_emissions_folder(w.bedpath))),
-        work="{bedpath}.bed",
-        work_em="{bedpath}.bw_emissions.npz",
+        ref=lambda w: ancient(_ref_bed(ds_of(_emissions_folder(w.bedpath)))),
+        ref_em=lambda w: ancient(_ref_emissions(ds_of(_emissions_folder(w.bedpath)))),
+        work=ancient("{bedpath}.bed"),
+        work_em=ancient("{bedpath}.bw_emissions.npz"),
     output:
         bed="{bedpath}_comb_matched.bed",
         em=temp("{bedpath}_comb_matched.bw_emissions.npz"),
@@ -107,10 +107,10 @@ rule match_segmentation:
 rule match_segmentation_em:
     """Bigwig-emission-only matching (alpha=0): {name}.bed → {name}_bwem_matched.bed + remapped emissions."""
     input:
-        ref=lambda w: _ref_bed(ds_of(_emissions_folder(w.bedpath))),
-        ref_em=lambda w: _ref_emissions(ds_of(_emissions_folder(w.bedpath))),
-        work="{bedpath}.bed",
-        work_em="{bedpath}.bw_emissions.npz",
+        ref=lambda w: ancient(_ref_bed(ds_of(_emissions_folder(w.bedpath)))),
+        ref_em=lambda w: ancient(_ref_emissions(ds_of(_emissions_folder(w.bedpath)))),
+        work=ancient("{bedpath}.bed"),
+        work_em=ancient("{bedpath}.bw_emissions.npz"),
     output:
         bed="{bedpath}_bwem_matched.bed",
         em=temp("{bedpath}_bwem_matched.bw_emissions.npz"),

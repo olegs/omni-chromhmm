@@ -73,8 +73,8 @@ rule homer_control_tagdir:
 
 rule homer_findpeaks:
     input:
-        tagdir="{folder}/homer/{mark}_tagdir",
-        control_tag=lambda w: [f"{w.folder}/homer/{w.mark}_control_tagdir"]
+        tagdir=ancient("{folder}/homer/{mark}_tagdir"),
+        control_tag=lambda w: [ancient(f"{w.folder}/homer/{w.mark}_control_tagdir")]
         if folder_has_controls(w.folder) else [],
         tool=f"{HOMER_EXEDIR}/findPeaks",
     output: temp("{folder}/homer/{mark}.peaks.txt")
@@ -90,7 +90,7 @@ rule homer_findpeaks:
 
 
 rule homer_peak_to_bed:
-    input: "{folder}/homer/{mark}.peaks.txt"
+    input: ancient("{folder}/homer/{mark}.peaks.txt")
     output: "{folder}/homer/{mark}.bed"
     shell:
         r"""

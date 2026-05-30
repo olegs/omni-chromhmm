@@ -43,7 +43,7 @@ rule make_cellmark_table:
 
 rule chromhmm_binarize_bam:
     input:
-        table="{folder}/chromhmm_default/cellmarkfiletable.tsv",
+        table=ancient("{folder}/chromhmm_default/cellmarkfiletable.tsv"),
         bams=lambda w: [ancient(f"{w.folder}/bams/{m}.bam") for m in MARKS],
         controls=lambda w: ([ancient(f"{w.folder}/controls/{m}.bam") for m in MARKS]
                             if folder_has_controls(w.folder) else []),
@@ -68,12 +68,12 @@ rule chromhmm_binarize_bam:
 
 
 rule chromhmm_learn_default:
-    input: _default_binary_files
+    input: ancient(_default_binary_files)
     output:
         dense="{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_dense.bed",
-        segments=temp("{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_segments.bed"),
-        emissions=temp("{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_emissions.txt"),
-        transitions=temp("{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_transitions.txt"),
+        segments="{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_segments.bed",
+        emissions="{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_emissions.txt",
+        transitions="{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_transitions.txt",
     params:
         indir="{folder}/chromhmm_default",
         outdir="{folder}/chromhmm_default_result",
@@ -98,7 +98,7 @@ rule chromhmm_learn_default:
 
 rule chromhmm_default_mark_beds:
     """Extract per-mark BED files from default binarized per-chromosome files."""
-    input: _default_binary_files
+    input: ancient(_default_binary_files)
     output: expand("{{folder}}/chromhmm_default_result/{mark}.bed",mark=MARKS)
     params:
         bin=CHROMHMM_BIN,
@@ -114,15 +114,15 @@ rule chromhmm_default_mark_beds:
 
 rule cat_peaks_per_mark:
     """Sort peaks for a given folder+caller and mark into the binary matrix input."""
-    input: lambda w: peak_file(w.folder,w.caller,w.mark)
+    input: lambda w: ancient(peak_file(w.folder,w.caller,w.mark))
     output: temp("{folder}/{caller}/chromhmm_peaks/{mark}.sorted")
     shell: "sort -k1,1 -k2,2n {input} > {output}"
 
 
 rule multiinter:
     input:
-        bins=lambda w: f"bins{CALLER_BIN[w.caller]}.bed",
-        peaks=lambda w: [f"{w.folder}/{w.caller}/chromhmm_peaks/{m}.sorted" for m in MARKS],
+        bins=lambda w: ancient(f"bins{CALLER_BIN[w.caller]}.bed"),
+        peaks=lambda w: [ancient(f"{w.folder}/{w.caller}/chromhmm_peaks/{m}.sorted") for m in MARKS],
     output: temp("{folder}/{caller}/chromhmm_peaks/multiinter.tsv")
     conda: "../envs/bio.yaml"
     shell:
@@ -134,7 +134,7 @@ rule multiinter:
 
 rule binarize_per_chr:
     """Extract per-chromosome binary matrix (mark columns) and gzip."""
-    input: "{folder}/{caller}/chromhmm_peaks/multiinter.tsv"
+    input: ancient("{folder}/{caller}/chromhmm_peaks/multiinter.tsv")
     output: temp("{folder}/{caller}/chromhmm_peaks/{cell}_{chr}_binary.txt.gz")
     shell:
         "bash {SCRIPTS_DIR}/binarize_per_chr.sh {input} {wildcards.cell} {wildcards.chr} {output}"
@@ -142,12 +142,12 @@ rule binarize_per_chr:
 # --- Segmentations over peak binarization --------------------------------
 
 rule chromhmm_learn_over_peaks:
-    input: _peaks_binary_files
+    input: ancient(_peaks_binary_files)
     output:
         dense="{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_dense.bed",
-        segments=temp("{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_segments.bed"),
-        emissions=temp("{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_emissions.txt"),
-        transitions=temp("{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_transitions.txt"),
+        segments="{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_segments.bed",
+        emissions="{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_emissions.txt",
+        transitions="{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_transitions.txt",
     log: "{folder}/{caller}/chromhmm_result/{caller}_{cell}_learn.log"
     params:
         indir="{folder}/{caller}/chromhmm_peaks",
@@ -169,7 +169,7 @@ rule chromhmm_learn_over_peaks:
 
 
 rule kmeans_states:
-    input: _peaks_binary_files
+    input: ancient(_peaks_binary_files)
     output: "{folder}/{caller}/{caller}_kmeans_states.bed"
     log: "{folder}/{caller}/{caller}_kmeans_states.log"
     conda: "../envs/python.yaml"

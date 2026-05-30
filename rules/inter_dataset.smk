@@ -45,7 +45,7 @@ def _inter_ds_inputs(method):
 rule inter_dataset_compare_method:
     """Compare one method across all datasets (no re-matching)."""
     input:
-        lambda w: _inter_ds_inputs(w.method),
+        lambda w: [ancient(f) for f in _inter_ds_inputs(w.method)],
     output:
         entropy="inter_dataset/{method}/entropy_summary.tsv",
         kappa="inter_dataset/{method}/kappa_matrix.tsv",

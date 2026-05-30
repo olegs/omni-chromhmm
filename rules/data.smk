@@ -17,7 +17,7 @@ rule download_bam:
 
 
 rule download_chromhmm_ref:
-    output: "{ds}/{acc}_chromhmm.bed"
+    output: protected("{ds}/{acc}_chromhmm.bed")
     params:
         url=lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.bed.gz"
     shell:
@@ -25,7 +25,7 @@ rule download_chromhmm_ref:
 
 
 rule download_rnaseq:
-    output: "{ds}/rnaseq_{acc}.tsv"
+    output: protected("{ds}/rnaseq_{acc}.tsv")
     params:
         url=lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.tsv"
     shell:
@@ -33,7 +33,7 @@ rule download_rnaseq:
 
 
 rule download_atac:
-    output: "{ds}/atac_{acc}.bed.gz"
+    output: protected("{ds}/atac_{acc}.bed.gz")
     params:
         url=lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.bed.gz"
     shell:
@@ -41,7 +41,7 @@ rule download_atac:
 
 
 rule download_gencode_gtf:
-    output: TOOLS["gencode_gtf"]
+    output: temp(TOOLS["gencode_gtf"])
     params:
         url="https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.basic.annotation.gtf.gz"
     shell:

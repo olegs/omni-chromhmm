@@ -278,17 +278,20 @@ def _dataset_analysis_outputs(ds):
 rule dataset_done:
     """Per-dataset sentinel: all segmentations + per-folder analysis + metrics."""
     input:
-        lambda w: all_results(w.ds) + _dataset_analysis_outputs(w.ds),
+        lambda w: [ancient(f) for f in all_results(w.ds) + _dataset_analysis_outputs(w.ds)],
     output: touch("{ds}/.done")
 
-
+# Download and prepare
 include: "rules/data.smk"
+# ChromHMM
 include: "rules/chromhmm.smk"
+# Peak callers
 include: "rules/omni.smk"
 include: "rules/homer.smk"
 include: "rules/macs2.smk"
+# Matching vs reference
 include: "rules/match.smk"
+# Analysis
 include: "rules/analyze.smk"
-include: "rules/peaks.smk"
 include: "rules/compare.smk"
 include: "rules/inter_dataset.smk"

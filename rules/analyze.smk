@@ -46,7 +46,10 @@ def _folder_analysis_inputs(w):
     cell   = cfg["cell"]
     ref    = _ref_bed(ds)
 
-    files = [ref, ref.replace(".bed", ".bw_emissions.npz")] + _folder_seg_files(w)
+    # Reference files are ancient
+    files = [ancient(ref), ancient(ref.replace(".bed", ".bw_emissions.npz"))]
+    # Segmentations and emissions are NOT ancient (trigger re-run if they change)
+    files += _folder_seg_files(w)
 
     # Explicit binary-input files so Snakemake guarantees they exist before
     # analyze.py runs its binarized-track emission computation.
@@ -56,10 +59,10 @@ def _folder_analysis_inputs(w):
                   for c in CHROMS]
 
     if cfg.get("rnaseq"):
-        files.append(f"{ds}/rnaseq_{cfg['rnaseq']}.tsv")
-        files.append(TOOLS["gencode_gtf"])
+        files.append(ancient(f"{ds}/rnaseq_{cfg['rnaseq']}.tsv"))
+        files.append(ancient(TOOLS["gencode_gtf"]))
     if cfg.get("atac"):
-        files.append(f"{ds}/atac_{cfg['atac']}.bed.gz")
+        files.append(ancient(f"{ds}/atac_{cfg['atac']}.bed.gz"))
     return files
 
 
@@ -111,7 +114,7 @@ for _v in ["comb", "bwem", "ovlp"]:
 
 rule analyze_segmentations:
     """Run analyze.py on every matched segmentation within {folder}."""
-    input: _folder_analysis_inputs
+    input: lambda w: [ancient(f) for f in _folder_analysis_inputs(w)]
     output: _ANALYZE_OUTPUTS
     conda: "../envs/python.yaml"
     params:
@@ -189,4 +192,53 @@ rule analyze_segmentations:
                 fi
             done
         done
+        """
+
+
+# Peak-file analysis: number of peaks, mean/median length, replicate Jaccard.
+# Output: {ds}/peaks/
+
+
+def _peak_analysis_inputs(w):
+    """All peak files needed for the analysis of dataset {ds}."""
+    ds = w.ds
+    cfg = DATASETS[ds]
+    cell = cfg["cell"]
+    files = []
+    for folder in _folders(ds):
+        for mark in MARKS:
+            for caller in CALLERS:
+                files.append(peak_file(folder,caller,mark))
+        # ChromHMM binary files (one representative chrom is enough as input
+        # sentinel; analyze_peaks.py globs all of them at runtime)
+        files += [f"{folder}/chromhmm_default/{cell}_{c}_binary.txt" for c in CHROMS]
+    return files
+
+
+rule analyze_peaks:
+    """Compute per-mark peak stats and replicate Jaccard for all callers."""
+    input: lambda w: [ancient(f) for f in _peak_analysis_inputs(w)]
+    output:
+        stats="{ds}/peaks/peak_stats.tsv",
+        gaps="{ds}/peaks/gap_lengths.tsv.gz",
+        n_peaks="{ds}/peaks/n_peaks.png",
+        mean="{ds}/peaks/mean_length.png",
+        median="{ds}/peaks/median_length.png",
+    conda: "../envs/python.yaml"
+    params:
+        cell=lambda w: DATASETS[w.ds]["cell"],
+        omni_bin=OMNI_BIN,
+        chromhmm_bin=CHROMHMM_BIN,
+        marks=" ".join(MARKS),
+        scripts_dir=SCRIPTS_DIR,
+    shell:
+        r"""
+        mkdir -p {wildcards.ds}/peaks
+        python {params.scripts_dir}/analyze_peaks.py \
+            --ds        {wildcards.ds} \
+            --cell      {params.cell} \
+            --marks     {params.marks} \
+            --omni-bin  {params.omni_bin} \
+            --chromhmm-bin {params.chromhmm_bin} \
+            --outdir    {wildcards.ds}/peaks
         """
