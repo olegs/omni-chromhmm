@@ -13,12 +13,11 @@ rule omnipeak_call:
     params:
         bin=OMNI_BIN,
         cs=TOOLS["chromsizes"],
-        extra=lambda w: DATASETS[ds_of(w.folder)].get("omnipeak_extra",""),
         control=lambda w: f"-c {w.folder}/controls/{w.mark}.bam" if folder_has_controls(w.folder) else "",
         wdir="{folder}/omni",
     shell:
         "mkdir -p {params.wdir} && "
         "{OMNIPEAK} analyze -t {input.bam} {params.control} -cs {params.cs} --bin {params.bin} "
         "--threads {threads} -w {params.wdir} "
-        "-p {output.peak} --clip 0 {params.extra} "
+        "-p {output.peak} --clip 0 "
         "&> {log}"

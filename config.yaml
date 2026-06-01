@@ -34,7 +34,6 @@ datasets:
     ref_chromhmm: "ENCFF714POQ"   # ChromHMM 15-state reference BED.gz
     rnaseq: "ENCFF014JRQ"         # RNA-seq TSV
     atac: "ENCFF243NTP"           # ATAC-seq peaks BED.gz
-    omnipeak_extra: ""
     replicates: true
     bams:
       ENCFF021CLP: {mark: H3K4me3,  rep: rep1, control: ENCFF528QYK}
@@ -55,7 +54,6 @@ datasets:
     ref_chromhmm: "ENCFF227EMB"
     rnaseq: "ENCFF408GAO"
     atac: null
-    omnipeak_extra: ""
     replicates: true
     bams:
       ENCFF144PKE: {mark: H3K4me3, rep: rep1, control: ENCFF421DXL}
@@ -75,7 +73,6 @@ datasets:
     ref_chromhmm: "ENCFF166IHY" # non-standard states naming
     rnaseq: null
     atac: null
-    omnipeak_extra: "--fragmentation 0"
     replicates: false
     bams:
       ENCFF600ZLL: {mark: H3K4me3, control: ENCFF041EUP}
@@ -90,7 +87,6 @@ datasets:
     ref_chromhmm: "ENCFF870JAH" # non-standard states naming
     rnaseq: null
     atac: null
-    omnipeak_extra: "--fragmentation 0"
     replicates: false
     bams:
       ENCFF641VOI: {mark: H3K4me3, control: ENCFF369DNR}
@@ -105,7 +101,6 @@ datasets:
     ref_chromhmm: "ENCFF183AWD"
     rnaseq: "ENCFF143INW"         # total RNA-seq, gene quant TSV (ENCSR096LTX, female adult 61y)
     atac: "ENCFF105FRE"           # ATAC-seq IDR peaks (ENCSR078EBD, female adult 51y)
-    omnipeak_extra: ""
     replicates: true
     bams:
       ENCFF838OPW: {mark: H3K4me3, rep: rep1, control: ENCFF921FHW}
@@ -126,7 +121,6 @@ datasets:
 #    ref_chromhmm: "ENCFF393FJX"
 #    rnaseq: "ENCFF717ZEJ"         # total RNA-seq, gene quant TSV (ENCSR828JSJ, donor ENCDO477WED — exact match)
 #    atac: "ENCFF898WYV"           # ATAC-seq IDR peaks (ENCSR133CMC, donor ENCDO477WED — exact match)
-#    omnipeak_extra: ""
 #    replicates: false
 #    bams:
 #      ENCFF613ARJ: {mark: H3K4me3}
@@ -141,7 +135,6 @@ datasets:
 #    ref_chromhmm: "ENCFF996IOZ"
 #    rnaseq: "ENCFF241GEU"         # total RNA-seq, gene quant TSV (ENCSR043KVA, donor ENCDO594MAO — exact match)
 #    atac: null                    # no neurosphere ATAC-seq in ENCODE
-#    omnipeak_extra: ""
 #    replicates: false
 #    bams:
 #      ENCFF345SEO: {mark: H3K4me3}
@@ -156,7 +149,6 @@ datasets:
 #    ref_chromhmm: "ENCFF130HAO"
 #    rnaseq: "ENCFF045PTB"         # total RNA-seq, gene quant TSV (ENCSR812AKX, donor ENCDO451RUA — exact match)
 #    atac: "ENCFF460SWB"           # ATAC-seq IDR peaks (ENCSR086OGH, donor ENCDO451RUA — exact match)
-#    omnipeak_extra: ""
 #    replicates: false
 #    bams:
 #      ENCFF113NNR: {mark: H3K4me3}
@@ -171,7 +163,6 @@ datasets:
 #    ref_chromhmm: "ENCFF950TVI"
 #    rnaseq: "ENCFF491ISO"         # total RNA-seq, gene quant TSV (ENCSR276MMH, donor ENCDO845WKR — different donor than ChIP-seq ENCDO058AAA)
 #    atac: "ENCFF511DPE"           # ATAC-seq IDR peaks (ENCSR548KIL, donor ENCDO845WKR — same donor as RNA-seq)
-#    omnipeak_extra: ""
 #    replicates: false
 #    bams:
 #      ENCFF792QXD: {mark: H3K4me3}
@@ -186,7 +177,6 @@ datasets:
 #    ref_chromhmm: "ENCFF370FZP"
 #    rnaseq: "ENCFF632UQN"         # total RNA-seq, gene quant TSV (ENCSR687HJY, female adult 51y)
 #    atac: "ENCFF365RAW"           # ATAC-seq IDR peaks (ENCSR474XFV, male adult 54y)
-#    omnipeak_extra: ""
 #    replicates: false
 #    bams:
 #      ENCFF993OFD: {mark: H3K4me3}
@@ -201,7 +191,6 @@ datasets:
 #    ref_chromhmm: "ENCFF781KNB"
 #    rnaseq: "ENCFF467LKW"         # total RNA-seq, gene quant TSV (ENCSR676SRP, female adult 59y)
 #    atac: "ENCFF914OPC"           # ATAC-seq IDR peaks (ENCSR775SYU, female adult 59y)
-#    omnipeak_extra: ""
 #    replicates: false
 #    bams:
 #      ENCFF781UFS: {mark: H3K4me3}
@@ -217,7 +206,6 @@ datasets:
 #    ref_chromhmm: "ENCFF771QDN"
 #    rnaseq: "ENCFF398VOV"         # total RNA-seq, gene quant TSV (ENCSR272UNO, female adult 51y)
 #    atac: "ENCFF623GOH"           # ATAC-seq IDR peaks (ENCSR831KAH, female adult 51y) — ⚠ low FRiP audit warning
-#    omnipeak_extra: ""
 #    replicates: false
 #    bams:
 #      ENCFF089YNU: {mark: H3K4me3}
@@ -232,7 +220,6 @@ datasets:
 #    ref_chromhmm: "ENCFF490FOH"
 #    rnaseq: "ENCFF269SPH"         # total RNA-seq, gene quant TSV (ENCSR570DQR, donor ENCDO967KID — exact match)
 #    atac: "ENCFF568NPG"           # ATAC-seq pseudoreplicated peaks (ENCSR310RJN, donor ENCDO967KID — exact match; single-rep, no IDR)
-#    omnipeak_extra: ""
 #    replicates: false
 #    bams:
 #      ENCFF080RUF: {mark: H3K4me3}
@@ -247,7 +234,6 @@ datasets:
 #    ref_chromhmm: "ENCFF675GXD"
 #    rnaseq: null                  # no RNA-seq for substantia nigra in ENCODE (GRCh38)
 #    atac: null                    # no ATAC-seq for substantia nigra in ENCODE (GRCh38)
-#    omnipeak_extra: ""
 #    replicates: false
 #    bams:
 #      ENCFF009SQK: {mark: H3K4me3}
@@ -263,7 +249,6 @@ datasets:
 #    ref_chromhmm: "ENCFF538HOC"
 #    rnaseq: "ENCFF823QHI"         # total RNA-seq, gene quant TSV (ENCSR000AFJ) — ⚠ fetal 24wk; no adult temporal lobe RNA-seq in ENCODE
 #    atac: null                    # no ATAC-seq for temporal lobe in ENCODE (GRCh38)
-#    omnipeak_extra: ""
 #    replicates: false
 #    bams:
 #      ENCFF442BZF: {mark: H3K4me3}
