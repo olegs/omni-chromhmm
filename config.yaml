@@ -2,7 +2,7 @@ workdir: "~/data/2026_omni_chromhmm"
 
 tools:
   chromhmm_jar: "ChromHMM/ChromHMM.jar"
-  omnipeak_jar: "omnipeak-1.4.6801.jar"
+  omnipeak_jar: "omnipeak-1.4.6802.jar"
   homer_dir: "homer"
   chromsizes: "ChromHMM/CHROMSIZES/hg38.txt"
   coords_dir: "ChromHMM/COORDS/hg38"
@@ -18,7 +18,6 @@ params:
   n_states: 15
   genome: "hg38"
   marks: [H3K36me3, H3K9me3, H3K4me1, H3K27ac, H3K27me3, H3K4me3]
-  analyze: false        # run per-segmentation analysis (analyze.smk)
   compare: false        # run cross-segmentation comparison (compare.smk)
   inter: false          # run inter-dataset comparison and summary plots
   chromhmm_peaks: false # apply ChromHMM LearnModel to peak-caller binarizations (omni/homer/macs2)
