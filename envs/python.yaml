@@ -1,11 +1,13 @@
 channels:
   - conda-forge
+  - bioconda
   - defaults
 dependencies:
-  - python>=3.10
+  - python=3.12
   - numpy
   - matplotlib
   - pandas
   - seaborn
   - scikit-learn
   - scipy
+  - pybigwig

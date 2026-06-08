@@ -48,7 +48,9 @@ rule chromhmm_binarize_bam:
         controls=lambda w: ([ancient(f"{w.folder}/controls/{m}.bam") for m in MARKS]
                             if folder_has_controls(w.folder) else []),
     output:
-        bins=temp(expand("{{folder}}/chromhmm_default/{{cell}}_{chr}_binary.txt",chr=CHROMS))
+        # Kept (not temp) so binarized-emission information remains available for
+        # per-state emission analysis after the pipeline finishes.
+        bins=expand("{{folder}}/chromhmm_default/{{cell}}_{chr}_binary.txt",chr=CHROMS)
     params:
         bin=CHROMHMM_BIN,
         cs=TOOLS["chromsizes"],
@@ -135,7 +137,9 @@ rule multiinter:
 rule binarize_per_chr:
     """Extract per-chromosome binary matrix (mark columns) and gzip."""
     input: ancient("{folder}/{caller}/chromhmm_peaks/multiinter.tsv")
-    output: temp("{folder}/{caller}/chromhmm_peaks/{cell}_{chr}_binary.txt.gz")
+    # Kept (not temp) so binarized-emission information remains available for
+    # per-state emission analysis after the pipeline finishes.
+    output: "{folder}/{caller}/chromhmm_peaks/{cell}_{chr}_binary.txt.gz"
     shell:
         "bash {SCRIPTS_DIR}/binarize_per_chr.sh {input} {wildcards.cell} {wildcards.chr} {output}"
 

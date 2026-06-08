@@ -7,10 +7,10 @@
 #   compare.py --seg SEG1.bed SEG2.bed ... --bins BIN [BIN ...] --outdir OUT \
 #       [--analysis-dir OUT] [--threads N]
 
-import argparse
 import os
 import sys
 from collections import defaultdict
+from types import SimpleNamespace
 
 import matplotlib
 import numpy as np
@@ -494,8 +494,14 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
 # Segment length statistics
 # ---------------------------------------------------------------------------
 
-def compute_segment_stats(segs):
-    """Compute segment length statistics. Returns a dict."""
+def compute_segment_stats(segs, exclude_states=None):
+    """Compute segment length statistics. Returns a dict.
+
+    When *exclude_states* is given, segments whose state is in it (e.g. the
+    Quiescent/Heterochromatin background) are dropped first (NOQH mode).
+    """
+    if exclude_states:
+        segs = [seg for seg in segs if seg[3] not in exclude_states]
     if not segs:
         return {}
     lengths = np.array([e - s for _, s, e, _ in segs])
@@ -509,8 +515,13 @@ def compute_segment_stats(segs):
     }
 
 
-def _plot_segment_stats(df, outdir):
-    """Bar charts for each segment stats metric."""
+def _plot_segment_stats(df, outdir, suffix=""):
+    """Bar charts for each segment stats metric.
+
+    *suffix* (e.g. "_noqh") is appended to output filenames and titles so the
+    all-states and NOQH variants coexist.
+    """
+    title_extra = " (excl. Quies/Het)" if suffix else ""
     x = np.arange(len(df))
     xlabels = df["segmentation"]
     for col, title, ylabel in [
@@ -528,7 +539,7 @@ def _plot_segment_stats(df, outdir):
         ax.bar(x, vals, color="#4878CF", edgecolor="white", linewidth=0.5)
         ax.set_xticks(x)
         ax.set_xticklabels(xlabels, rotation=55, ha="right", fontsize=7)
-        ax.set_title(title, fontsize=10, fontweight="bold")
+        ax.set_title(title + title_extra, fontsize=10, fontweight="bold")
         ax.set_ylabel(ylabel, fontsize=8)
         ax.grid(axis="y", alpha=0.3)
         for i, v in enumerate(vals):
@@ -536,86 +547,91 @@ def _plot_segment_stats(df, outdir):
             ax.text(i, v + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.01,
                     fmt, ha="center", va="bottom", fontsize=6)
         fig.tight_layout()
-        path = os.path.join(outdir, f"{col}.png")
+        path = os.path.join(outdir, f"{col}{suffix}.png")
         fig.savefig(path)
         plt.close(fig)
         print(f"  saved {path}")
 
 
 def run_segment_stats(seg_paths, outdir, analysis_dir=None):
-    """Compute and save segment length statistics for each segmentation."""
+    """Compute and save segment length statistics for each segmentation.
+
+    Two variants are produced, mirroring the entropy summaries: all states
+    (``segment_stats.tsv``) and NOQH (``segment_stats_noqh.tsv``, excluding the
+    Quies/Het background). Each yields its own per-metric plots (e.g.
+    ``max_length.png`` and ``max_length_noqh.png``).
+    """
     os.makedirs(outdir, exist_ok=True)
     seg_outdirs = _build_seg_to_analysis_map(seg_paths, analysis_dir)
-    results = []
+    col_order = ["segmentation", "n_states", "n_segments",
+                 "min_length", "max_length", "mean_length", "median_length"]
+
+    # suffix -> list of per-seg stats dicts
+    results = {"": [], "_noqh": []}
 
     for seg_path in seg_paths:
         segs = load_bed(seg_path)
         if not segs:
             print(f"  WARNING: empty segmentation {seg_path}", file=sys.stderr)
             continue
-        stats = compute_segment_stats(segs)
         label = _seg_label(seg_path)
-        stats["segmentation"] = label
-        results.append(stats)
-        print(f"  {label}: {stats['n_states']} states, {stats['n_segments']} segments, "
-              f"lengths [{stats['min_length']}, {stats['max_length']}], "
-              f"mean={stats['mean_length']:.0f}, median={stats['median_length']:.0f}")
-
         seg_dir = seg_outdirs.get(seg_path)
-        if seg_dir:
-            stats_dir = os.path.join(seg_dir, "segment_stats")
-            os.makedirs(stats_dir, exist_ok=True)
-            pd.DataFrame([stats]).to_csv(os.path.join(stats_dir, "segment_stats.tsv"),
-                                          sep="\t", index=False, float_format="%.1f")
 
-    if not results:
-        return
+        for suffix, excl in [("", None), ("_noqh", _EXCLUDE_STATES)]:
+            stats = compute_segment_stats(segs, exclude_states=excl)
+            if not stats:
+                print(f"  WARNING: no segments left for {label}{suffix}", file=sys.stderr)
+                continue
+            stats["segmentation"] = label
+            results[suffix].append(stats)
+            if not suffix:
+                print(f"  {label}: {stats['n_states']} states, {stats['n_segments']} segments, "
+                      f"lengths [{stats['min_length']}, {stats['max_length']}], "
+                      f"mean={stats['mean_length']:.0f}, median={stats['median_length']:.0f}")
 
-    col_order = ["segmentation", "n_states", "n_segments",
-                 "min_length", "max_length", "mean_length", "median_length"]
-    df = pd.DataFrame(results)[col_order]
-    summary_path = os.path.join(outdir, "segment_stats.tsv")
-    df.to_csv(summary_path, sep="\t", index=False, float_format="%.1f")
-    print(f"  saved {summary_path}")
-    _plot_segment_stats(df, outdir)
+            if seg_dir:
+                stats_dir = os.path.join(seg_dir, "segment_stats")
+                os.makedirs(stats_dir, exist_ok=True)
+                pd.DataFrame([stats]).to_csv(
+                    os.path.join(stats_dir, f"segment_stats{suffix}.tsv"),
+                    sep="\t", index=False, float_format="%.1f")
+
+    for suffix in ("", "_noqh"):
+        if not results[suffix]:
+            continue
+        df = pd.DataFrame(results[suffix])[col_order]
+        summary_path = os.path.join(outdir, f"segment_stats{suffix}.tsv")
+        df.to_csv(summary_path, sep="\t", index=False, float_format="%.1f")
+        print(f"  saved {summary_path}")
+        _plot_segment_stats(df, outdir, suffix=suffix)
 
 
 # ---------------------------------------------------------------------------
-# Plot-only mode
+# direct-call entry point
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
+def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
+                labels=None, all_pairs=False):
+    """Cross-segmentation comparison: entropy, kappa, Jaccard, segment stats.
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="Cross-segmentation comparison: entropy, kappa, Jaccard, segment stats.")
-    ap.add_argument("--seg", nargs="+", required=True,
-                    help="Two or more segmentation BED files")
-    ap.add_argument("--bins", nargs="+", type=int, required=True,
-                    help="Bin size(s) in bp — one per --seg file, or a single value for all")
-    ap.add_argument("--outdir", required=True, help="Output directory")
-    ap.add_argument("--analysis-dir", default=None, dest="analysis_dir",
-                    help="Analysis root dir for per-segmentation metric output")
-    ap.add_argument("--threads", type=int, default=None,
-                    help="Max parallel workers for comparison jobs (default: cpu_count)")
-    ap.add_argument("--labels", nargs="+", default=None,
-                    help="Explicit labels for --seg files (one per file); "
-                         "overrides path-derived labels from seg_label()")
-    ap.add_argument("--all-pairs", action="store_true", dest="all_pairs",
-                    help="Compare every pair of segmentations (bypasses should_compare filter)")
-    args = ap.parse_args()
+    Direct-call entry point (the former CLI); called from analysis.ipynb.
+    *bins* may be a single int (broadcast to all segs) or a list, one per seg.
+    """
+    if isinstance(bins, int):
+        bins = [bins]
+    args = SimpleNamespace(seg=seg, bins=bins, outdir=outdir,
+                           analysis_dir=analysis_dir, threads=threads,
+                           labels=labels, all_pairs=all_pairs)
 
     # Broadcast a single bin size to all segmentations if needed.
     bin_sizes = (args.bins * len(args.seg) if len(args.bins) == 1
                  else args.bins)
     if len(bin_sizes) != len(args.seg):
-        ap.error(f"--bins must have 1 value or one per --seg file "
-                 f"({len(args.seg)} files, {len(args.bins)} bin sizes given)")
+        raise ValueError(f"bins must have 1 value or one per seg file "
+                         f"({len(args.seg)} files, {len(args.bins)} bin sizes given)")
     if args.labels and len(args.labels) != len(args.seg):
-        ap.error(f"--labels must have one value per --seg file "
-                 f"({len(args.seg)} files, {len(args.labels)} labels given)")
+        raise ValueError(f"labels must have one value per seg file "
+                         f"({len(args.seg)} files, {len(args.labels)} labels given)")
 
     label_override = dict(zip(args.seg, args.labels)) if args.labels else None
     analysis_dir   = args.analysis_dir or args.outdir
@@ -632,7 +648,3 @@ def main():
     run_segment_stats(args.seg, comparison_dir, analysis_dir)
     compare_all(args.seg, bin_sizes, comparison_dir, analysis_dir, args.threads,
                 label_override=label_override, all_pairs=args.all_pairs)
-
-
-if __name__ == "__main__":
-    main()

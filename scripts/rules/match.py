@@ -36,7 +36,11 @@ import sys
 from bisect import bisect_left
 from collections import defaultdict
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 
 # ---------------------------------------------------------------------------
@@ -111,8 +115,6 @@ def state_colors(ref_segs):
 
 def best_mapping(overlap, work_states, ref_states):
     """One-to-one mapping work→ref via Hungarian algorithm on raw overlap length."""
-    from scipy.optimize import linear_sum_assignment
-
     n_r = len(ref_states)
     cost = np.zeros((len(work_states), n_r))
     for i, w in enumerate(work_states):
@@ -141,7 +143,6 @@ def emission_cosine_mapping(states1, mat1, states2, mat2):
     Returns (avg_similarity, mapping_dict).
     Both mat1 and mat2 are (n_states, n_marks) float arrays.
     """
-    from scipy.optimize import linear_sum_assignment
     n1, n2 = len(states1), len(states2)
     cost = np.zeros((n1, n2))
     for i in range(n1):
@@ -158,10 +159,6 @@ def emission_cosine_mapping(states1, mat1, states2, mat2):
 
 def compare(ref_segs, work_segs, overlap, mapping, outdir):
     """Write Jaccard heatmap and similarity.txt to outdir."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     os.makedirs(outdir, exist_ok=True)
     ref_states  = sorted({x[3] for x in ref_segs})
     work_states = sorted({x[3] for x in work_segs})
@@ -255,6 +252,81 @@ def _load_emissions_npz(path):
     return list(data["states"]), list(data["marks"]), data["mat"]
 
 
+def _save_match_matrices(out_prefix, work_states, ref_states, mapping,
+                         jaccard=None, cosine=None, combined=None):
+    """Persist the per-state work→ref matching matrices used by the Hungarian
+    assignment, plus the chosen mapping, so they can be inspected/plotted.
+
+    Writes (rows = work states, cols = ref states):
+      {out_prefix}.score.tsv     score matrix actually assigned on (combined,
+                                 or jaccard/overlap when emissions are absent)
+      {out_prefix}.jaccard.tsv   overlap Jaccard matrix         (when available)
+      {out_prefix}.cosine.tsv    emission cosine matrix         (when available)
+      {out_prefix}.mapping.tsv   work_state, ref_state, score[, jaccard, cosine]
+      {out_prefix}.png           annotated score heatmap, matched cell outlined
+    """
+    out_dir = os.path.dirname(os.path.abspath(out_prefix))
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    def _save_tsv(mat, path):
+        with open(path, "w") as f:
+            f.write("\t" + "\t".join(map(str, ref_states)) + "\n")
+            for i, w in enumerate(work_states):
+                row = [str(w)] + [f"{mat[i, j]:.4f}" for j in range(len(ref_states))]
+                f.write("\t".join(row) + "\n")
+
+    if jaccard is not None:
+        _save_tsv(jaccard, out_prefix + ".jaccard.tsv")
+    if cosine is not None:
+        _save_tsv(cosine, out_prefix + ".cosine.tsv")
+    score = combined if combined is not None else jaccard
+    if score is None:
+        return
+    _save_tsv(score, out_prefix + ".score.tsv")
+
+    w_idx = {s: i for i, s in enumerate(work_states)}
+    r_idx = {s: i for i, s in enumerate(ref_states)}
+    with open(out_prefix + ".mapping.tsv", "w") as f:
+        cols = ["work_state", "ref_state", "score"]
+        if jaccard is not None:
+            cols.append("jaccard")
+        if cosine is not None:
+            cols.append("cosine")
+        f.write("\t".join(cols) + "\n")
+        for w in work_states:
+            r = mapping.get(w, w)
+            if r not in r_idx:
+                continue
+            wi, ri = w_idx[w], r_idx[r]
+            row = [w, r, f"{score[wi, ri]:.4f}"]
+            if jaccard is not None:
+                row.append(f"{jaccard[wi, ri]:.4f}")
+            if cosine is not None:
+                row.append(f"{cosine[wi, ri]:.4f}")
+            f.write("\t".join(row) + "\n")
+
+    fig, ax = plt.subplots(figsize=(max(6, len(ref_states) * 0.5),
+                                    max(6, len(work_states) * 0.4)))
+    im = ax.imshow(score, cmap="Blues", vmin=0, aspect="auto")
+    ax.set_xticks(range(len(ref_states)))
+    ax.set_xticklabels(ref_states, rotation=90, fontsize=7)
+    ax.set_yticks(range(len(work_states)))
+    ax.set_yticklabels(work_states, fontsize=7)
+    ax.set_xlabel("Reference state")
+    ax.set_ylabel("Work state")
+    ax.set_title("Per-state matching score (work → reference)")
+    for w in work_states:
+        r = mapping.get(w, w)
+        if r in r_idx:
+            ax.add_patch(plt.Rectangle((r_idx[r] - 0.5, w_idx[w] - 0.5), 1, 1,
+                                       fill=False, edgecolor="red", linewidth=1.5))
+    fig.colorbar(im, ax=ax)
+    fig.tight_layout()
+    fig.savefig(out_prefix + ".png", dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
 # ---------------------------------------------------------------------------
 # Unified matching
 # ---------------------------------------------------------------------------
@@ -262,7 +334,7 @@ def _load_emissions_npz(path):
 def match_states(ref_segs, work_segs,
                  states_ref=None, mat_ref=None,
                  states_work=None, mat_work=None,
-                 alpha=0.8):
+                 alpha=0.8, matrix_out=None):
     """Match work states to ref states using overlap and/or cosine emission.
 
     alpha=1.0 (overlap-only): maximizes total overlapping bp directly (Hungarian
@@ -278,8 +350,6 @@ def match_states(ref_segs, work_segs,
     Hungarian algorithm maximizes the total combined score.
     Returns dict mapping work_state -> ref_state.
     """
-    from scipy.optimize import linear_sum_assignment
-
     work_states_sorted = sorted({x[3] for x in work_segs})
     ref_states_sorted  = sorted({x[3] for x in ref_segs})
     n_w = len(work_states_sorted)
@@ -359,6 +429,10 @@ def match_states(ref_segs, work_segs,
     for w in work_states_sorted:
         if w not in mapping:
             mapping[w] = w
+
+    if matrix_out:
+        _save_match_matrices(matrix_out, work_states_sorted, ref_states_sorted,
+                             mapping, jaccard=jaccard, cosine=cosine, combined=combined)
     return mapping
 
 
@@ -398,7 +472,7 @@ def cmd_match(args):
     mapping = match_states(ref_segs, work_segs,
                            states_ref, mat_ref,
                            states_work, mat_work,
-                           alpha=args.alpha)
+                           alpha=args.alpha, matrix_out=args.matrix_out)
 
     colors = state_colors(ref_segs)
     for chrom, s, e, name, color in work_segs:
@@ -442,6 +516,9 @@ def main():
                     help="Save work emissions .npz with remapped state names to this path")
     mp.add_argument("--compare-only",   default=None, dest="compare_only",
                     help="Write Jaccard heatmap to this directory instead of rewriting BED")
+    mp.add_argument("--matrix-out",     default=None, dest="matrix_out",
+                    help="Path prefix to persist the per-state matching matrices "
+                         "(.score.tsv/.jaccard.tsv/.cosine.tsv/.mapping.tsv/.png)")
 
     args = ap.parse_args()
     if args.cmd == "compute":

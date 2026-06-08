@@ -3,13 +3,12 @@
 #
 # Also provides shared IO and plotting helpers imported by other scripts.
 #
-# Usage:
-#   analyze.py --seg SEG.bed --bin BIN --outdir OUT \
-#       [--inputs chromhmm/*.txt] [--annotations COORDS/*.bed.gz] \
-#       [--rnaseq rnaseq.tsv --gtf annotation.gtf.gz] \
-#       [--emissions-only]
+# Importable module (no CLI). Drive it from analysis.ipynb:
+#   from analyze import run_analyze
+#   run_analyze(seg="SEG.bed", bin_size=200, outdir="OUT",
+#               inputs=["chromhmm/*.txt"], annotations=["COORDS/*.bed.gz"],
+#               rnaseq="rnaseq.tsv", gtf="annotation.gtf.gz", emissions_only=False)
 
-import argparse
 import csv
 import glob
 import gzip
@@ -47,36 +46,42 @@ def open_text(path):
 def load_bed(path):
     """Load a BED file as a list of (chrom, start, end, name) tuples."""
     segs = []
-    with open_text(path) as f:
-        for line in f:
-            if not line.strip() or line.startswith(("#", "track", "browser")):
-                continue
-            p = line.rstrip("\n").split("\t")
-            if len(p) < 3:
-                continue
-            try:
-                chrom, s, e = p[0], int(p[1]), int(p[2])
-            except ValueError:
-                continue
-            name = p[3] if len(p) > 3 else "."
-            segs.append((chrom, s, e, name))
+    try:
+        with open_text(path) as f:
+            for line in f:
+                if not line.strip() or line.startswith(("#", "track", "browser")):
+                    continue
+                p = line.rstrip("\n").split("\t")
+                if len(p) < 3:
+                    continue
+                try:
+                    chrom, s, e = p[0], int(p[1]), int(p[2])
+                except ValueError:
+                    continue
+                name = p[3] if len(p) > 3 else "."
+                segs.append((chrom, s, e, name))
+    except (EOFError, gzip.BadGzipFile) as e:
+        print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
     return segs
 
 
 def _load_seg_full(path):
     """Load a BED file (plain or gzipped) as a list of (chrom, start, end, name, color) 5-tuples."""
     segs = []
-    with open_text(path) as f:
-        for line in f:
-            if not line.strip() or line.startswith(("#", "track", "browser")):
-                continue
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < 3:
-                continue
-            chrom, s, e = parts[0], int(parts[1]), int(parts[2])
-            name = parts[3] if len(parts) > 3 else "."
-            color = parts[8] if len(parts) >= 9 else "0,0,0"
-            segs.append((chrom, s, e, name, color))
+    try:
+        with open_text(path) as f:
+            for line in f:
+                if not line.strip() or line.startswith(("#", "track", "browser")):
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 3:
+                    continue
+                chrom, s, e = parts[0], int(parts[1]), int(parts[2])
+                name = parts[3] if len(parts) > 3 else "."
+                color = parts[8] if len(parts) >= 9 else "0,0,0"
+                segs.append((chrom, s, e, name, color))
+    except (EOFError, gzip.BadGzipFile) as e:
+        print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
     return segs
 
 
@@ -87,16 +92,20 @@ def load_bed_df(path, sample=None):
     Optionally adds a 'sample' column.
     """
     rows = []
-    with open_text(path) as fh:
-        for line in fh:
-            if line.startswith(("#", "track", "browser")):
-                continue
-            parts = line.rstrip().split("\t")
-            if len(parts) < 4:
-                continue
-            chrom, start, end, state = parts[0], int(parts[1]), int(parts[2]), parts[3]
-            rgb = parts[8] if len(parts) > 8 else "128,128,128"
-            rows.append((chrom, start, end, state, end - start, rgb))
+    try:
+        with open_text(path) as fh:
+            for line in fh:
+                if line.startswith(("#", "track", "browser")):
+                    continue
+                parts = line.rstrip().split("\t")
+                if len(parts) < 4:
+                    continue
+                chrom, start, end, state = parts[0], int(parts[1]), int(parts[2]), parts[3]
+                rgb = parts[8] if len(parts) > 8 else "128,128,128"
+                rows.append((chrom, start, end, state, end - start, rgb))
+    except (EOFError, gzip.BadGzipFile) as e:
+        print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
+
     df = pd.DataFrame(rows, columns=["chrom", "start", "end", "state", "length", "rgb"])
     df["start"] = df["start"].astype(np.int64)
     df["end"] = df["end"].astype(np.int64)
@@ -107,12 +116,27 @@ def load_bed_df(path, sample=None):
 
 
 def load_binary(path):
-    with open_text(path) as f:
-        head = f.readline().rstrip("\n").split("\t")
-        chrom = head[1] if len(head) > 1 else "chrUnknown"
-        marks = f.readline().rstrip("\n").split("\t")
-        rows = [list(map(int, line.rstrip("\n").split("\t")))
-                for line in f if line.strip()]
+    rows = []
+    chrom = "chrUnknown"
+    marks = []
+    try:
+        with open_text(path) as f:
+            line1 = f.readline()
+            if not line1:
+                return chrom, marks, np.asarray(rows, dtype=np.int8)
+            head = line1.rstrip("\n").split("\t")
+            chrom = head[1] if len(head) > 1 else "chrUnknown"
+
+            line2 = f.readline()
+            if not line2:
+                return chrom, marks, np.asarray(rows, dtype=np.int8)
+            marks = line2.rstrip("\n").split("\t")
+
+            for line in f:
+                if line.strip():
+                    rows.append(list(map(int, line.rstrip("\n").split("\t"))))
+    except (EOFError, gzip.BadGzipFile) as e:
+        print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
     return chrom, marks, np.asarray(rows, dtype=np.int8)
 
 
@@ -321,37 +345,40 @@ def load_expressed_gene_coords(gtf_path, expressed_ids):
     """Parse GENCODE GTF for expressed gene bodies and TSS regions."""
     gene_bodies = []
     tss_regions = []
-    with open_text(gtf_path) as f:
-        for line in f:
-            if line.startswith("#"):
-                continue
-            cols = line.rstrip("\n").split("\t")
-            if len(cols) < 9 or cols[2] != "gene":
-                continue
-            attrs = cols[8]
-            gene_id = None
-            gene_name = None
-            for attr in attrs.split(";"):
-                attr = attr.strip()
-                if attr.startswith("gene_id"):
-                    gene_id = attr.split('"')[1] if '"' in attr else attr.split()[-1]
-                elif attr.startswith("gene_name"):
-                    gene_name = attr.split('"')[1] if '"' in attr else attr.split()[-1]
-            matched = False
-            if gene_id and (gene_id in expressed_ids or gene_id.split(".")[0] in expressed_ids):
-                matched = True
-            if gene_name and gene_name in expressed_ids:
-                matched = True
-            if not matched:
-                continue
-            label = gene_name or gene_id
-            chrom = cols[0]
-            start = int(cols[3]) - 1
-            end = int(cols[4])
-            strand = cols[6]
-            gene_bodies.append((chrom, start, end, label))
-            tss = start if strand == "+" else end - 1
-            tss_regions.append((chrom, tss, tss + 1, label))
+    try:
+        with open_text(gtf_path) as f:
+            for line in f:
+                if line.startswith("#"):
+                    continue
+                cols = line.rstrip("\n").split("\t")
+                if len(cols) < 9 or cols[2] != "gene":
+                    continue
+                attrs = cols[8]
+                gene_id = None
+                gene_name = None
+                for attr in attrs.split(";"):
+                    attr = attr.strip()
+                    if attr.startswith("gene_id"):
+                        gene_id = attr.split('"')[1] if '"' in attr else attr.split()[-1]
+                    elif attr.startswith("gene_name"):
+                        gene_name = attr.split('"')[1] if '"' in attr else attr.split()[-1]
+                matched = False
+                if gene_id and (gene_id in expressed_ids or gene_id.split(".")[0] in expressed_ids):
+                    matched = True
+                if gene_name and gene_name in expressed_ids:
+                    matched = True
+                if not matched:
+                    continue
+                label = gene_name or gene_id
+                chrom = cols[0]
+                start = int(cols[3]) - 1
+                end = int(cols[4])
+                strand = cols[6]
+                gene_bodies.append((chrom, start, end, label))
+                tss = start if strand == "+" else end - 1
+                tss_regions.append((chrom, tss, tss + 1, label))
+    except (EOFError, gzip.BadGzipFile) as e:
+        print(f"Warning: Corrupted gzip file {gtf_path}: {e}. Data might be incomplete.", file=sys.stderr)
     return gene_bodies, tss_regions
 
 
@@ -715,51 +742,37 @@ def plot_enrichment(enrich_df, segs, outdir):
     plt.close(fig)
 
 
-# --- CLI ------------------------------------------------------------------
+# --- direct-call entry point ---------------------------------------------
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="Per-segmentation analysis: report, emissions, enrichment.")
-    ap.add_argument("--seg", required=True,
-                    help="Segmentation BED file")
-    ap.add_argument("--bin", type=int, required=True, help="Bin size in bp")
-    ap.add_argument("--outdir", required=True, help="Output directory")
-    ap.add_argument("--inputs", nargs="*",
-                    help="ChromHMM binary input files (for emissions)")
-    ap.add_argument("--annotations", nargs="*",
-                    help="Annotation BED(.gz) files (for enrichment)")
-    ap.add_argument("--rnaseq", default=None,
-                    help="ENCODE RNA-seq quantification TSV")
-    ap.add_argument("--gtf", default=None,
-                    help="GENCODE GTF(.gz) gene annotation")
-    ap.add_argument("--bw-emissions", default=None, dest="bw_emissions",
-                    help="Pre-computed bigwig emissions .npz (from match.py compute)")
-    ap.add_argument("--emissions-only", action="store_true", dest="emissions_only",
-                    help="Only compute emissions and enrichment (skip report/lengths)")
-    args = ap.parse_args()
+def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
+                rnaseq=None, gtf=None, bw_emissions=None, emissions_only=False):
+    """Per-segmentation analysis: report, emissions, enrichment.
 
-    os.makedirs(args.outdir, exist_ok=True)
-    segs = load_bed(args.seg)
+    Direct-call entry point (the former CLI). Writes report / emission /
+    enrichment tables and plots under *outdir*; called from analysis.ipynb.
+    """
+    os.makedirs(outdir, exist_ok=True)
+    segs = load_bed(seg)
 
-    if not args.emissions_only:
-        save_report(segs, args.outdir)
-        plot_segment_lengths(segs, args.outdir)
-        save_transition_entropy(segs, args.bin, args.outdir)
+    if not emissions_only:
+        save_report(segs, outdir)
+        plot_segment_lengths(segs, outdir)
+        save_transition_entropy(segs, bin_size, outdir)
 
-    inputs = expand_globs(args.inputs or [])
+    inputs = expand_globs(inputs or [])
     if inputs:
-        states, marks, emission_mat = compute_emissions(segs, inputs, args.bin)
-        save_emissions_table(states, marks, emission_mat, args.outdir)
-        plot_emissions(states, marks, emission_mat, args.outdir)
+        states, marks, emission_mat = compute_emissions(segs, inputs, bin_size)
+        save_emissions_table(states, marks, emission_mat, outdir)
+        plot_emissions(states, marks, emission_mat, outdir)
         # Save alongside BED for fast lookup by compare.py (same format as bw_emissions.npz).
-        npz_path = os.path.splitext(args.seg)[0] + ".bin_emissions.npz"
+        npz_path = os.path.splitext(seg)[0] + ".bin_emissions.npz"
         np.savez_compressed(npz_path,
                             states=np.array(states),
                             marks=np.array(marks),
                             mat=emission_mat)
 
-    if args.bw_emissions and os.path.exists(args.bw_emissions):
-        data = np.load(args.bw_emissions, allow_pickle=False)
+    if bw_emissions and os.path.exists(bw_emissions):
+        data = np.load(bw_emissions, allow_pickle=False)
         bw_states = list(data["states"])
         bw_marks  = list(data["marks"])
         bw_mat    = data["mat"]
@@ -770,25 +783,21 @@ def main():
         bw_states = [bw_states[i] for i in state_order]
         bw_mat    = bw_mat[state_order]
         bw_marks, bw_mat = _reorder_marks(bw_marks, bw_mat)
-        save_emissions_table(bw_states, bw_marks, bw_mat, args.outdir,
+        save_emissions_table(bw_states, bw_marks, bw_mat, outdir,
                              subdir="bw_emissions")
-        plot_emissions(bw_states, bw_marks, bw_mat, args.outdir,
+        plot_emissions(bw_states, bw_marks, bw_mat, outdir,
                        subdir="bw_emissions")
 
     annotation_items = []
-    for p in expand_globs(args.annotations or []):
+    for p in expand_globs(annotations or []):
         if os.path.exists(p):
             label = os.path.basename(p).replace(".bed.gz", "").replace(".bed", "")
             annotation_items.append((label, p))
 
-    if args.rnaseq and args.gtf:
-        annotation_items.extend(make_expressed_annotations(args.rnaseq, args.gtf))
+    if rnaseq and gtf:
+        annotation_items.extend(make_expressed_annotations(rnaseq, gtf))
 
     if annotation_items:
         enrich_df = compute_enrichment(segs, annotation_items)
-        save_enrichment_table(enrich_df, args.outdir)
-        plot_enrichment(enrich_df, segs, args.outdir)
-
-
-if __name__ == "__main__":
-    main()
+        save_enrichment_table(enrich_df, outdir)
+        plot_enrichment(enrich_df, segs, outdir)

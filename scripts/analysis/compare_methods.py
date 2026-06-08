@@ -24,7 +24,6 @@ Produces in {outdir}/:
   - per-metric PNG plots
 """
 
-import argparse
 import os
 import sys
 
@@ -87,12 +86,12 @@ def load_entropy(comparison_dir):
 
 
 def load_segment_stats(comparison_dir):
-    """Returns dict: seg_name → {n_states, n_segments, ...}."""
+    """Returns dict: seg_name → {n_states, n_segments, ..., max_length_noqh}."""
     path = os.path.join(comparison_dir, "segment_stats.tsv")
     if not os.path.exists(path):
         return {}
     df = pd.read_csv(path, sep="\t")
-    return {
+    stats = {
         row["segmentation"]: {
             "n_states":         int(row["n_states"]),
             "n_segments":       int(row["n_segments"]),
@@ -103,6 +102,15 @@ def load_segment_stats(comparison_dir):
         }
         for _, row in df.iterrows()
     }
+
+    # NOQH variant (excl. Quies/Het): surface max_length_noqh alongside max_length.
+    noqh_path = os.path.join(comparison_dir, "segment_stats_noqh.tsv")
+    if os.path.exists(noqh_path):
+        for _, row in pd.read_csv(noqh_path, sep="\t").iterrows():
+            if row["segmentation"] in stats:
+                stats[row["segmentation"]]["max_length_noqh"] = int(row["max_length"])
+
+    return stats
 
 
 def load_report(analysis_dir, method):
@@ -240,13 +248,14 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                 if mat is not None and rep1_seg in mat.index and rep2_seg in mat.columns:
                     row[col_name] = mat.loc[rep1_seg, rep2_seg]
 
-        # Report: median lengths for key states
+        # Report: mean lengths for key states
         report = load_report(_adir(method), method)
-        for state, col in [("Tx", "median_Tx_length"),
-                            ("Tss", "median_Tss_length"),
-                            ("TxWk", "median_TxWk_length")]:
+        for state, col_base in [("Tx", "Tx_length"),
+                                ("Tss", "Tss_length"),
+                                ("TxWk", "TxWk_length")]:
             if state in report:
-                row[col] = report[state].get("median_length", np.nan)
+                row[f"median_{col_base}"] = report[state].get("median_length", np.nan)
+                row[f"mean_{col_base}"] = report[state].get("mean_length", np.nan)
 
         # Enrichment
         enrichment = load_enrichment(_adir(method), method)
@@ -371,6 +380,7 @@ def plot_comparison(df, outdir):
         ("jaccard_Tx_ExpressedGeneBodies", "Jaccard: Tx state vs expressed gene bodies"),
         ("jaccard_Tss_ATAC",               "Jaccard: Tss state vs ATAC-seq"),
         ("median_Tx_length",               "Median Tx (transcription) segment length"),
+        ("mean_Tx_length",                 "Mean Tx (transcription) segment length"),
     ]:
         ylabel = "Fold enrichment" if col.startswith("enrich") else \
                  "Jaccard" if col.startswith("jaccard") else "bp"
@@ -384,22 +394,15 @@ def plot_comparison(df, outdir):
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    ap = argparse.ArgumentParser(description="Unified method comparison table & plots")
-    ap.add_argument("--analysis-dir",   required=True,
-                    help="Variant-specific analysis subdir (e.g. ds/analysis/comb/)")
-    ap.add_argument("--ref-dir",        default=None, dest="ref_dir",
-                    help="Top-level analysis dir containing ref/ subdir "
-                         "(defaults to --analysis-dir)")
-    ap.add_argument("--comparison-dir", required=True,
-                    help="Directory with entropy, kappa, segment_stats TSVs")
-    ap.add_argument("--outdir",         required=True, help="Output directory")
-    args = ap.parse_args()
+def run_compare_methods(analysis_dir, comparison_dir, outdir, ref_dir=None):
+    """Aggregate metrics into a unified method comparison table & plots.
 
-    os.makedirs(args.outdir, exist_ok=True)
+    Direct-call entry point (the former CLI); called from analysis.ipynb.
+    """
+    os.makedirs(outdir, exist_ok=True)
 
-    df = build_table(args.analysis_dir, args.comparison_dir, ref_dir=args.ref_dir)
-    table_path = os.path.join(args.outdir, "comparison_table.tsv")
+    df = build_table(analysis_dir, comparison_dir, ref_dir=ref_dir)
+    table_path = os.path.join(outdir, "comparison_table.tsv")
     df.to_csv(table_path, sep="\t", index=False, float_format="%.4f")
     print(f"  saved {table_path}")
     print(df.to_string(index=False))
@@ -411,8 +414,4 @@ def main():
         df["replicate"] = df["method"].map(lambda m: METHOD_INFO.get(m, (None, None, None))[2] or "")
 
     df = _order_methods(df)
-    plot_comparison(df, args.outdir)
-
-
-if __name__ == "__main__":
-    main()
+    plot_comparison(df, outdir)

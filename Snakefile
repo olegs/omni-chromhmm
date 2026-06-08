@@ -40,9 +40,6 @@ def _flag(key, default=True):
     return bool(val)
 
 
-DO_ANALYZE = _flag("analyze")
-DO_COMPARE = _flag("compare")
-DO_INTER = _flag("inter")
 DO_CHROMHMM_PEAKS = _flag("chromhmm_peaks")
 DO_REPLICATES = _flag("replicates")
 DO_OMNIPEAK = _flag("omnipeak")
@@ -61,7 +58,7 @@ OMNIPEAK = f"java -Xmx8G --add-modules=jdk.incubator.vector -jar {TOOLS['omnipea
 
 DATASETS = config["datasets"]
 
-SCRIPTS_DIR = os.path.join(workflow.basedir,"scripts")
+SCRIPTS_DIR = os.path.join(workflow.basedir,"scripts", "rules")
 
 # Global wildcard constraints.
 # {folder} covers both the pooled root ({ds}) and per-replicate subdirs ({ds}/rep1,
@@ -229,56 +226,26 @@ def all_results(ds):
             t.append(f"{folder}/{caller}/{caller}_kmeans_states_bwem_matched.bed")
             t.append(f"{folder}/{caller}/{caller}_kmeans_states_comb_matched.bed")
 
+    # Per-state matching matrix (heatmap) produced alongside every matched BED.
+    t += [f.replace("_matched.bed", "_matched.match.png")
+          for f in list(t) if f.endswith("_matched.bed")]
+
     return t
 
 
 rule all:
     input:
-        lambda wildcards: [f"{ds}/.done" for ds in DATASETS]
-                          + (list(rules.inter_dataset_all.input) if DO_INTER else []),
-
-
-def _dataset_analysis_outputs(ds):
-    """Per-folder analysis + dataset-level comparison sentinels, gated by config flags."""
-    t = []
-    if DO_ANALYZE:
-        for folder in _folders(ds):
-            t.append(f"{folder}/analysis/ref/report.tsv")
-            # Functional Enrichment, BigWig emissions, and Binarized emissions plots
-            # explicitly tracked to ensure they respect the chromhmm_peaks setting.
-            t.append(f"{folder}/analysis/ref/enrichment/enrichment.png")
-            t.append(f"{folder}/analysis/ref/bw_emissions/state_emissions.png")
-            t.append(f"{folder}/analysis/chromhmm_default_dense/bin_emissions/state_emissions.png")
-            for variant in ["comb", "bwem", "ovlp"]:
-                t.append(f"{folder}/analysis/{variant}/chromhmm_default/enrichment/enrichment.png")
-                t.append(f"{folder}/analysis/{variant}/chromhmm_default/bw_emissions/state_emissions.png")
-                t.append(f"{folder}/analysis/{variant}/chromhmm_default/bin_emissions/state_emissions.png")
-                for caller in CALLERS:
-                    t.append(f"{folder}/analysis/{variant}/kmeans_{caller}/enrichment/enrichment.png")
-                    t.append(f"{folder}/analysis/{variant}/kmeans_{caller}/bw_emissions/state_emissions.png")
-                    t.append(f"{folder}/analysis/{variant}/kmeans_{caller}/bin_emissions/state_emissions.png")
-                    if DO_CHROMHMM_PEAKS:
-                        t.append(f"{folder}/analysis/{variant}/chromhmm_{caller}/enrichment/enrichment.png")
-                        t.append(f"{folder}/analysis/{variant}/chromhmm_{caller}/bw_emissions/state_emissions.png")
-                        t.append(f"{folder}/analysis/{variant}/chromhmm_{caller}/bin_emissions/state_emissions.png")
-    if DO_ANALYZE:
-        t.append(f"{ds}/peaks/peak_stats.tsv")
-    if DO_COMPARE:
-        t += [
-            f"{ds}/comparison/comb/entropy_summary.tsv",
-            f"{ds}/comparison/comb/kappa_matrix.tsv",
-            f"{ds}/comparison/comb/jaccard_similarity_matrix.tsv",
-            f"{ds}/comparison/comb/overlap_matrix.tsv",
-            f"{ds}/comparison/comb/segment_stats.tsv",
-            f"{ds}/methods/comb/comparison_table.tsv",
-        ]
-    return t
+        lambda wildcards: [f"{ds}/.done" for ds in DATASETS],
 
 
 rule dataset_done:
-    """Per-dataset sentinel: all segmentations + per-folder analysis + metrics."""
+    """Per-dataset sentinel: all segmentations matched against the reference.
+
+    Analysis, comparison and inter-dataset plots are produced separately in
+    analysis.ipynb, not by this pipeline.
+    """
     input:
-        lambda w: [ancient(f) for f in all_results(w.ds) + _dataset_analysis_outputs(w.ds)],
+        lambda w: [ancient(f) for f in all_results(w.ds)],
     output: touch("{ds}/.done")
 
 # Download and prepare
@@ -291,7 +258,4 @@ include: "rules/homer.smk"
 include: "rules/macs2.smk"
 # Matching vs reference
 include: "rules/match.smk"
-# Analysis
-include: "rules/analyze.smk"
-include: "rules/compare.smk"
-include: "rules/inter_dataset.smk"
+# Analysis, comparison and inter-dataset summary plots live in analysis.ipynb.

@@ -9,23 +9,22 @@ Plots are generated:
   summary_entropy_noqh.png        — transition matrix entropy (NOQH)
   summary_jaccard_tx.png          — Jaccard: Tx state vs expressed gene bodies
   summary_enrich_tx.png           — Tx fold enrichment at expressed gene bodies
-  summary_median_tx_length.png    — median Tx segment length
+  summary_mean_tx_length.png      — mean Tx segment length
   summary_jaccard_tss.png         — Jaccard: Tss state vs RefSeqTSS ±1 kb
   summary_jaccard_tss_atac.png    — Jaccard: Tss state vs ATAC-seq peaks
   summary_n_segments.png          — total number of segments
 
-Usage:
-    summary_plots.py \
-        --datasets imr90 monocytes monocytes_mint gm12878_mint \
-        --methods-dirs  imr90/methods/ovlp monocytes/methods/ovlp ... \
-        --analysis-dirs imr90/analysis/ovlp monocytes/analysis/ovlp ... \
-        --outdir inter_dataset/summary_plots
+Importable module (no CLI). Drive it from analysis.ipynb:
+    from summary_plots import run_summary_plots
+    run_summary_plots(datasets=[...], methods_dirs=[...], analysis_dirs=[...],
+                      outdir="inter_dataset/summary_plots")
+Each *_outfile / *_outdir argument that is set selects one plot group.
 """
 
-import argparse
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -189,11 +188,14 @@ def _load_jaccard_value(analysis_dir, method, state, label):
     return float(df.loc[mask, "jaccard"].iloc[0])
 
 
-def _collect_table_col(datasets, methods_dirs, col):
+def _collect_table_col(datasets, methods_dirs, col, include_ref=False):
     """Collect one comparison_table column across datasets.
 
+    include_ref: also keep the ENCODE reference row (method key "ref"), which is
+    otherwise excluded because "ref" is not among the de-novo METHODS_POOLED.
     Returns DataFrame with index=method, columns=dataset.
     """
+    allowed = set(METHODS_POOLED) | ({"ref"} if include_ref else set())
     records = {}
     for ds, mdir in zip(datasets, methods_dirs):
         table = _load_comparison_table(mdir)
@@ -201,7 +203,7 @@ def _collect_table_col(datasets, methods_dirs, col):
             continue
         for _, row in table.iterrows():
             method = row["method"]
-            if method not in METHODS_POOLED:
+            if method not in allowed:
                 continue
             val = row.get(col, np.nan)
             try:
@@ -260,9 +262,14 @@ def _collect_jaccard_atac(datasets, analysis_dirs, state):
 # Plotting
 # ---------------------------------------------------------------------------
 
-def _plot_summary(data, title, ylabel, outpath, partial_note=False):
-    """Grouped bar chart: mean ± std across datasets."""
-    methods = [m for m in METHODS_POOLED if m in data.index]
+def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
+    """Grouped bar chart: mean ± std across datasets.
+
+    order: explicit method-key order (e.g. ["ref", ...] to include the reference);
+    defaults to METHODS_POOLED.
+    """
+    method_order = order if order is not None else METHODS_POOLED
+    methods = [m for m in method_order if m in data.index]
     if not methods:
         print(f"  skipping {outpath}: no data")
         return
@@ -329,11 +336,10 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False):
         "homer":     "Homer binarization",
         "macs2":     "MACS2 binarization",
     }
-    # Only show binarizations that are actually present in the current methods list
-    active_binarizations = []
-    for b in ["reference", "default", "omnipeak", "homer", "macs2"]:
-        if any(METHOD_INFO.get(m[0], (None,))[0] == b for m in INTER_DS_METHODS):
-            active_binarizations.append(b)
+    # Only show binarizations that are actually present in the plotted methods
+    plotted_bins = {METHOD_INFO.get(m, (None,))[0] for m in methods}
+    active_binarizations = [b for b in ["reference", "default", "omnipeak", "homer", "macs2"]
+                            if b in plotted_bins]
 
     for b in active_binarizations:
         legend_elements.append(Patch(facecolor=BIN_COLORS[b], label=bin_labels[b]))
@@ -351,6 +357,122 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False):
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {outpath}")
+
+
+def _collect_per_state_kappa(datasets, analysis_dirs, match_method="comb"):
+    """Collect per-state kappa vs reference for all datasets."""
+    all_stacked = []
+    for ds, adir in zip(datasets, analysis_dirs):
+        # We look into potential locations for per-state kappa TSVs.
+        # 1. {ds}/comparison/{match_method} (standard notebook location)
+        # 2. {adir}/comparison/{match_method}
+        # 3. {adir}/comparison
+        comp_dirs = [
+            os.path.join(ds, "comparison", match_method),
+            os.path.join(adir, "comparison", match_method),
+            os.path.join(adir, "comparison")
+        ]
+        
+        comp_dir = None
+        for d in comp_dirs:
+            if os.path.isdir(d):
+                comp_dir = d
+                break
+        
+        if not comp_dir:
+            continue
+
+        # Look for per_state_kappa_vs_*.tsv
+        try:
+            tsv_files = [f for f in os.listdir(comp_dir)
+                         if f.startswith("per_state_kappa_vs_") and f.endswith(".tsv")]
+        except OSError:
+            continue
+
+        if not tsv_files:
+            continue
+
+        tsv_path = os.path.join(comp_dir, tsv_files[0])
+        try:
+            df = pd.read_csv(tsv_path, sep="\t", index_col=0)
+            if df.empty:
+                continue
+
+            # Stack to get (state, method, kappa)
+            stacked = df.stack().reset_index()
+            stacked.columns = ["state", "method", "kappa"]
+            # Exclude NaNs/Nones as per instructions
+            stacked = stacked.dropna(subset=["kappa"])
+            stacked["dataset"] = ds
+            all_stacked.append(stacked)
+        except Exception as e:
+            print(f"  WARNING: could not load {tsv_path}: {e}", file=sys.stderr)
+
+    if not all_stacked:
+        return pd.DataFrame()
+    return pd.concat(all_stacked, ignore_index=True)
+
+
+def _save_kappa_heatmap(df, title, outfile):
+    """Save a per-state kappa heatmap, matching compare.py style."""
+    if df.empty:
+        return
+    # Exclude all-NaN rows/cols to keep plot clean
+    df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
+    if df.empty:
+        return
+
+    vmax = max(float(np.nanmax(np.abs(df.values))), 0.1) if not df.isna().all().all() else 0.1
+    fig, ax = plt.subplots(figsize=(max(6, df.shape[1] * 0.8),
+                                    max(4, df.shape[0] * 0.35)))
+    sns.heatmap(df, cmap="RdYlGn", vmin=-vmax, vmax=vmax, center=0,
+                linewidths=0.5, annot=True, fmt=".2f",
+                annot_kws={"fontsize": 7},
+                cbar_kws={"label": "Per-state Cohen's Kappa"},
+                ax=ax, mask=df.isna().values)
+    ax.set_title(title, fontsize=9)
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=7)
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(os.path.abspath(outfile)), exist_ok=True)
+    fig.savefig(outfile)
+    plt.close(fig)
+    print(f"  saved {outfile}")
+
+
+def _plot_per_state_kappa(datasets, analysis_dirs, outdir, match_method="comb"):
+    """Generate per-dataset and summary per-state kappa plots."""
+    df = _collect_per_state_kappa(datasets, analysis_dirs, match_method)
+    if df.empty:
+        return
+
+    # 1. Per-dataset plots
+    for ds in datasets:
+        subset = df[df["dataset"] == ds]
+        if subset.empty:
+            continue
+        ds_df = subset.pivot(index="state", columns="method", values="kappa")
+        if ds_df.empty:
+            continue
+        ds_df = ds_df.reindex(sort_states(ds_df.index))
+        # Use METHODS_POOLED for canonical order (if present in df)
+        methods_in_plot = [m for m in METHODS_POOLED if m in ds_df.columns and m != "ref"]
+        # Also include any other methods that might be there but not in METHODS_POOLED
+        other_methods = [m for m in ds_df.columns if m not in METHODS_POOLED and m != "ref"]
+        ds_df = ds_df[methods_in_plot + other_methods]
+
+        out_path = os.path.join(outdir, f"per_state_kappa_{ds}.png")
+        _save_kappa_heatmap(ds_df, f"Per-state Cohen's Kappa: {ds} vs Reference", out_path)
+
+    # 2. Summary plot
+    summary_df = df.groupby(["state", "method"])["kappa"].mean().unstack()
+    summary_df = summary_df.reindex(sort_states(summary_df.index))
+    methods_in_plot = [m for m in METHODS_POOLED if m in summary_df.columns and m != "ref"]
+    other_methods = [m for m in summary_df.columns if m not in METHODS_POOLED and m != "ref"]
+    summary_df = summary_df[methods_in_plot + other_methods]
+
+    out_path = os.path.join(outdir, "per_state_kappa_summary.png")
+    _save_kappa_heatmap(summary_df, "Mean Per-state Cohen's Kappa vs Reference (Summary)", out_path)
 
 
 # ---------------------------------------------------------------------------
@@ -978,89 +1100,109 @@ def _plot_reference_distribution(kappa_path, jaccard_path, outfile,
     print(f"  saved {outfile}")
 
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="Cross-dataset summary bar plots and violin plot.")
-    ap.add_argument("--datasets",      nargs="*", default=[])
-    ap.add_argument("--methods-dirs",  nargs="*", dest="methods_dirs", default=[],
-                    help="{ds}/methods/ovlp directories (for bar plots)")
-    ap.add_argument("--analysis-dirs", nargs="*", dest="analysis_dirs", default=[],
-                    help="{ds}/analysis/ovlp directories (for bar plots)")
-    ap.add_argument("--outdir",        default=None,
-                    help="Output directory for summary bar plot PNGs")
-    # Violin plot args (optional)
-    ap.add_argument("--workdir",       default=None,
-                    help="Pipeline workdir (for violin plot)")
-    ap.add_argument("--markups-dir",   default=None, dest="markups_dir",
-                    help="markups/ directory containing 15state/ (for violin plot)")
-    ap.add_argument("--cells",         nargs="*", default=[],
-                    help="Cell name per dataset (for violin plot)")
-    ap.add_argument("--methods",       nargs="*", default=[],
-                    help="Method keys to plot (e.g. chromhmm_default kmeans_omni)")
-    ap.add_argument("--nstates",       type=int, default=15)
-    ap.add_argument("--match-method",  default="comb", dest="match_method",
-                    choices=["comb", "bwem", "ovlp"],
-                    help="Match variant used for segmentation BED file names")
-    ap.add_argument("--violin-outfile",          default=None, dest="violin_outfile",
-                    help="Output PNG for per-state segment length violin")
-    ap.add_argument("--state-coverage-outfile", default=None, dest="state_coverage_outfile",
-                    help="Output PNG for per-state genomic coverage fraction")
-    ap.add_argument("--peak-count-outfile",  default=None, dest="peak_count_outfile",
-                    help="Output PNG for peak count bar chart")
-    ap.add_argument("--peak-length-outfile", default=None, dest="peak_length_outfile",
-                    help="Output PNG for mean peak length bar chart")
-    ap.add_argument("--peak-gap-violin-outfile", default=None, dest="peak_gap_violin_outfile",
-                    help="Output PNG for gap-length violin plot per mark per method")
-    # Reference distribution plot args (optional)
-    ap.add_argument("--ref-composition-outfile", default=None, dest="ref_composition_outfile",
-                    help="Output PNG for stacked state composition across ENCODE references")
-    ap.add_argument("--ref-kappa-matrix",   default=None, dest="ref_kappa_matrix",
-                    help="Kappa matrix TSV from inter-reference compare.py run")
-    ap.add_argument("--ref-jaccard-matrix", default=None, dest="ref_jaccard_matrix",
-                    help="Jaccard matrix TSV from inter-reference compare.py run")
-    ap.add_argument("--ref-dist-outfile",   default=None, dest="ref_dist_outfile",
-                    help="Output PNG for inter-reference similarity distribution violin (FULL)")
-    ap.add_argument("--ref-kappa-noqh-matrix",   default=None, dest="ref_kappa_noqh_matrix",
-                    help="Kappa NOQH matrix TSV from inter-reference compare.py run")
-    ap.add_argument("--ref-jaccard-noqh-matrix", default=None, dest="ref_jaccard_noqh_matrix",
-                    help="Jaccard NOQH matrix TSV from inter-reference compare.py run")
-    ap.add_argument("--ref-dist-noqh-outfile",   default=None, dest="ref_dist_noqh_outfile",
-                    help="Output PNG for inter-reference similarity distribution violin (NOQH)")
-    ap.add_argument("--method-composition-outfile", default=None, dest="method_composition_outfile",
-                    help="Output PNG for stacked state composition per method (mean across datasets)")
-    ap.add_argument("--method-ds-composition-outdir", default=None,
-                    dest="method_ds_composition_outdir",
-                    help="Output directory for per-dataset state composition plots, one PNG per method")
-    ap.add_argument("--rep-consistency-outdir", default=None, dest="rep_consistency_outdir",
-                    help="Output directory for replicate consistency bar plot PNGs")
-    ap.add_argument("--method-sim-dist-indir", default=None, dest="method_sim_dist_indir",
-                    help="inter_dataset/ directory containing per-method subdirectories")
-    ap.add_argument("--method-sim-dist-methods", nargs="*", dest="method_sim_dist_methods",
-                    default=[],
-                    help="Method keys to include in the similarity distribution plot")
-    ap.add_argument("--method-sim-dist-outfile", default=None, dest="method_sim_dist_outfile",
-                    help="Output PNG for inter-method similarity distribution (FULL)")
-    ap.add_argument("--method-sim-dist-noqh-outfile", default=None,
-                    dest="method_sim_dist_noqh_outfile",
-                    help="Output PNG for inter-method similarity distribution (NOQH)")
-    ap.add_argument("--method-sim-dist-group-a", nargs="*", default=None,
-                    dest="method_sim_dist_group_a",
-                    help="Dataset names for group A (for cross-group pair filtering)")
-    ap.add_argument("--method-sim-dist-group-b", nargs="*", default=None,
-                    dest="method_sim_dist_group_b",
-                    help="Dataset names for group B (for cross-group pair filtering)")
-    ap.add_argument("--method-sim-dist-filtered-outfile", default=None,
-                    dest="method_sim_dist_filtered_outfile",
-                    help="Output PNG for cross-group filtered similarity distribution (FULL)")
-    ap.add_argument("--method-sim-dist-filtered-noqh-outfile", default=None,
-                    dest="method_sim_dist_filtered_noqh_outfile",
-                    help="Output PNG for cross-group filtered similarity distribution (NOQH)")
-    args = ap.parse_args()
+def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
+    """Bar chart: number of segments of each dataset's own ENCODE reference.
+
+    One grey bar per dataset (the "ref" row of its comparison_table). Used to
+    show the per-dataset ENCODE references split by assay (ChIP-seq vs Mint-ChIP).
+    """
+    vals, labs = [], []
+    for ds, mdir, lab in zip(datasets, methods_dirs, labels):
+        table = _load_comparison_table(mdir)
+        if table is None:
+            continue
+        row = table[table["method"] == "ref"]
+        if row.empty or "n_segments" not in row.columns:
+            continue
+        try:
+            vals.append(float(row["n_segments"].iloc[0]) / 1000.0)
+            labs.append(lab)
+        except (TypeError, ValueError):
+            continue
+    if not vals:
+        print(f"  skipping {outfile}: no reference data")
+        return
+    fig, ax = plt.subplots(figsize=(max(4, len(labs) * 1.2), 4.2))
+    x = np.arange(len(labs))
+    ax.bar(x, vals, color=BIN_COLORS["reference"], edgecolor="white", linewidth=0.5)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labs, rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Segments (×10³)", fontsize=9)
+    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.grid(axis="y", alpha=0.3)
+    yr = ax.get_ylim()[1] - ax.get_ylim()[0]
+    for i, v in enumerate(vals):
+        ax.text(i, v + yr * 0.01, f"{v:.0f}", ha="center", va="bottom", fontsize=7)
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(os.path.abspath(outfile)), exist_ok=True)
+    fig.savefig(outfile, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved {outfile}")
+
+
+def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
+                      outdir=None, workdir=None, markups_dir=None, cells=None,
+                      methods=None, nstates=15, match_method="comb",
+                      violin_outfile=None, state_coverage_outfile=None,
+                      peak_count_outfile=None, peak_length_outfile=None,
+                      peak_gap_violin_outfile=None,
+                      ref_composition_outfile=None,
+                      ref_kappa_matrix=None, ref_jaccard_matrix=None,
+                      ref_dist_outfile=None,
+                      ref_kappa_noqh_matrix=None, ref_jaccard_noqh_matrix=None,
+                      ref_dist_noqh_outfile=None,
+                      method_composition_outfile=None,
+                      method_ds_composition_outdir=None,
+                      rep_consistency_outdir=None,
+                      method_sim_dist_indir=None, method_sim_dist_methods=None,
+                      method_sim_dist_outfile=None,
+                      method_sim_dist_noqh_outfile=None,
+                      method_sim_dist_group_a=None, method_sim_dist_group_b=None,
+                      method_sim_dist_filtered_outfile=None,
+                      method_sim_dist_filtered_noqh_outfile=None):
+    """Cross-dataset summary bar plots, violins and similarity distributions.
+
+    Direct-call entry point (the former CLI). Each *_outfile / *_outdir argument
+    that is set selects one plot group to produce, mirroring the old inter_dataset
+    Snakemake rules. Called from analysis.ipynb.
+    """
+    args = SimpleNamespace(
+        datasets=datasets or [], methods_dirs=methods_dirs or [],
+        analysis_dirs=analysis_dirs or [], outdir=outdir, workdir=workdir,
+        markups_dir=markups_dir, cells=cells or [], methods=methods or [],
+        nstates=nstates, match_method=match_method,
+        violin_outfile=violin_outfile, state_coverage_outfile=state_coverage_outfile,
+        peak_count_outfile=peak_count_outfile, peak_length_outfile=peak_length_outfile,
+        peak_gap_violin_outfile=peak_gap_violin_outfile,
+        ref_composition_outfile=ref_composition_outfile,
+        ref_kappa_matrix=ref_kappa_matrix, ref_jaccard_matrix=ref_jaccard_matrix,
+        ref_dist_outfile=ref_dist_outfile,
+        ref_kappa_noqh_matrix=ref_kappa_noqh_matrix,
+        ref_jaccard_noqh_matrix=ref_jaccard_noqh_matrix,
+        ref_dist_noqh_outfile=ref_dist_noqh_outfile,
+        method_composition_outfile=method_composition_outfile,
+        method_ds_composition_outdir=method_ds_composition_outdir,
+        rep_consistency_outdir=rep_consistency_outdir,
+        method_sim_dist_indir=method_sim_dist_indir,
+        method_sim_dist_methods=method_sim_dist_methods or [],
+        method_sim_dist_outfile=method_sim_dist_outfile,
+        method_sim_dist_noqh_outfile=method_sim_dist_noqh_outfile,
+        method_sim_dist_group_a=method_sim_dist_group_a,
+        method_sim_dist_group_b=method_sim_dist_group_b,
+        method_sim_dist_filtered_outfile=method_sim_dist_filtered_outfile,
+        method_sim_dist_filtered_noqh_outfile=method_sim_dist_filtered_noqh_outfile)
 
     if args.methods:
-        # Update global method lists/palettes if requested via CLI
+        # Update global method lists/palettes to the requested subset.
+        global INTER_DS_METHODS, METHOD_PALETTE, METHODS_POOLED
         methods_map = {m[0]: m for m in INTER_DS_METHODS}
         new_methods = []
+        # Always keep the ENCODE reference on state-level plots (coverage,
+        # composition, violin) — their titles read "ENCODE reference vs de-novo
+        # methods", and the bar/table plots key the reference off "ref" instead,
+        # so a stray "reference" entry here is harmless to them.
+        if "reference" not in args.methods and "reference" in methods_map:
+            new_methods.append(methods_map["reference"])
         for k in args.methods:
             if k in methods_map:
                 new_methods.append(methods_map[k])
@@ -1073,19 +1215,21 @@ def main():
     # --- summary bar plots -----------------------------------------------
     if args.outdir:
         if not (len(args.datasets) == len(args.methods_dirs) == len(args.analysis_dirs)):
-            ap.error("--datasets, --methods-dirs and --analysis-dirs must have equal lengths")
+            raise ValueError("--datasets, --methods-dirs and --analysis-dirs must have equal lengths")
         os.makedirs(args.outdir, exist_ok=True)
         ds, mdirs, adirs = args.datasets, args.methods_dirs, args.analysis_dirs
 
-        data = _collect_table_col(ds, mdirs, "entropy")
+        data = _collect_table_col(ds, mdirs, "entropy", include_ref=True)
         _plot_summary(data, "Transition matrix entropy (full)",
                       "Entropy (bits)",
-                      os.path.join(args.outdir, "summary_entropy.png"))
+                      os.path.join(args.outdir, "summary_entropy.png"),
+                      order=["ref"] + METHODS_POOLED)
 
-        data = _collect_table_col(ds, mdirs, "entropy_noqh")
+        data = _collect_table_col(ds, mdirs, "entropy_noqh", include_ref=True)
         _plot_summary(data, "Transition matrix entropy (NOQH, excl. Quies/Het)",
                       "Entropy (bits)",
-                      os.path.join(args.outdir, "summary_entropy_noqh.png"))
+                      os.path.join(args.outdir, "summary_entropy_noqh.png"),
+                      order=["ref"] + METHODS_POOLED)
 
         data = _collect_table_col(ds, mdirs, "jaccard_Tx_ExpressedGeneBodies")
         _plot_summary(data, "Jaccard: Tx state vs expressed gene bodies", "Jaccard",
@@ -1097,9 +1241,15 @@ def main():
                       os.path.join(args.outdir, "summary_enrich_tx.png"),
                       partial_note=True)
 
-        data = _collect_table_col(ds, mdirs, "median_Tx_length")
+        data = _collect_table_col(ds, mdirs, "median_Tx_length", include_ref=True)
         _plot_summary(data, "Median Tx (transcription) segment length", "bp",
-                      os.path.join(args.outdir, "summary_median_tx_length.png"))
+                      os.path.join(args.outdir, "summary_median_tx_length.png"),
+                      order=["ref"] + METHODS_POOLED)
+
+        data = _collect_table_col(ds, mdirs, "mean_Tx_length", include_ref=True)
+        _plot_summary(data, "Mean Tx (transcription) segment length", "bp",
+                      os.path.join(args.outdir, "summary_mean_tx_length.png"),
+                      order=["ref"] + METHODS_POOLED)
 
         data = _collect_jaccard(ds, adirs, "Tss", "RefSeqTSS2kb.hg38")
         _plot_summary(data, "Jaccard: Tss state vs RefSeq TSS ±1 kb", "Jaccard",
@@ -1110,15 +1260,19 @@ def main():
                       os.path.join(args.outdir, "summary_jaccard_tss_atac.png"),
                       partial_note=True)
 
-        data = _collect_table_col(ds, mdirs, "n_segments") / 1000.0
+        # Total number of segments, including the ENCODE reference.
+        data = _collect_table_col(ds, mdirs, "n_segments", include_ref=True) / 1000.0
         _plot_summary(data, "Total number of segments", "Segments (×10³)",
-                      os.path.join(args.outdir, "summary_n_segments.png"))
+                      os.path.join(args.outdir, "summary_n_segments.png"),
+                      order=["ref"] + METHODS_POOLED)
+
+        _plot_per_state_kappa(ds, adirs, args.outdir, match_method=args.match_method)
 
     if args.violin_outfile or args.state_coverage_outfile:
         if not (args.workdir and args.markups_dir and args.cells):
-            ap.error("--workdir, --markups-dir and --cells are required for violin/coverage plots")
+            raise ValueError("--workdir, --markups-dir and --cells are required for violin/coverage plots")
         if len(args.datasets) != len(args.cells):
-            ap.error("--datasets and --cells must have equal lengths")
+            raise ValueError("--datasets and --cells must have equal lengths")
 
         if args.violin_outfile:
             os.makedirs(os.path.dirname(os.path.abspath(args.violin_outfile)), exist_ok=True)
@@ -1132,34 +1286,34 @@ def main():
     # --- peak count bar chart ----------------------------------------------
     if args.peak_count_outfile:
         if not args.workdir:
-            ap.error("--workdir is required for --peak-count-outfile")
+            raise ValueError("--workdir is required for --peak-count-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.peak_count_outfile)), exist_ok=True)
         _plot_peak_count(args.datasets, args.workdir, args.peak_count_outfile)
 
     # --- mean peak length bar chart ----------------------------------------
     if args.peak_length_outfile:
         if not args.workdir:
-            ap.error("--workdir is required for --peak-length-outfile")
+            raise ValueError("--workdir is required for --peak-length-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.peak_length_outfile)), exist_ok=True)
         _plot_peak_length(args.datasets, args.workdir, args.peak_length_outfile)
 
     # --- gap-length violin -------------------------------------------------
     if args.peak_gap_violin_outfile:
         if not args.workdir:
-            ap.error("--workdir is required for --peak-gap-violin-outfile")
+            raise ValueError("--workdir is required for --peak-gap-violin-outfile")
         _plot_peak_gap_violin(args.datasets, args.workdir, args.peak_gap_violin_outfile)
 
     # --- inter-reference state composition ----------------------------------
     if args.ref_composition_outfile:
         if not args.markups_dir:
-            ap.error("--markups-dir is required for --ref-composition-outfile")
+            raise ValueError("--markups-dir is required for --ref-composition-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_composition_outfile)), exist_ok=True)
         _plot_reference_composition(args.markups_dir, args.ref_composition_outfile)
 
     # --- inter-reference similarity distribution ----------------------------
     if args.ref_dist_outfile:
         if not (args.ref_kappa_matrix and args.ref_jaccard_matrix):
-            ap.error("--ref-kappa-matrix and --ref-jaccard-matrix are required "
+            raise ValueError("--ref-kappa-matrix and --ref-jaccard-matrix are required "
                      "for --ref-dist-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_outfile)), exist_ok=True)
         _plot_reference_distribution(args.ref_kappa_matrix,
@@ -1168,7 +1322,7 @@ def main():
 
     if args.ref_dist_noqh_outfile:
         if not (args.ref_kappa_noqh_matrix and args.ref_jaccard_noqh_matrix):
-            ap.error("--ref-kappa-noqh-matrix and "
+            raise ValueError("--ref-kappa-noqh-matrix and "
                      "--ref-jaccard-noqh-matrix are required for --ref-dist-noqh-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_noqh_outfile)), exist_ok=True)
         _plot_reference_distribution(args.ref_kappa_noqh_matrix,
@@ -1178,7 +1332,7 @@ def main():
     # --- inter-method similarity distribution --------------------------------
     if args.method_sim_dist_outfile or args.method_sim_dist_noqh_outfile:
         if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
-            ap.error("--method-sim-dist-indir and --method-sim-dist-methods are required "
+            raise ValueError("--method-sim-dist-indir and --method-sim-dist-methods are required "
                      "for --method-sim-dist-outfile / --method-sim-dist-noqh-outfile")
         if args.method_sim_dist_outfile:
             os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_outfile)), exist_ok=True)
@@ -1196,7 +1350,7 @@ def main():
     # --- cross-group filtered similarity distribution -------------------------
     if args.method_sim_dist_filtered_outfile or args.method_sim_dist_filtered_noqh_outfile:
         if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
-            ap.error("--method-sim-dist-indir and --method-sim-dist-methods are required "
+            raise ValueError("--method-sim-dist-indir and --method-sim-dist-methods are required "
                      "for --method-sim-dist-filtered-outfile / --method-sim-dist-filtered-noqh-outfile")
         if not (args.method_sim_dist_group_a and args.method_sim_dist_group_b):
             print("  WARNING: skipping filtered similarity distribution: "
@@ -1223,13 +1377,13 @@ def main():
     # --- replicate consistency plots ----------------------------------------
     if args.rep_consistency_outdir:
         if len(args.datasets) != len(args.methods_dirs):
-            ap.error("--datasets and --methods-dirs must have equal lengths")
+            raise ValueError("--datasets and --methods-dirs must have equal lengths")
         _plot_rep_consistency(args.datasets, args.methods_dirs, args.rep_consistency_outdir)
 
     # --- method state composition -------------------------------------------
     if args.method_composition_outfile:
         if not args.markups_dir:
-            ap.error("--markups-dir is required for --method-composition-outfile")
+            raise ValueError("--markups-dir is required for --method-composition-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.method_composition_outfile)), exist_ok=True)
         _plot_method_composition(args.datasets, args.cells, args.workdir, args.markups_dir,
                                  args.nstates, args.method_composition_outfile, args.match_method)
@@ -1237,10 +1391,10 @@ def main():
     # --- per-dataset method state composition (4 supplementary plots) -------
     if args.method_ds_composition_outdir:
         if not (args.workdir and args.cells and args.datasets):
-            ap.error("--workdir, --datasets and --cells are required for "
+            raise ValueError("--workdir, --datasets and --cells are required for "
                      "--method-ds-composition-outdir")
         if len(args.datasets) != len(args.cells):
-            ap.error("--datasets and --cells must have equal lengths")
+            raise ValueError("--datasets and --cells must have equal lengths")
         os.makedirs(args.method_ds_composition_outdir, exist_ok=True)
         _supp_methods = [
             ("chromhmm_default", "Default ChromHMM"),
@@ -1258,7 +1412,3 @@ def main():
                 args.datasets, args.cells, args.workdir, args.nstates,
                 method_key, method_label, outfile, args.match_method,
             )
-
-
-if __name__ == "__main__":
-    main()

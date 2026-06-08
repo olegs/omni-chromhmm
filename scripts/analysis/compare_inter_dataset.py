@@ -9,8 +9,8 @@ Usage:
     compare_inter_dataset.py --methods M1 M2 ... --indir DIR --outfile OUT.tsv
 """
 
-import argparse
 import os
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -35,16 +35,12 @@ def _upper_pairs(df):
                 yield li, lj, df.loc[li, lj]
 
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="Aggregate inter-dataset kappa matrices into a comparison table.")
-    ap.add_argument("--methods", nargs="+", required=True,
-                    help="Method keys to aggregate (e.g. chromhmm_omni kmeans_omni ...)")
-    ap.add_argument("--indir", required=True,
-                    help="Root directory containing per-method subdirs")
-    ap.add_argument("--outfile", required=True,
-                    help="Output TSV path")
-    args = ap.parse_args()
+def run_compare_inter_dataset(methods, indir, outfile):
+    """Aggregate inter-dataset kappa matrices into a comparison table.
+
+    Direct-call entry point (the former CLI); called from analysis.ipynb.
+    """
+    args = SimpleNamespace(methods=methods, indir=indir, outfile=outfile)
 
     rows = []
     for method in args.methods:
@@ -86,7 +82,3 @@ def main():
     df = df[cols].sort_values(["method", "ds_a", "ds_b"])
     df.to_csv(args.outfile, sep="\t", index=False, float_format="%.4f")
     print(f"Saved {len(df)} rows to {args.outfile}")
-
-
-if __name__ == "__main__":
-    main()

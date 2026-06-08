@@ -46,13 +46,18 @@ rule match_segmentation_ovlp:
     output:
         bed="{bedpath}_ovlp_matched.bed",
         em=temp("{bedpath}_ovlp_matched.bw_emissions.npz"),
+        matrix_png="{bedpath}_ovlp_matched.match.png",
+        matrix_map="{bedpath}_ovlp_matched.match.mapping.tsv",
+    params:
+        mprefix="{bedpath}_ovlp_matched.match",
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/python.yaml"
     shell:
         "python {SCRIPTS_DIR}/match.py match --alpha 1.0 "
         "--ref {input.ref} --work {input.work} "
-        "--work-emissions {input.work_em} --remap-emissions {output.em} > {output.bed}"
+        "--work-emissions {input.work_em} --remap-emissions {output.em} "
+        "--matrix-out {params.mprefix} > {output.bed}"
 
 
 # --- Emissions pre-computation --------------------------------------------
@@ -69,7 +74,7 @@ rule compute_emissions:
     output: temp("{bedpath}.bw_emissions.npz")
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
-    conda: "../envs/bio.yaml"
+    conda: "../envs/python.yaml"
     params:
         marks=" ".join(MARKS),
         bigwigs=lambda w: " ".join(_folder_bigwigs(_emissions_folder(w.bedpath))),
@@ -92,14 +97,18 @@ rule match_segmentation:
     output:
         bed="{bedpath}_comb_matched.bed",
         em=temp("{bedpath}_comb_matched.bw_emissions.npz"),
+        matrix_png="{bedpath}_comb_matched.match.png",
+        matrix_map="{bedpath}_comb_matched.match.mapping.tsv",
+    params:
+        mprefix="{bedpath}_comb_matched.match",
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
-    conda: "../envs/bio.yaml"
+    conda: "../envs/python.yaml"
     shell:
         "python {SCRIPTS_DIR}/match.py match "
         "--ref {input.ref} --ref-emissions {input.ref_em} "
         "--work {input.work} --work-emissions {input.work_em} "
-        "--remap-emissions {output.em} > {output.bed}"
+        "--remap-emissions {output.em} --matrix-out {params.mprefix} > {output.bed}"
 
 
 # --- Emissions-only matching ----------------------------------------------
@@ -114,11 +123,15 @@ rule match_segmentation_em:
     output:
         bed="{bedpath}_bwem_matched.bed",
         em=temp("{bedpath}_bwem_matched.bw_emissions.npz"),
+        matrix_png="{bedpath}_bwem_matched.match.png",
+        matrix_map="{bedpath}_bwem_matched.match.mapping.tsv",
+    params:
+        mprefix="{bedpath}_bwem_matched.match",
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
-    conda: "../envs/bio.yaml"
+    conda: "../envs/python.yaml"
     shell:
         "python {SCRIPTS_DIR}/match.py match --alpha 0 "
         "--ref {input.ref} --ref-emissions {input.ref_em} "
         "--work {input.work} --work-emissions {input.work_em} "
-        "--remap-emissions {output.em} > {output.bed}"
+        "--remap-emissions {output.em} --matrix-out {params.mprefix} > {output.bed}"

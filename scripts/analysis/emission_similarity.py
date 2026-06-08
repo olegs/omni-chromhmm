@@ -33,9 +33,9 @@ Usage:
         --outdir        inter_dataset/summary_plots
 """
 
-import argparse
 import os
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -76,11 +76,16 @@ EMISSION_SUBDIRS = {
 # ---------------------------------------------------------------------------
 
 def _load_emissions_tsv(path):
-    """Load state_emissions.tsv; return (states, mat) or None if missing."""
+    """Load state_emissions.tsv; return (states, mat, marks) or None if missing."""
     if not os.path.exists(path):
         return None
-    df = pd.read_csv(path, sep="\t", index_col=0)
-    return list(df.index), df.values.astype(float)
+    try:
+        df = pd.read_csv(path, sep="\t", index_col=0)
+        if df.empty:
+            return None
+        return list(df.index), df.values.astype(float), list(df.columns)
+    except Exception:
+        return None
 
 
 def _analysis_base(analysis_dir, method):
@@ -161,10 +166,10 @@ def collect_records(datasets, analysis_dirs, methods):
             for etype in EMISSION_TYPES:
                 path = os.path.join(base, EMISSION_SUBDIRS[etype],
                                     "state_emissions.tsv")
-                result = _load_emissions_tsv(path)
-                if result is None:
+                res = _load_emissions_tsv(path)
+                if res is None:
                     continue
-                _, mat = result
+                _, mat, _ = res
                 mean_sim, std_sim = _pairwise_cosine_sim(mat)
                 mean_g, std_g = _mean_gini(mat)
                 records.append({
@@ -354,14 +359,30 @@ def collect_inter_dataset_binem_records(datasets, analysis_dirs, methods,
     Returns DataFrame with columns: method, ds_a, ds_b, mean_sim.
     """
     emissions = {}
+    all_marks = set()
+
+    # First pass: collect emissions and identify common marks to align vectors
     for ds, adir in zip(datasets, analysis_dirs):
         for method in methods:
             base = _analysis_base(adir, method)
             path = os.path.join(base, EMISSION_SUBDIRS["bin"], "state_emissions.tsv")
-            result = _load_emissions_tsv(path)
-            if result is not None:
-                states, mat = result
-                emissions[(ds, method)] = {s: mat[i] for i, s in enumerate(states)}
+            res = _load_emissions_tsv(path)
+            
+            # Robust fallback for chromhmm_default if analysis skipped
+            if res is None and method == "chromhmm_default":
+                res = _fallback_chromhmm_default_emissions(ds, adir)
+
+            if res is not None:
+                states, mat, marks = res
+                # Convert to dict of {state: {mark: value}} to allow alignment
+                state_ems = {}
+                for i, s in enumerate(states):
+                    state_ems[s] = {m: mat[i, j] for j, m in enumerate(marks)}
+                emissions[(ds, method)] = state_ems
+                all_marks.update(marks)
+
+    # Sort marks for consistent vector ordering
+    sorted_marks = sorted(list(all_marks))
 
     records = []
     n = len(datasets)
@@ -377,11 +398,25 @@ def collect_inter_dataset_binem_records(datasets, analysis_dirs, methods,
                 em_b = emissions.get((ds_b, method))
                 if em_a is None or em_b is None:
                     continue
-                common = set(em_a) & set(em_b)
-                if not common:
+                common_states = set(em_a) & set(em_b)
+                if not common_states:
                     continue
-                sims = [_cosine_sim(em_a[s], em_b[s]) for s in common]
-                sims = [s for s in sims if not np.isnan(s)]
+                
+                # Identify common marks for this pair to avoid NaN in cosine
+                marks_a = set(next(iter(em_a.values())).keys())
+                marks_b = set(next(iter(em_b.values())).keys())
+                common_marks = sorted(list(marks_a & marks_b))
+                if not common_marks:
+                    continue
+
+                sims = []
+                for s in common_states:
+                    vec_a = np.array([em_a[s][m] for m in common_marks])
+                    vec_b = np.array([em_b[s][m] for m in common_marks])
+                    sim = _cosine_sim(vec_a, vec_b)
+                    if not np.isnan(sim):
+                        sims.append(sim)
+                
                 if sims:
                     records.append({
                         "method":   method,
@@ -390,6 +425,79 @@ def collect_inter_dataset_binem_records(datasets, analysis_dirs, methods,
                         "mean_sim": float(np.mean(sims)),
                     })
     return pd.DataFrame(records)
+
+
+def _fallback_chromhmm_default_emissions(ds, adir):
+    """Fallback: reconstruct matched chromhmm_default emissions from original result."""
+    # ChromHMM result dir is sibling of analysis dir's parent usually
+    # e.g. ds/analysis/comb -> ds/chromhmm_default_result
+    res_dir = os.path.join(os.path.dirname(os.path.dirname(adir)), "chromhmm_default_result")
+    if not os.path.isdir(res_dir):
+        # Try one level up if adir was already ds/analysis
+        res_dir = os.path.join(os.path.dirname(adir), "chromhmm_default_result")
+        if not os.path.isdir(res_dir):
+            return None
+
+    # Find cell name from directory
+    cell = None
+    try:
+        for f in os.listdir(res_dir):
+            if f.endswith("_emissions.txt"):
+                cell = f.split("_15_emissions.txt")[0]
+                break
+    except OSError:
+        return None
+    if not cell:
+        return None
+
+    orig_bed = os.path.join(res_dir, f"{cell}_15_dense.bed")
+    matched_bed = os.path.join(res_dir, f"{cell}_15_dense_comb_matched.bed")
+    emissions_txt = os.path.join(res_dir, f"{cell}_15_emissions.txt")
+
+    if not (os.path.exists(orig_bed) and os.path.exists(matched_bed) and os.path.exists(emissions_txt)):
+        return None
+
+    # Infer mapping from first few segments
+    mapping = {}
+    try:
+        with open(orig_bed) as f1, open(matched_bed) as f2:
+            l1 = f1.readline()
+            while l1 and l1.startswith("track"): l1 = f1.readline()
+            l2 = f2.readline()
+            while l2 and l2.startswith("track"): l2 = f2.readline()
+            for _ in range(1000):
+                if not l1 or not l2: break
+                s1, s2 = l1.split(), l2.split()
+                if len(s1) > 3 and len(s2) > 3 and s1[0] == s2[0] and s1[1] == s2[1]:
+                    mapping[s1[3]] = s2[3]
+                l1, l2 = f1.readline(), f2.readline()
+    except Exception:
+        return None
+
+    if not mapping:
+        return None
+
+    # Load original emissions
+    try:
+        df = pd.read_csv(emissions_txt, sep="\t")
+        df.set_index(df.columns[0], inplace=True)
+        marks = list(df.columns)
+        
+        all_matched_states = sorted(set(mapping.values()))
+        matched_states = []
+        matched_mat = []
+        for mstate in all_matched_states:
+            orig_states = [int(ostate) for ostate, ms in mapping.items() if ms == mstate]
+            if not orig_states: continue
+            avg_em = df.loc[orig_states].mean()
+            matched_states.append(mstate)
+            matched_mat.append(avg_em.values)
+        
+        if not matched_mat:
+            return None
+        return matched_states, np.array(matched_mat), marks
+    except Exception:
+        return None
 
 
 def plot_inter_dataset_binem(df, methods, outfile, cross_assay=False):
@@ -435,28 +543,23 @@ def plot_inter_dataset_binem(df, methods, outfile, cross_assay=False):
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="State emission discriminability: cosine similarity and Gini index.")
-    ap.add_argument("--datasets",      nargs="+", required=True)
-    ap.add_argument("--analysis-dirs", nargs="+", required=True,
-                    dest="analysis_dirs")
-    ap.add_argument("--methods",       nargs="*", default=None)
-    ap.add_argument("--outdir",        required=True)
-    ap.add_argument("--inter-dataset-binem-outfile", default=None,
-                    dest="inter_dataset_binem_outfile",
-                    help="Output PNG for inter-dataset binarized emission cosine similarity")
-    ap.add_argument("--cross-assay-binem-outfile", default=None,
-                    dest="cross_assay_binem_outfile",
-                    help="Output PNG for ChIP↔Mint-ChIP binarized emission cosine similarity")
-    ap.add_argument("--group-a", nargs="*", default=None, dest="group_a",
-                    help="Dataset names for group A (ChIP) for cross-assay filtering")
-    ap.add_argument("--group-b", nargs="*", default=None, dest="group_b",
-                    help="Dataset names for group B (Mint-ChIP) for cross-assay filtering")
-    args = ap.parse_args()
+def run_emission_similarity(datasets, analysis_dirs, outdir, methods=None,
+                            inter_dataset_binem_outfile=None,
+                            cross_assay_binem_outfile=None,
+                            group_a=None, group_b=None):
+    """State emission discriminability: cosine similarity and Gini index plots.
+
+    Direct-call entry point (the former CLI); called from analysis.ipynb.
+    """
+    args = SimpleNamespace(
+        datasets=datasets, analysis_dirs=analysis_dirs, outdir=outdir,
+        methods=methods,
+        inter_dataset_binem_outfile=inter_dataset_binem_outfile,
+        cross_assay_binem_outfile=cross_assay_binem_outfile,
+        group_a=group_a, group_b=group_b)
 
     if len(args.datasets) != len(args.analysis_dirs):
-        ap.error("--datasets and --analysis-dirs must have equal lengths")
+        raise ValueError("datasets and analysis_dirs must have equal lengths")
 
     methods = args.methods or [m for m in METHODS_POOLED if m != "ref"]
     os.makedirs(args.outdir, exist_ok=True)
@@ -465,7 +568,7 @@ def main():
     df = collect_records(args.datasets, args.analysis_dirs, methods)
     if df.empty:
         print("WARNING: no emission TSV files found.", file=sys.stderr)
-        sys.exit(0)
+        return
 
     for ds in args.datasets:
         df_ds = df[df["dataset"] == ds]
@@ -494,7 +597,3 @@ def main():
             plot_inter_dataset_binem(df_cross, methods,
                                      args.cross_assay_binem_outfile,
                                      cross_assay=True)
-
-
-if __name__ == "__main__":
-    main()

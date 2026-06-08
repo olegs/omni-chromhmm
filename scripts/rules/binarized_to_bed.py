@@ -11,20 +11,34 @@ Usage:
 import argparse
 import gzip
 import os
+import sys
 
 
 def load_binary(path):
     """Read one binarized file. Returns (chrom, marks, rows) where rows is list of int lists."""
-    opener = gzip.open if str(path).endswith(".gz") else open
-    with opener(path, "rt") as f:
-        cell_chr = f.readline().rstrip("\n").split("\t")
-        chrom = cell_chr[1]
-        marks = f.readline().rstrip("\n").split("\t")
-        rows = []
-        for line in f:
-            line = line.rstrip("\n")
-            if line:
-                rows.append(list(map(int, line.split("\t"))))
+    rows = []
+    chrom = "chrUnknown"
+    marks = []
+    try:
+        opener = gzip.open if str(path).endswith(".gz") else open
+        with opener(path, "rt") as f:
+            line1 = f.readline()
+            if not line1:
+                return chrom, marks, rows
+            cell_chr = line1.rstrip("\n").split("\t")
+            chrom = cell_chr[1] if len(cell_chr) > 1 else "chrUnknown"
+            
+            line2 = f.readline()
+            if not line2:
+                return chrom, marks, rows
+            marks = line2.rstrip("\n").split("\t")
+            
+            for line in f:
+                line = line.rstrip("\n")
+                if line:
+                    rows.append(list(map(int, line.split("\t"))))
+    except (EOFError, gzip.BadGzipFile) as e:
+        print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
     return chrom, marks, rows
 
 

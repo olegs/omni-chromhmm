@@ -11,13 +11,28 @@ from pathlib import Path
 
 def load_binary(path):
     """Read one ChromHMM BinarizeBam / multiinter file -> (chrom, marks, 0/1 matrix)."""
-    opener = gzip.open if str(path).endswith(".gz") else open
-    with opener(path, "rt") as f:
-        cell_chr = f.readline().rstrip("\n").split("\t")
-        chrom = cell_chr[1]
-        marks = f.readline().rstrip("\n").split("\t")
-        rows = [list(map(int, line.rstrip("\n").split("\t")))
-                for line in f if line.strip()]
+    rows = []
+    chrom = "chrUnknown"
+    marks = []
+    try:
+        opener = gzip.open if str(path).endswith(".gz") else open
+        with opener(path, "rt") as f:
+            line1 = f.readline()
+            if not line1:
+                return chrom, marks, np.asarray(rows, dtype=np.int8)
+            cell_chr = line1.rstrip("\n").split("\t")
+            chrom = cell_chr[1] if len(cell_chr) > 1 else "chrUnknown"
+            
+            line2 = f.readline()
+            if not line2:
+                return chrom, marks, np.asarray(rows, dtype=np.int8)
+            marks = line2.rstrip("\n").split("\t")
+            
+            for line in f:
+                if line.strip():
+                    rows.append(list(map(int, line.rstrip("\n").split("\t"))))
+    except (EOFError, gzip.BadGzipFile) as e:
+        print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
     return chrom, marks, np.asarray(rows, dtype=np.int8)
 
 

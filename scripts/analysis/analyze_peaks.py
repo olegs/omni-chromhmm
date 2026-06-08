@@ -22,12 +22,12 @@ Outputs (all under --outdir):
   jaccard_rep1_vs_rep2.png grouped bar chart: Jaccard between replicates per mark
 """
 
-import argparse
 import glob
 import gzip
 import os
 import sys
 from collections import defaultdict
+from types import SimpleNamespace
 
 import matplotlib
 matplotlib.use("Agg")
@@ -45,18 +45,21 @@ import seaborn as sns
 def load_bed_regions(path):
     """Return list of (chrom, start, end) from a BED/peak file (cols 0-2)."""
     regions = []
-    opener = gzip.open(path, "rt") if path.endswith(".gz") else open(path)
-    with opener as fh:
-        for line in fh:
-            if line.startswith("#") or line.startswith("track") or line.startswith("browser"):
-                continue
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < 3:
-                continue
-            try:
-                regions.append((parts[0], int(parts[1]), int(parts[2])))
-            except ValueError:
-                continue
+    try:
+        opener = gzip.open(path, "rt") if path.endswith(".gz") else open(path)
+        with opener as fh:
+            for line in fh:
+                if line.startswith("#") or line.startswith("track") or line.startswith("browser"):
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 3:
+                    continue
+                try:
+                    regions.append((parts[0], int(parts[1]), int(parts[2])))
+                except ValueError:
+                    continue
+    except (EOFError, gzip.BadGzipFile) as e:
+        print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
     return regions
 
 
@@ -234,15 +237,14 @@ def _bar_plot(df, value_col, ylabel, title, outpath):
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--ds", required=True, help="Dataset root directory")
-    ap.add_argument("--cell", required=True, help="Cell name (for binary file glob)")
-    ap.add_argument("--marks", nargs="+", required=True)
-    ap.add_argument("--omni-bin", type=int, default=100)
-    ap.add_argument("--chromhmm-bin", type=int, default=200)
-    ap.add_argument("--outdir", required=True)
-    args = ap.parse_args()
+def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
+    """Per-mark peak statistics, gap lengths and replicate Jaccard for all callers.
+
+    Direct-call entry point (the former CLI). Writes peak_stats.tsv,
+    gap_lengths.tsv.gz and bar plots under *outdir*; called from analysis.ipynb.
+    """
+    args = SimpleNamespace(ds=ds, cell=cell, marks=marks, outdir=outdir,
+                           omni_bin=omni_bin, chromhmm_bin=chromhmm_bin)
 
     os.makedirs(args.outdir, exist_ok=True)
 
@@ -285,16 +287,27 @@ def main():
             else:
                 print(f"  missing: {path}", file=sys.stderr)
 
-        # ChromHMM default — parse binary files
+        # ChromHMM default — parse binary files, falling back to the per-mark
+        # result BEDs (chromhmm_default_result/{mark}.bed) when the binary files
+        # are absent. The binary files are pipeline temp() outputs and may have
+        # been cleaned up (e.g. the Mint datasets), but the merged per-mark BEDs
+        # carry the same default-binarization peak regions.
         binary_dir = os.path.join(folder_path, "chromhmm_default")
+        result_dir = os.path.join(folder_path, "chromhmm_default_result")
+        chrom_peaks = {}
         if os.path.isdir(binary_dir):
             chrom_peaks = load_chromhmm_binary_peaks(binary_dir, args.cell,
                                                      bin_size=args.chromhmm_bin)
-            for mark in marks:
-                if mark in chrom_peaks:
-                    regions["Default"][mark][folder_key] = chrom_peaks[mark]
-                else:
-                    print(f"  missing chromhmm mark {mark} in {binary_dir}", file=sys.stderr)
+        for mark in marks:
+            if chrom_peaks.get(mark):
+                regions["Default"][mark][folder_key] = chrom_peaks[mark]
+                continue
+            bed = os.path.join(result_dir, f"{mark}.bed")
+            if os.path.exists(bed):
+                regions["Default"][mark][folder_key] = load_bed_regions(bed)
+            else:
+                print(f"  missing chromhmm default peaks for {mark} in {folder_path}",
+                      file=sys.stderr)
 
     # -----------------------------------------------------------------------
     # Build stats table
@@ -357,7 +370,3 @@ def main():
                   os.path.join(args.outdir, "jaccard_rep1_vs_rep2.png"))
 
     print("Done.", file=sys.stderr)
-
-
-if __name__ == "__main__":
-    main()
