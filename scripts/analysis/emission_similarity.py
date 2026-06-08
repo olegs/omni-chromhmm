@@ -30,7 +30,7 @@ Usage:
     emission_similarity.py \\
         --datasets      imr90 monocytes monocytes_mint gm12878_mint \\
         --analysis-dirs imr90/analysis/ovlp monocytes/analysis/ovlp ... \\
-        --outdir        inter_dataset/summary_plots
+        --outdir        out/summary_plots
 """
 
 import os
@@ -347,7 +347,7 @@ def _cosine_sim(vec_a, vec_b):
     return float(np.dot(vec_a, vec_b) / (na * nb))
 
 
-def collect_inter_dataset_binem_records(datasets, analysis_dirs, methods,
+def collect_out_binem_records(datasets, analysis_dirs, methods,
                                         group_a=None, group_b=None):
     """For each method and dataset pair, compute mean cosine similarity between
     same-named state binarized emission vectors (name-based matching on
@@ -500,7 +500,7 @@ def _fallback_chromhmm_default_emissions(ds, adir):
         return None
 
 
-def plot_inter_dataset_binem(df, methods, outfile, cross_assay=False):
+def plot_out_binem(df, methods, outfile, cross_assay=False):
     """Violin plot: per-method distribution of inter-dataset binarized emission cosine similarity."""
     if df.empty:
         print(f"  skipping {outfile}: no data", file=sys.stderr)
@@ -544,7 +544,7 @@ def plot_inter_dataset_binem(df, methods, outfile, cross_assay=False):
 # ---------------------------------------------------------------------------
 
 def run_emission_similarity(datasets, analysis_dirs, outdir, methods=None,
-                            inter_dataset_binem_outfile=None,
+                            out_binem_outfile=None,
                             cross_assay_binem_outfile=None,
                             group_a=None, group_b=None):
     """State emission discriminability: cosine similarity and Gini index plots.
@@ -554,7 +554,7 @@ def run_emission_similarity(datasets, analysis_dirs, outdir, methods=None,
     args = SimpleNamespace(
         datasets=datasets, analysis_dirs=analysis_dirs, outdir=outdir,
         methods=methods,
-        inter_dataset_binem_outfile=inter_dataset_binem_outfile,
+        out_binem_outfile=out_binem_outfile,
         cross_assay_binem_outfile=cross_assay_binem_outfile,
         group_a=group_a, group_b=group_b)
 
@@ -582,18 +582,18 @@ def run_emission_similarity(datasets, analysis_dirs, outdir, methods=None,
     plot_gini_summary(df, args.datasets,
         os.path.join(args.outdir, "emission_gini_summary.png"))
 
-    if args.inter_dataset_binem_outfile or args.cross_assay_binem_outfile:
+    if args.out_binem_outfile or args.cross_assay_binem_outfile:
         print("Collecting inter-dataset binarized emission data ...")
-        df_inter = collect_inter_dataset_binem_records(
+        df_inter = collect_out_binem_records(
             args.datasets, args.analysis_dirs, methods)
-        if args.inter_dataset_binem_outfile:
-            plot_inter_dataset_binem(df_inter, methods,
-                                     args.inter_dataset_binem_outfile,
+        if args.out_binem_outfile:
+            plot_out_binem(df_inter, methods,
+                                     args.out_binem_outfile,
                                      cross_assay=False)
         if args.cross_assay_binem_outfile:
-            df_cross = collect_inter_dataset_binem_records(
+            df_cross = collect_out_binem_records(
                 args.datasets, args.analysis_dirs, methods,
                 group_a=args.group_a, group_b=args.group_b)
-            plot_inter_dataset_binem(df_cross, methods,
+            plot_out_binem(df_cross, methods,
                                      args.cross_assay_binem_outfile,
                                      cross_assay=True)

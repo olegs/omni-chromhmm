@@ -17,7 +17,7 @@ Plots are generated:
 Importable module (no CLI). Drive it from analysis.ipynb:
     from summary_plots import run_summary_plots
     run_summary_plots(datasets=[...], methods_dirs=[...], analysis_dirs=[...],
-                      outdir="inter_dataset/summary_plots")
+                      outdir="out/summary_plots")
 Each *_outfile / *_outdir argument that is set selects one plot group.
 """
 
@@ -1163,7 +1163,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
     """Cross-dataset summary bar plots, violins and similarity distributions.
 
     Direct-call entry point (the former CLI). Each *_outfile / *_outdir argument
-    that is set selects one plot group to produce, mirroring the old inter_dataset
+    that is set selects one plot group to produce, mirroring the old out
     Snakemake rules. Called from analysis.ipynb.
     """
     args = SimpleNamespace(

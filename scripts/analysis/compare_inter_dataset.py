@@ -35,7 +35,7 @@ def _upper_pairs(df):
                 yield li, lj, df.loc[li, lj]
 
 
-def run_compare_inter_dataset(methods, indir, outfile):
+def run_compare_out(methods, indir, outfile):
     """Aggregate inter-dataset kappa matrices into a comparison table.
 
     Direct-call entry point (the former CLI); called from analysis.ipynb.
