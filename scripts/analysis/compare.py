@@ -24,6 +24,11 @@ import seaborn as sns
 from analyze import (load_bed, _natural_sort_key, _load_seg_full,
                      build_transition_matrix, transition_entropy)
 
+# Add scripts/rules to sys.path so match.py can be imported.
+_rules_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "rules"))
+if _rules_dir not in sys.path:
+    sys.path.insert(0, _rules_dir)
+
 _EXCLUDE_STATES = {"Quies", "Het"}
 from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
                    should_compare as _should_compare
@@ -265,11 +270,12 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     Uses the finer of the two bin sizes for kappa so that 200bp segments
     are compared at 100bp resolution when paired with a 100bp segmentation.
     """
-    from match import (pair_overlap as match_pair_overlap,
-                       best_mapping as match_best_mapping,
-                       compare as match_compare,
-                       state_lengths as match_state_lengths,
-                       emission_cosine_mapping)
+    import match
+    match_pair_overlap = match.pair_overlap
+    match_best_mapping = match.best_mapping
+    match_compare = match.compare
+    match_state_lengths = match.state_lengths
+    match_emission_cosine_mapping = match.emission_cosine_mapping
 
     bin_size = min(bin_size_i, bin_size_j)
     segs_i = load_bed(path_i)
@@ -310,7 +316,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     em_i = _load_emissions_npz(bin_emission_path_i)
     em_j = _load_emissions_npz(bin_emission_path_j)
     if em_i is not None and em_j is not None:
-        avg_sim, em_mapping = emission_cosine_mapping(em_i[0], em_i[1], em_j[0], em_j[1])
+        avg_sim, em_mapping = match_emission_cosine_mapping(em_i[0], em_i[1], em_j[0], em_j[1])
         row["emission_similarity"] = avg_sim
         row["emission_mapping"] = "; ".join(
             f"{k}->{v}" for k, v in sorted(em_mapping.items()))
@@ -318,7 +324,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     bw_i = _load_emissions_npz(bw_emission_path_i)
     bw_j = _load_emissions_npz(bw_emission_path_j)
     if bw_i is not None and bw_j is not None:
-        avg_bw_sim, _ = emission_cosine_mapping(bw_i[0], bw_i[1], bw_j[0], bw_j[1])
+        avg_bw_sim, _ = match_emission_cosine_mapping(bw_i[0], bw_i[1], bw_j[0], bw_j[1])
         row["bw_emission_similarity"] = avg_bw_sim
 
     # No-Quies/Het variants.

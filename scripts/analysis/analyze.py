@@ -795,7 +795,13 @@ def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
             annotation_items.append((label, p))
 
     if rnaseq and gtf:
-        annotation_items.extend(make_expressed_annotations(rnaseq, gtf))
+        if os.path.exists(rnaseq) and os.path.exists(gtf):
+            annotation_items.extend(make_expressed_annotations(rnaseq, gtf))
+        else:
+            if not os.path.exists(rnaseq):
+                print(f"Warning: RNA-seq file {rnaseq} not found, skipping expressed annotations.", file=sys.stderr)
+            if not os.path.exists(gtf):
+                print(f"Warning: GTF file {gtf} not found, skipping expressed annotations.", file=sys.stderr)
 
     if annotation_items:
         enrich_df = compute_enrichment(segs, annotation_items)

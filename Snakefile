@@ -209,7 +209,13 @@ def _default_binary_files(w):
 def all_results(ds):
     cfg = DATASETS[ds]
     cell = cfg["cell"]
-    t = [f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bed"]
+    t = [f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bed",
+         f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bw_emissions.npz"]
+
+    if cfg.get("rnaseq"):
+        t.append(f"{ds}/rnaseq_{cfg['rnaseq']}.tsv")
+    if cfg.get("atac"):
+        t.append(f"{ds}/atac_{cfg['atac']}.bed.gz")
 
     for folder in _folders(ds):
         t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
@@ -229,6 +235,8 @@ def all_results(ds):
     # Per-state matching matrix (heatmap) produced alongside every matched BED.
     t += [f.replace("_matched.bed", "_matched.match.png")
           for f in list(t) if f.endswith("_matched.bed")]
+    t += [f.replace(".bed", ".bw_emissions.npz")
+          for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed")]
 
     return t
 
