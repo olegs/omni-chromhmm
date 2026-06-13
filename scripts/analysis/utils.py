@@ -34,17 +34,17 @@ import os
 METHOD_ORDER = [
     "ref",
     "chromhmm_default",
-    "chromhmm_omni",   "kmeans_omni",
     "chromhmm_homer",  "kmeans_homer",
     "chromhmm_macs2",  "kmeans_macs2",
+    "chromhmm_omni",   "kmeans_omni",
     "chromhmm_default_rep1",
-    "chromhmm_omni_rep1",  "kmeans_omni_rep1",
     "chromhmm_homer_rep1", "kmeans_homer_rep1",
     "chromhmm_macs2_rep1", "kmeans_macs2_rep1",
+    "chromhmm_omni_rep1",  "kmeans_omni_rep1",
     "chromhmm_default_rep2",
-    "chromhmm_omni_rep2",  "kmeans_omni_rep2",
     "chromhmm_homer_rep2", "kmeans_homer_rep2",
     "chromhmm_macs2_rep2", "kmeans_macs2_rep2",
+    "chromhmm_omni_rep2",  "kmeans_omni_rep2",
 ]
 
 # {method: rank} — for deterministic sorting.

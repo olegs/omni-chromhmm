@@ -180,19 +180,21 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
     entropy_data = load_entropy(comparison_dir)
     kappa_mat        = _load_matrix(comparison_dir, "kappa_matrix.tsv")
     jaccard_mat      = _load_matrix(comparison_dir, "jaccard_similarity_matrix.tsv")
+    comp_mat         = _load_matrix(comparison_dir, "composition_similarity_matrix.tsv")
     overlap_mat      = _load_matrix(comparison_dir, "overlap_matrix.tsv")
     emission_mat     = _load_matrix(comparison_dir, "emission_similarity_matrix.tsv")
     bw_emission_mat  = _load_matrix(comparison_dir, "bw_emission_similarity_matrix.tsv")
     kappa_noqh_mat   = _load_matrix(comparison_dir, "kappa_noqh_matrix.tsv")
-    overlap_noqh_mat = _load_matrix(comparison_dir, "overlap_noqh_matrix.tsv")
     jaccard_noqh_mat = _load_matrix(comparison_dir, "jaccard_noqh_matrix.tsv")
+    comp_noqh_mat    = _load_matrix(comparison_dir, "composition_noqh_similarity_matrix.tsv")
+    overlap_noqh_mat = _load_matrix(comparison_dir, "overlap_noqh_matrix.tsv")
     seg_stats    = load_segment_stats(comparison_dir)
 
     # seg_names = union of all labels seen across every metric source
     seg_names = set(entropy_data) | set(seg_stats)
-    for mat in (kappa_mat, jaccard_mat, overlap_mat,
+    for mat in (kappa_mat, jaccard_mat, comp_mat, overlap_mat,
                 emission_mat, bw_emission_mat,
-                kappa_noqh_mat, overlap_noqh_mat, jaccard_noqh_mat):
+                kappa_noqh_mat, jaccard_noqh_mat, comp_noqh_mat, overlap_noqh_mat):
         if mat is not None:
             seg_names |= set(mat.index)
     a2s = _build_analysis_to_seg_map(methods, seg_names)
@@ -223,8 +225,12 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
         # vs reference
         if seg_name and ref_seg:
             for mat, col in [
-                (kappa_mat,      "kappa_vs_ref"),
-                (kappa_noqh_mat, "kappa_noqh_vs_ref"),
+                (kappa_mat,        "kappa_vs_ref"),
+                (kappa_noqh_mat,   "kappa_noqh_vs_ref"),
+                (jaccard_mat,      "jaccard_vs_ref"),
+                (jaccard_noqh_mat, "jaccard_noqh_vs_ref"),
+                (comp_mat,         "composition_vs_ref"),
+                (comp_noqh_mat,    "composition_noqh_vs_ref"),
             ]:
                 if mat is not None and seg_name in mat.index and ref_seg in mat.columns:
                     val = mat.loc[seg_name, ref_seg]
@@ -239,9 +245,11 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             base_rep_cols = [
                 (kappa_mat,      "kappa_rep1_vs_rep2"),
                 (jaccard_mat,    "jaccard_rep1_vs_rep2"),
+                (comp_mat,       "composition_rep1_vs_rep2"),
                 (overlap_mat,    "overlap_rep1_vs_rep2"),
                 (kappa_noqh_mat,   "kappa_noqh_rep1_vs_rep2"),
                 (jaccard_noqh_mat, "jaccard_noqh_rep1_vs_rep2"),
+                (comp_noqh_mat,    "composition_noqh_rep1_vs_rep2"),
                 (overlap_noqh_mat, "overlap_noqh_rep1_vs_rep2"),
             ]
             for mat, col_name in base_rep_cols:
@@ -363,9 +371,11 @@ def plot_comparison(df, outdir):
     _REP_COLS = [
         ("kappa_rep1_vs_rep2",          "Replicate reproducibility (Kappa)",                    "Kappa"),
         ("jaccard_rep1_vs_rep2",        "Replicate reproducibility (Jaccard)",                  "Similarity"),
+        ("composition_rep1_vs_rep2",    "Replicate reproducibility (Composition)",              "Cosine similarity"),
         ("overlap_rep1_vs_rep2",        "Replicate reproducibility (Overlap)",                  "Overlap fraction"),
         ("kappa_noqh_rep1_vs_rep2",     "Replicate reproducibility (Kappa excl. Quies/Het)",    "Kappa"),
         ("jaccard_noqh_rep1_vs_rep2",   "Replicate reproducibility (Jaccard excl. Quies/Het)",  "Similarity"),
+        ("composition_noqh_rep1_vs_rep2", "Replicate reproducibility (Composition excl. Quies/Het)", "Cosine similarity"),
         ("overlap_noqh_rep1_vs_rep2",   "Replicate reproducibility (Overlap excl. Quies/Het)",  "Overlap fraction"),
     ]
     for col, title, ylabel in _REP_COLS:

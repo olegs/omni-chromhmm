@@ -29,6 +29,9 @@ _rules_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "rule
 if _rules_dir not in sys.path:
     sys.path.insert(0, _rules_dir)
 
+import match
+from bisect import bisect_left
+
 _EXCLUDE_STATES = {"Quies", "Het"}
 from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
                    should_compare as _should_compare
@@ -97,6 +100,8 @@ def _compute_entropy(seg_paths, bin_sizes, exclude_states=None):
     return results
 
 
+
+
 def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
     """Save entropy summary TSV and bar chart."""
     if not results:
@@ -134,7 +139,7 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
     width = 0.35
     fig, ax = plt.subplots(figsize=(max(5, len(df_full) * 0.5), 3.5))
     ax.bar(x - width / 2, df_full["total_entropy"], width,
-           label="All states", color="#4878CF")
+           label="Full", color="#4878CF")
     if not df_active.empty:
         ax.bar(x + width / 2, df_active["total_entropy"], width,
                label="Excl. Quies/Het", color="#E8833A")
@@ -261,6 +266,24 @@ def _load_emissions_npz(path):
 # Pairwise comparison
 # ---------------------------------------------------------------------------
 
+def compute_composition_similarity(segs1, segs2, exclude_states=None):
+    """Cosine similarity of state distributions (by total bp)."""
+    import match
+    l1 = match.state_lengths(segs1)
+    l2 = match.state_lengths(segs2)
+    if exclude_states:
+        l1 = {s: v for s, v in l1.items() if s not in exclude_states}
+        l2 = {s: v for s, v in l2.items() if s not in exclude_states}
+    states = sorted(set(l1.keys()) | set(l2.keys()))
+    v1 = np.array([l1.get(s, 0) for s in states], dtype=np.float64)
+    v2 = np.array([l2.get(s, 0) for s in states], dtype=np.float64)
+    n1 = np.linalg.norm(v1)
+    n2 = np.linalg.norm(v2)
+    if n1 == 0 or n2 == 0:
+        return 0.0
+    return np.dot(v1, v2) / (n1 * n2)
+
+
 def _compare_pair(i, j, path_i, path_j, label_i, label_j,
                   bin_emission_path_i, bin_emission_path_j,
                   bw_emission_path_i, bw_emission_path_j,
@@ -280,36 +303,51 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     bin_size = min(bin_size_i, bin_size_j)
     segs_i = load_bed(path_i)
     segs_j = load_bed(path_j)
-    bins_i = segmentation_to_bins(segs_i, bin_size)
-    bins_j = segmentation_to_bins(segs_j, bin_size)
 
     row = {"seg1": label_i, "seg2": label_j, "_i": i, "_j": j}
 
-    kappa, po, pe, n_bins, _ = compute_kappa(bins_i, bins_j)
-    row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
-    row["_per_state_kappa"] = compute_per_state_kappa(bins_i, bins_j)
-
     segs_full_i = _load_seg_full(path_i)
     segs_full_j = _load_seg_full(path_j)
+
+    # Composition similarity (always computed)
+    row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j)
+    row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES)
+
+    # Base-wise similarity: Kappa and Jaccard.
+    # For replicates of the same method, we use identity mapping.
+    # For all other pairs, we use the best mapping found by overlap.
+    is_rep_pair = _is_replicate(label_i) and _is_replicate(label_j) and (label_i[:-5] == label_j[:-5])
+
     overlap = match_pair_overlap(segs_full_i, segs_full_j)
     work_states = sorted({x[3] for x in segs_full_j}, key=_natural_sort_key)
     ref_states  = sorted({x[3] for x in segs_full_i}, key=_natural_sort_key)
     mapping = match_best_mapping(overlap, work_states, ref_states)
+
+    bins_i = segmentation_to_bins(segs_i, bin_size)
+    bins_j = segmentation_to_bins(segs_j, bin_size)
+
+    # Effective bins_j for base-wise metrics
+    eff_bins_j = bins_j
+    if not is_rep_pair:
+        eff_bins_j = match.remap_bins(bins_j, mapping)
+
+    kappa, po, pe, n_bins, _ = compute_kappa(bins_i, eff_bins_j)
+    row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
+    row["_per_state_kappa"] = compute_per_state_kappa(bins_i, eff_bins_j)
+
     pair_dir = os.path.join(outdir, "pairs", f"{label_i}_vs_{label_j}")
     match_compare(segs_full_i, segs_full_j, overlap, mapping, pair_dir)
 
-    sim = 0.0
-    sim_path = os.path.join(pair_dir, "similarity.txt")
-    if os.path.exists(sim_path):
-        with open(sim_path) as f:
-            for line in f:
-                if "=" in line:
-                    sim = float(line.split("=")[1].strip())
-    row["jaccard_similarity"] = sim
+    # Jaccard similarity: we use the mean per-state Jaccard.
+    row["jaccard_similarity"] = compute_jaccard(bins_i, eff_bins_j)
 
-    # Overlap fraction: fraction of genome bp with identical state labels.
-    all_states = {x[3] for x in segs_full_i} | {x[3] for x in segs_full_j}
-    total_same = sum(overlap.get((s, s), 0) for s in all_states)
+    # Overlap fraction: fraction of genome bp with identical (or mapped) state labels.
+    all_ref_states = {x[3] for x in segs_full_i}
+    if is_rep_pair:
+        total_same = sum(overlap.get((s, s), 0) for s in all_ref_states)
+    else:
+        total_same = sum(overlap.get((w, mapping[w]), 0) for w in work_states if w in mapping)
+    
     genome_len = sum(match_state_lengths(segs_full_i).values()) or 1
     row["overlap_fraction"] = total_same / genome_len
 
@@ -329,14 +367,15 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
 
     # No-Quies/Het variants.
     bins_i_noqh = _filter_bins(bins_i, _EXCLUDE_STATES)
-    bins_j_noqh = _filter_bins(bins_j, _EXCLUDE_STATES)
+    bins_j_noqh = _filter_bins(eff_bins_j, _EXCLUDE_STATES)
     kappa_noqh, po_noqh, _, _, _ = compute_kappa(bins_i_noqh, bins_j_noqh)
     row["kappa_noqh"]   = kappa_noqh
     row["overlap_noqh"] = po_noqh
     row["jaccard_noqh"] = compute_jaccard(bins_i_noqh, bins_j_noqh)
 
-    print(f"  {label_i} vs {label_j}: kappa={kappa:.4f}, "
-          f"jaccard={sim:.4f}, overlap={row['overlap_fraction']:.4f}"
+    print(f"  {label_i} vs {label_j}: "
+          f"comp_sim={row['composition_similarity']:.4f}, "
+          f"kappa={row['kappa']:.4f}, jaccard={row['jaccard_similarity']:.4f}"
           + (f", emission={row['emission_similarity']:.4f}"
              if "emission_similarity" in row else ""))
     return row
@@ -378,14 +417,16 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
         if os.path.exists(p.replace(".bed", ".bw_emissions.npz"))
     }
 
-    kappa_mat        = np.zeros((n, n))
-    jaccard_mat      = np.zeros((n, n))
-    overlap_mat      = np.zeros((n, n))
-    kappa_noqh_mat   = np.zeros((n, n))
-    overlap_noqh_mat = np.zeros((n, n))
-    jaccard_noqh_mat = np.zeros((n, n))
-    em_sim_mat       = np.zeros((n, n))
-    bw_sim_mat       = np.zeros((n, n))
+    kappa_mat           = np.zeros((n, n))
+    comp_sim_mat        = np.zeros((n, n))
+    comp_sim_noqh_mat   = np.zeros((n, n))
+    jaccard_mat         = np.zeros((n, n))
+    overlap_mat         = np.zeros((n, n))
+    kappa_noqh_mat      = np.zeros((n, n))
+    overlap_noqh_mat    = np.zeros((n, n))
+    jaccard_noqh_mat    = np.zeros((n, n))
+    em_sim_mat          = np.zeros((n, n))
+    bw_sim_mat          = np.zeros((n, n))
 
     pair_order = [
         (i, j)
@@ -411,6 +452,8 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
         for fut in as_completed(futures):
             row = fut.result()
             i, j = row.pop("_i"), row.pop("_j")
+            comp_sim_mat[i, j] = comp_sim_mat[j, i] = row["composition_similarity"]
+            comp_sim_noqh_mat[i, j] = comp_sim_noqh_mat[j, i] = row["composition_noqh_similarity"]
             kappa_mat[i, j] = kappa_mat[j, i] = row["kappa"]
             jaccard_mat[i, j] = jaccard_mat[j, i] = row["jaccard_similarity"]
             overlap_mat[i, j] = overlap_mat[j, i] = row["overlap_fraction"]
@@ -471,6 +514,8 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
         return df
 
     kappa_df   = _save_matrix(kappa_mat, "kappa")
+    _save_matrix(comp_sim_mat, "composition_similarity")
+    _save_matrix(comp_sim_noqh_mat, "composition_noqh_similarity")
     jaccard_df = _save_matrix(jaccard_mat, "jaccard_similarity")
     _save_matrix(overlap_mat, "overlap")
     em_df = _save_matrix(em_sim_mat, "emission_similarity")
@@ -562,7 +607,7 @@ def _plot_segment_stats(df, outdir, suffix=""):
 def run_segment_stats(seg_paths, outdir, analysis_dir=None):
     """Compute and save segment length statistics for each segmentation.
 
-    Two variants are produced, mirroring the entropy summaries: all states
+    Two variants are produced, mirroring the entropy summaries: Full
     (``segment_stats.tsv``) and NOQH (``segment_stats_noqh.tsv``, excluding the
     Quies/Het background). Each yields its own per-metric plots (e.g.
     ``max_length.png`` and ``max_length_noqh.png``).

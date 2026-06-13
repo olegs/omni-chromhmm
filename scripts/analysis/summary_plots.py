@@ -87,12 +87,12 @@ STATE_COLORS = {
 INTER_DS_METHODS = [
     ("reference",        "ENCODE Ref",      BIN_COLORS["reference"]),
     ("chromhmm_default", "Default ChromHMM", BIN_COLORS["default"]),
-    ("chromhmm_omni",    "ChromHMM OmniPeak",  BIN_COLORS["omnipeak"]),
     ("chromhmm_homer",   "ChromHMM HOMER",     BIN_COLORS["homer"]),
-    ("chromhmm_macs2",   "ChromHMM MACS2",     BIN_COLORS["macs2"]),
-    ("kmeans_omni",      "KMeans OmniPeak",    BIN_COLORS["omnipeak"]),
     ("kmeans_homer",     "KMeans HOMER",       BIN_COLORS["homer"]),
+    ("chromhmm_macs2",   "ChromHMM MACS2",     BIN_COLORS["macs2"]),
     ("kmeans_macs2",     "KMeans MACS2",       BIN_COLORS["macs2"]),
+    ("chromhmm_omni",    "ChromHMM OmniPeak",  BIN_COLORS["omnipeak"]),
+    ("kmeans_omni",      "KMeans OmniPeak",    BIN_COLORS["omnipeak"]),
 ]
 METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
 
@@ -995,6 +995,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     """
     suffix = "_noqh" if noqh else ""
     metric_configs = [
+        ("Composition", f"composition{suffix}_similarity_matrix.tsv",                 "#E8833A"),
         ("Kappa",   f"kappa{suffix}_matrix.tsv",                                        "#4878CF"),
         ("Jaccard", f"jaccard_noqh_matrix.tsv" if noqh else "jaccard_similarity_matrix.tsv",
                     "#2CA02C"),
@@ -1031,14 +1032,14 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     plot_df = pd.DataFrame(rows)
     method_labels = [_SAMPLE_TO_INFO.get(m, (m,))[0] for m in methods
                      if _SAMPLE_TO_INFO.get(m, (m,))[0] in plot_df["Method"].unique()]
-    palette = {"Kappa": "#4878CF", "Jaccard": "#2CA02C"}
+    palette = {"Composition": "#E8833A", "Kappa": "#4878CF", "Jaccard": "#2CA02C"}
 
     n_methods = len(method_labels)
     fig, ax = plt.subplots(figsize=(max(10, n_methods * 1.4 + 3), 5))
     sns.violinplot(
         data=plot_df, x="Method", y="value", hue="Metric",
         order=method_labels,
-        hue_order=["Kappa", "Jaccard"],
+        hue_order=["Composition", "Kappa", "Jaccard"],
         palette=palette,
         inner="box", cut=0, ax=ax,
     )
@@ -1047,7 +1048,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     mode = "NOQH (excl. Quies/Het)" if noqh else "Full"
-    n_pairs = plot_df[plot_df["Metric"] == "Kappa"]["Method"].count() // max(n_methods, 1)
+    n_pairs = plot_df[plot_df["Metric"] == "Composition"]["Method"].count() // max(n_methods, 1)
     pair_desc = " — ChIP↔Mint-ChIP pairs only" if (group_a and group_b) else ""
     ax.set_title(
         f"Inter-dataset similarity by method — {mode}{pair_desc}\n"
@@ -1063,10 +1064,11 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     print(f"  saved {outfile}")
 
 
-def _plot_reference_distribution(kappa_path, jaccard_path, outfile,
+def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
                                   title_suffix=""):
-    """Violin plot of pairwise Kappa/Jaccard similarity among ENCODE reference segmentations."""
+    """Violin plot of pairwise similarity among ENCODE reference segmentations."""
     metrics = [
+        ("Composition", comp_path),
         ("Kappa",   kappa_path),
         ("Jaccard", jaccard_path),
     ]
@@ -1081,17 +1083,17 @@ def _plot_reference_distribution(kappa_path, jaccard_path, outfile,
 
     fig, ax = plt.subplots(figsize=(5, 5))
     sns.violinplot(data=plot_df, x="Metric", y="value", hue="Metric",
-                   order=["Kappa", "Jaccard"],
+                   order=["Composition", "Kappa", "Jaccard"],
                    inner="box", cut=0, ax=ax, legend=False,
-                   palette={"Kappa": "#4878CF", "Jaccard": "#2CA02C"})
+                   palette={"Composition": "#E8833A", "Kappa": "#4878CF", "Jaccard": "#2CA02C"})
     ax.set_xlabel("")
     ax.set_ylabel("Pairwise similarity", fontsize=9)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    n_refs = plot_df["value"].count() // 2  # pairs per metric
+    n_refs_pairs = plot_df[plot_df["Metric"] == "Composition"]["value"].count()
     title = (
         f"Inter-reference similarity distribution{title_suffix}\n"
-        f"({int((-1 + (1 + 8 * n_refs) ** 0.5) / 2 + 1)} ENCODE references, {n_refs} pairs each metric)"
+        f"({int((-1 + (1 + 8 * n_refs_pairs) ** 0.5) / 2 + 1)} ENCODE references, {n_refs_pairs} pairs each metric)"
     )
     ax.set_title(title, fontsize=10, fontweight="bold")
     fig.tight_layout()
@@ -1266,6 +1268,22 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       os.path.join(args.outdir, "summary_n_segments.png"),
                       order=["ref"] + METHODS_POOLED)
 
+        # Similarity vs ENCODE reference (3 variants)
+        _plot_summary(_collect_table_col(ds, mdirs, "kappa_vs_ref"),
+                      "Agreement vs ENCODE reference (Kappa)", "Cohen's Kappa",
+                      os.path.join(args.outdir, "summary_kappa_vs_ref.png"),
+                      order=METHODS_POOLED)
+
+        _plot_summary(_collect_table_col(ds, mdirs, "jaccard_vs_ref"),
+                      "Agreement vs ENCODE reference (Jaccard)", "Mean per-state Jaccard",
+                      os.path.join(args.outdir, "summary_jaccard_vs_ref.png"),
+                      order=METHODS_POOLED)
+
+        _plot_summary(_collect_table_col(ds, mdirs, "composition_vs_ref"),
+                      "State composition similarity vs ENCODE reference", "Cosine similarity",
+                      os.path.join(args.outdir, "summary_composition_similarity.png"),
+                      order=METHODS_POOLED)
+
         _plot_per_state_kappa(ds, adirs, args.outdir, match_method=args.match_method)
 
     if args.violin_outfile or args.state_coverage_outfile:
@@ -1312,20 +1330,22 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
 
     # --- inter-reference similarity distribution ----------------------------
     if args.ref_dist_outfile:
-        if not (args.ref_kappa_matrix and args.ref_jaccard_matrix):
-            raise ValueError("--ref-kappa-matrix and --ref-jaccard-matrix are required "
+        if not (args.ref_comp_matrix and args.ref_kappa_matrix and args.ref_jaccard_matrix):
+            raise ValueError("--ref-comp-matrix, --ref-kappa-matrix and --ref-jaccard-matrix are required "
                      "for --ref-dist-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_outfile)), exist_ok=True)
-        _plot_reference_distribution(args.ref_kappa_matrix,
+        _plot_reference_distribution(args.ref_comp_matrix,
+                                     args.ref_kappa_matrix,
                                      args.ref_jaccard_matrix, args.ref_dist_outfile,
                                      title_suffix=" — Full")
 
     if args.ref_dist_noqh_outfile:
-        if not (args.ref_kappa_noqh_matrix and args.ref_jaccard_noqh_matrix):
-            raise ValueError("--ref-kappa-noqh-matrix and "
+        if not (args.ref_comp_noqh_matrix and args.ref_kappa_noqh_matrix and args.ref_jaccard_noqh_matrix):
+            raise ValueError("--ref-comp-noqh-matrix, --ref-kappa-noqh-matrix and "
                      "--ref-jaccard-noqh-matrix are required for --ref-dist-noqh-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_noqh_outfile)), exist_ok=True)
-        _plot_reference_distribution(args.ref_kappa_noqh_matrix,
+        _plot_reference_distribution(args.ref_comp_noqh_matrix,
+                                     args.ref_kappa_noqh_matrix,
                                      args.ref_jaccard_noqh_matrix, args.ref_dist_noqh_outfile,
                                      title_suffix=" — NOQH (excl. Quies/Het)")
 
