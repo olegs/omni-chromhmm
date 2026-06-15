@@ -44,7 +44,7 @@ METHODS_POOLED = [m for m in METHOD_ORDER
 
 
 # ---------------------------------------------------------------------------
-# Inter-dataset violin: state/method constants and helpers
+# Inter-dataset similarity: state/method constants and helpers
 # ---------------------------------------------------------------------------
 
 # Canonical chromatin state order (ENCODE 15-state naming convention)
@@ -283,6 +283,7 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     means     = data.loc[methods].mean(axis=1, skipna=True).values
     stds      = data.loc[methods].std(axis=1, skipna=True).values
     counts    = data.loc[methods].count(axis=1).values
+    ses       = stds / np.sqrt(counts)
 
     # Write a "no data" placeholder rather than skipping, so Snakemake output files always exist
     if np.all(np.isnan(means)):
@@ -298,16 +299,16 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
         return
 
     x = np.arange(len(methods))
-    fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.65), 4.2))
+    fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.8), 4.2))
 
     ax.bar(x, np.nan_to_num(means), color=colors,
            edgecolor="white", linewidth=0.5)
 
-    for i, (m, s, c) in enumerate(zip(means, stds, counts)):
+    for i, (m, se, c) in enumerate(zip(means, ses, counts)):
         if np.isnan(m) or c == 0:
             continue
-        if not np.isnan(s) and c > 1:
-            ax.errorbar(x[i], m, yerr=s, fmt="none", color="black",
+        if not np.isnan(se) and c > 1:
+            ax.errorbar(x[i], m, yerr=se, fmt="none", color="black",
                         capsize=3, linewidth=1.2)
 
     ax.set_xticks(x)
@@ -318,10 +319,10 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
 
     yrange = ax.get_ylim()[1] - ax.get_ylim()[0]
     n_ds = data.shape[1]
-    for i, (m, s, c) in enumerate(zip(means, stds, counts)):
+    for i, (m, se, c) in enumerate(zip(means, ses, counts)):
         if np.isnan(m) or c == 0:
             continue
-        top = m + (s if not np.isnan(s) and c > 1 else 0)
+        top = m + (se if not np.isnan(se) and c > 1 else 0)
         lbl = f"{m:.2f}"
         if partial_note and c < n_ds:
             lbl += f"\n(n={c})"
@@ -348,7 +349,7 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
         ax.legend(handles=legend_elements, fontsize=6,
                   bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
 
-    n_note = f"mean ± std across {n_ds} datasets"
+    n_note = f"mean ± SE across {n_ds} datasets"
     if partial_note:
         n_note += " (n = datasets with data)"
     ax.set_xlabel(n_note, fontsize=7, color="grey")
@@ -531,7 +532,7 @@ _PEAK_METHOD_COLORS = {
     "HOMER":    BIN_COLORS["homer"],
     "MACS2":    BIN_COLORS["macs2"],
 }
-_PEAK_METHOD_ORDER = ["OmniPeak", "Default", "HOMER", "MACS2"]
+_PEAK_METHOD_ORDER = ["Default", "HOMER", "MACS2", "OmniPeak"]
 _MARK_ORDER = ["H3K4me3", "H3K27ac", "H3K4me1", "H3K36me3", "H3K9me3", "H3K27me3"]
 
 
@@ -742,7 +743,7 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
         sns.barplot(
             data=plot_df, x="State", y="fraction", hue="Method",
             hue_order=labels, palette=colors,
-            estimator="mean", errorbar="sd",
+            estimator="mean", errorbar="se",
             ax=ax, capsize=0.15, err_kws={"linewidth": 1.0},
             legend=(ax is ax_top),
         )
@@ -985,10 +986,10 @@ def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
 
 def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=False,
                                          group_a=None, group_b=None):
-    """Violin plot: pairwise similarity distributions per de-novo method and metric.
+    """Bar plot: pairwise similarity distributions per de-novo method and metric.
 
     For each method the upper triangle of the kappa/Jaccard matrix is extracted
-    (one value per dataset pair) and drawn as a violin, grouped by metric.
+    (one value per dataset pair) and drawn as a bar, grouped by metric.
 
     If group_a and group_b are provided (sets of dataset name prefixes), only pairs
     where one dataset is in group_a and the other is in group_b are included.
@@ -1036,12 +1037,13 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
 
     n_methods = len(method_labels)
     fig, ax = plt.subplots(figsize=(max(10, n_methods * 1.4 + 3), 5))
-    sns.violinplot(
+    sns.barplot(
         data=plot_df, x="Method", y="value", hue="Metric",
         order=method_labels,
         hue_order=["Composition", "Kappa", "Jaccard"],
         palette=palette,
-        inner="box", cut=0, ax=ax,
+        estimator="mean", errorbar="se",
+        ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
     )
     ax.set_xlabel("")
     ax.set_ylabel("Pairwise similarity", fontsize=9)
@@ -1066,7 +1068,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
 
 def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
                                   title_suffix=""):
-    """Violin plot of pairwise similarity among ENCODE reference segmentations."""
+    """Bar plot of pairwise similarity among ENCODE reference segmentations."""
     metrics = [
         ("Composition", comp_path),
         ("Kappa",   kappa_path),
@@ -1082,10 +1084,12 @@ def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
     plot_df = pd.DataFrame(rows)
 
     fig, ax = plt.subplots(figsize=(5, 5))
-    sns.violinplot(data=plot_df, x="Metric", y="value", hue="Metric",
-                   order=["Composition", "Kappa", "Jaccard"],
-                   inner="box", cut=0, ax=ax, legend=False,
-                   palette={"Composition": "#E8833A", "Kappa": "#4878CF", "Jaccard": "#2CA02C"})
+    sns.barplot(data=plot_df, x="Metric", y="value", hue="Metric",
+                order=["Composition", "Kappa", "Jaccard"],
+                palette={"Composition": "#E8833A", "Kappa": "#4878CF", "Jaccard": "#2CA02C"},
+                estimator="mean", errorbar="se",
+                ax=ax, capsize=0.15, err_kws={"linewidth": 1.0},
+                legend=False)
     ax.set_xlabel("")
     ax.set_ylabel("Pairwise similarity", fontsize=9)
     ax.set_ylim(0, 1)
@@ -1124,7 +1128,7 @@ def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
     if not vals:
         print(f"  skipping {outfile}: no reference data")
         return
-    fig, ax = plt.subplots(figsize=(max(4, len(labs) * 1.2), 4.2))
+    fig, ax = plt.subplots(figsize=(max(5, len(labs) * 1.2), 4.2))
     x = np.arange(len(labs))
     ax.bar(x, vals, color=BIN_COLORS["reference"], edgecolor="white", linewidth=0.5)
     ax.set_xticks(x)
@@ -1149,8 +1153,10 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       peak_count_outfile=None, peak_length_outfile=None,
                       peak_gap_violin_outfile=None,
                       ref_composition_outfile=None,
+                      ref_comp_matrix=None,
                       ref_kappa_matrix=None, ref_jaccard_matrix=None,
                       ref_dist_outfile=None,
+                      ref_comp_noqh_matrix=None,
                       ref_kappa_noqh_matrix=None, ref_jaccard_noqh_matrix=None,
                       ref_dist_noqh_outfile=None,
                       method_composition_outfile=None,
@@ -1162,7 +1168,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       method_sim_dist_group_a=None, method_sim_dist_group_b=None,
                       method_sim_dist_filtered_outfile=None,
                       method_sim_dist_filtered_noqh_outfile=None):
-    """Cross-dataset summary bar plots, violins and similarity distributions.
+    """Cross-dataset summary bar plots and similarity distributions.
 
     Direct-call entry point (the former CLI). Each *_outfile / *_outdir argument
     that is set selects one plot group to produce, mirroring the old out
@@ -1177,8 +1183,10 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         peak_count_outfile=peak_count_outfile, peak_length_outfile=peak_length_outfile,
         peak_gap_violin_outfile=peak_gap_violin_outfile,
         ref_composition_outfile=ref_composition_outfile,
+        ref_comp_matrix=ref_comp_matrix,
         ref_kappa_matrix=ref_kappa_matrix, ref_jaccard_matrix=ref_jaccard_matrix,
         ref_dist_outfile=ref_dist_outfile,
+        ref_comp_noqh_matrix=ref_comp_noqh_matrix,
         ref_kappa_noqh_matrix=ref_kappa_noqh_matrix,
         ref_jaccard_noqh_matrix=ref_jaccard_noqh_matrix,
         ref_dist_noqh_outfile=ref_dist_noqh_outfile,

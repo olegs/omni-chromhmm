@@ -33,6 +33,7 @@ Usage:
 import argparse
 import os
 import sys
+import gzip
 from bisect import bisect_left
 from collections import defaultdict
 
@@ -50,11 +51,14 @@ from scipy.optimize import linear_sum_assignment
 def load_bed(path):
     """Return list of (chrom, start, end, name, color)."""
     out = []
-    with open(path) as f:
+    _open = gzip.open if path.endswith(".gz") else open
+    with _open(path, "rt") as f:
         for line in f:
             if not line.strip() or line.startswith(("#", "track", "browser")):
                 continue
             p = line.rstrip("\n").split("\t")
+            if len(p) < 3:
+                continue
             chrom, s, e = p[0], int(p[1]), int(p[2])
             name = p[3] if len(p) > 3 else "."
             color = p[8] if len(p) >= 9 else "0,0,0"

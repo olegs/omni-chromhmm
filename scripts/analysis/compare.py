@@ -75,7 +75,7 @@ def _build_seg_to_analysis_map(seg_paths, analysis_dir):
 # Transition entropy
 # ---------------------------------------------------------------------------
 
-def _compute_entropy(seg_paths, bin_sizes, exclude_states=None):
+def _compute_entropy(seg_paths, bin_sizes, exclude_states=None, mappings=None):
     """Compute transition entropy totals for each segmentation.
 
     bin_sizes: list of bin sizes parallel to seg_paths (one per segmentation).
@@ -84,12 +84,13 @@ def _compute_entropy(seg_paths, bin_sizes, exclude_states=None):
     results = []
     exclude_label = (f" (excluding {', '.join(sorted(exclude_states))})"
                      if exclude_states else "")
-    for seg_path, bin_size in zip(seg_paths, bin_sizes):
+    for i, (seg_path, bin_size) in enumerate(zip(seg_paths, bin_sizes)):
         segs = load_bed(seg_path)
         if not segs:
             print(f"  WARNING: empty segmentation {seg_path}", file=sys.stderr)
             continue
-        states, counts, state_bp = build_transition_matrix(segs, bin_size, exclude_states)
+        mapping = mappings[i] if mappings else None
+        states, counts, state_bp = build_transition_matrix(segs, bin_size, exclude_states, mapping)
         if not states:
             print(f"  WARNING: no states left after exclusion in {seg_path}", file=sys.stderr)
             continue
@@ -112,7 +113,7 @@ def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
     df.to_csv(summary_path, sep="\t", index=False, float_format="%.4f")
     print(f"  saved {summary_path}")
 
-    fig, ax = plt.subplots(figsize=(max(5, len(df) * 0.5), 3.5))
+    fig, ax = plt.subplots(figsize=(max(5, len(df) * 0.8), 3.5))
     ax.bar(range(len(df)), df["total_entropy"])
     ax.set_xticks(range(len(df)))
     ax.set_xticklabels(df["segmentation"], rotation=45, ha="right", fontsize=8)
@@ -137,7 +138,7 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
 
     x = np.arange(len(df_full))
     width = 0.35
-    fig, ax = plt.subplots(figsize=(max(5, len(df_full) * 0.5), 3.5))
+    fig, ax = plt.subplots(figsize=(max(5, len(df_full) * 0.8), 3.5))
     ax.bar(x - width / 2, df_full["total_entropy"], width,
            label="Full", color="#4878CF")
     if not df_active.empty:
@@ -163,7 +164,8 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
 def segmentation_to_bins(segs, bin_size):
     """Convert a segmentation to a dict: {chrom: {bin_index: state}}."""
     bins = defaultdict(dict)
-    for chrom, s, e, state in segs:
+    for row in segs:
+        chrom, s, e, state = row[:4]
         for b in range(s // bin_size, e // bin_size):
             bins[chrom][b] = state
     return bins
@@ -309,14 +311,18 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     segs_full_i = _load_seg_full(path_i)
     segs_full_j = _load_seg_full(path_j)
 
-    # Composition similarity (always computed)
-    row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j)
-    row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES)
-
     # Base-wise similarity: Kappa and Jaccard.
     # For replicates of the same method, we use identity mapping.
     # For all other pairs, we use the best mapping found by overlap.
     is_rep_pair = _is_replicate(label_i) and _is_replicate(label_j) and (label_i[:-5] == label_j[:-5])
+
+    # Composition similarity: compute only for replicate pairs as per instruction.
+    if is_rep_pair:
+        row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j)
+        row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES)
+    else:
+        row["composition_similarity"] = 0.0
+        row["composition_noqh_similarity"] = 0.0
 
     overlap = match_pair_overlap(segs_full_i, segs_full_j)
     work_states = sorted({x[3] for x in segs_full_j}, key=_natural_sort_key)
@@ -552,12 +558,12 @@ def compute_segment_stats(segs, exclude_states=None):
     Quiescent/Heterochromatin background) are dropped first (NOQH mode).
     """
     if exclude_states:
-        segs = [seg for seg in segs if seg[3] not in exclude_states]
+        segs = [row for row in segs if row[3] not in exclude_states]
     if not segs:
         return {}
-    lengths = np.array([e - s for _, s, e, _ in segs])
+    lengths = np.array([row[2] - row[1] for row in segs])
     return {
-        "n_states":      len({st for _, _, _, st in segs}),
+        "n_states":      len({row[3] for row in segs}),
         "n_segments":    len(lengths),
         "min_length":    int(np.min(lengths)),
         "max_length":    int(np.max(lengths)),
@@ -585,7 +591,7 @@ def _plot_segment_stats(df, outdir, suffix=""):
     ]:
         if col not in df.columns:
             continue
-        fig, ax = plt.subplots(figsize=(max(4, len(df) * 0.5), 3.5))
+        fig, ax = plt.subplots(figsize=(max(5, len(df) * 0.8), 3.5))
         vals = df[col].values
         ax.bar(x, vals, color="#4878CF", edgecolor="white", linewidth=0.5)
         ax.set_xticks(x)
@@ -691,7 +697,25 @@ def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
     results_full = _compute_entropy(args.seg, bin_sizes)
     _save_entropy_summary(results_full, comparison_dir)
 
-    results_active = _compute_entropy(args.seg, bin_sizes, exclude_states=_EXCLUDE_STATES)
+    # Identify the reference (if any) to use for matched-to-reference NOQH entropy.
+    ref_idx = next((i for i, p in enumerate(args.seg)
+                    if _seg_label(p).startswith("ENCFF")), None)
+    mappings = None
+    if ref_idx is not None:
+        import match
+        ref_segs = _load_seg_full(args.seg[ref_idx])
+        ref_states = sorted({x[3] for x in ref_segs}, key=_natural_sort_key)
+        mappings = [None] * len(args.seg)
+        for i, p in enumerate(args.seg):
+            if i == ref_idx:
+                continue
+            work_segs = _load_seg_full(p)
+            work_states = sorted({x[3] for x in work_segs}, key=_natural_sort_key)
+            overlap = match.pair_overlap(ref_segs, work_segs)
+            mappings[i] = match.best_mapping(overlap, work_states, ref_states)
+
+    results_active = _compute_entropy(args.seg, bin_sizes, exclude_states=_EXCLUDE_STATES,
+                                      mappings=mappings)
     _save_entropy_summary(results_active, comparison_dir, suffix="_noqh",
                           title_extra=f"\n(excluding {', '.join(sorted(_EXCLUDE_STATES))})")
     _save_entropy_combined_plot(results_full, results_active, comparison_dir)

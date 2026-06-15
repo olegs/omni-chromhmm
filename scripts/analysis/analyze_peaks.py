@@ -217,7 +217,7 @@ def _bar_plot(df, value_col, ylabel, title, outpath):
     methods = [m for m in METHOD_ORDER if m in df["method"].unique()]
     x = np.arange(len(marks))
     width = 0.25
-    fig, ax = plt.subplots(figsize=(max(6, len(marks) * 1.2), 4))
+    fig, ax = plt.subplots(figsize=(max(5, len(marks) * 1.2), 4))
     for i, method in enumerate(methods):
         sub = df[df["method"] == method].set_index("mark")
         vals = [sub.loc[m, value_col] if m in sub.index else 0 for m in marks]

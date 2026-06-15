@@ -179,7 +179,7 @@ def plot_per_state_violin(df, out_path, title=None):
     colors = state_color_map(df)
     n = len(states)
 
-    fig, ax = plt.subplots(figsize=(max(6, n * 0.4), 4))
+    fig, ax = plt.subplots(figsize=(max(3, n * 0.4), 4))
     data = [np.log10(df.loc[df["state"] == s, "length"].values + 1) for s in states]
     parts = ax.violinplot(data, positions=range(n), showmedians=True, showextrema=True)
 
@@ -216,7 +216,7 @@ def plot_coverage_per_state(df, out_path, title=None):
                   .reset_index(name="total_bp"))
 
     n = len(states)
-    fig, ax = plt.subplots(figsize=(max(6, n * 0.4), 4))
+    fig, ax = plt.subplots(figsize=(max(3, n * 0.4), 4))
     data = [
         np.log10(coverage.loc[coverage["state"] == s, "total_bp"].values + 1)
         for s in states
@@ -251,7 +251,7 @@ def plot_overall_per_sample(df, out_path, title=None, short_names=False):
     samples = sorted(df["sample"].unique())
     n = len(samples)
 
-    fig, ax = plt.subplots(figsize=(max(6, n * 0.35), 4))
+    fig, ax = plt.subplots(figsize=(max(3, n * 0.35), 4))
     data = [np.log10(df.loc[df["sample"] == s, "length"].values + 1) for s in samples]
     parts = ax.violinplot(data, positions=range(n), showmedians=True, showextrema=True)
     for pc in parts["bodies"]:
@@ -404,18 +404,21 @@ def make_expressed_annotations(rnaseq_path, gtf_path):
 QUIESCENT_STATES = {"Quies", "Quiescent", "8_ZNF/Rpts", "9_Het", "Quies_low"}
 
 
-def build_transition_matrix(segs, bin_size, exclude_states=None):
+def build_transition_matrix(segs, bin_size, exclude_states=None, mapping=None):
     """Build empirical transition count matrix at bin resolution."""
     exclude = set(exclude_states or [])
     by_chrom = defaultdict(dict)
-    for chrom, s, e, state in segs:
+    for row in segs:
+        chrom, s, e, state = row[:4]
         if state in exclude:
             continue
+        st = mapping.get(state, state) if mapping else state
         for b in range(s // bin_size, e // bin_size):
-            by_chrom[chrom][b] = state
+            by_chrom[chrom][b] = st
 
     all_states = sorted(
-        {state for _, _, _, state in segs if state not in exclude},
+        {mapping.get(row[3], row[3]) if mapping else row[3]
+         for row in segs if row[3] not in exclude},
         key=_natural_sort_key)
     state_idx = {s: i for i, s in enumerate(all_states)}
     n = len(all_states)
@@ -496,7 +499,8 @@ def save_transition_entropy(segs, bin_size, outdir):
 def save_report(segs, outdir):
     """Save report.tsv with state-level statistics."""
     lengths = defaultdict(list)
-    for _, s, e, name in segs:
+    for row in segs:
+        _, s, e, name = row[:4]
         lengths[name].append(e - s)
     states = sorted(lengths, key=_natural_sort_key)
 
@@ -511,7 +515,8 @@ def save_report(segs, outdir):
 
 def plot_segment_lengths(segs, outdir):
     lengths = defaultdict(list)
-    for _, s, e, name in segs:
+    for row in segs:
+        _, s, e, name = row[:4]
         lengths[name].append(e - s)
     states = sorted(lengths, key=_natural_sort_key)
     means = [np.mean(lengths[s]) for s in states]
@@ -552,7 +557,8 @@ def compute_emissions(segs, inputs, bin_size):
 
     sums = defaultdict(lambda: np.zeros(len(marks), dtype=np.float64))
     counts = defaultdict(int)
-    for chrom, s, e, name in segs:
+    for row in segs:
+        chrom, s, e, name = row[:4]
         data = by_chrom.get(chrom)
         if data is None:
             continue
@@ -623,7 +629,8 @@ def _rename_plot_label(label):
 
 def _compute_overlap_bp(by_chrom, starts, ann_segs):
     state_hit = defaultdict(int)
-    for chrom, s, e, _ in ann_segs:
+    for row in ann_segs:
+        chrom, s, e = row[:3]
         if chrom not in by_chrom:
             continue
         arr = by_chrom[chrom]
@@ -641,7 +648,8 @@ def compute_enrichment(segs, annotation_items):
     """Fold enrichment of each state vs each annotation (ChromHMM-style)."""
     by_chrom = defaultdict(list)
     state_total = defaultdict(int)
-    for chrom, s, e, name in segs:
+    for row in segs:
+        chrom, s, e, name = row[:4]
         by_chrom[chrom].append((s, e, name))
         state_total[name] += e - s
     for chrom in by_chrom:
@@ -662,7 +670,7 @@ def compute_enrichment(segs, annotation_items):
         else:
             ann_segs = bed_data
 
-        ann_bp = sum(e - s for _, s, e, _ in ann_segs)
+        ann_bp = sum(row[2] - row[1] for row in ann_segs)
         ann_frac = ann_bp / total_bp if total_bp > 0 else 0
 
         state_hit = _compute_overlap_bp(by_chrom, starts, ann_segs)
@@ -719,7 +727,8 @@ def plot_enrichment(enrich_df, segs, outdir):
     fold_mat.columns = [_rename_plot_label(c) for c in fold_mat.columns]
 
     state_bp = defaultdict(int)
-    for _, s, e, name in segs:
+    for row in segs:
+        _, s, e, name = row[:4]
         state_bp[name] += e - s
     total_bp = sum(state_bp.values())
     genome_pct = pd.Series(

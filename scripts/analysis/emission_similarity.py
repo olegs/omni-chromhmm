@@ -501,7 +501,7 @@ def _fallback_chromhmm_default_emissions(ds, adir):
 
 
 def plot_out_binem(df, methods, outfile, cross_assay=False):
-    """Violin plot: per-method distribution of inter-dataset binarized emission cosine similarity."""
+    """Bar plot: per-method distribution of inter-dataset binarized emission cosine similarity."""
     if df.empty:
         print(f"  skipping {outfile}: no data", file=sys.stderr)
         return
@@ -515,11 +515,12 @@ def plot_out_binem(df, methods, outfile, cross_assay=False):
     n_pairs = int(plot_df.groupby("method").size().max()) if not plot_df.empty else 0
 
     fig, ax = plt.subplots(figsize=(max(8, n_methods * 1.4 + 2), 5))
-    sns.violinplot(
+    sns.barplot(
         data=plot_df, x="Method", y="mean_sim",
         order=method_labels,
         color="#5B8DB8",
-        inner="box", cut=0, ax=ax,
+        estimator="mean", errorbar="sd",
+        ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
     )
     ax.set_xlabel("")
     ax.set_ylabel("Mean cosine similarity (matched states)", fontsize=9)
@@ -572,13 +573,13 @@ def run_emission_similarity(datasets, analysis_dirs, outdir, methods=None,
 
     for ds in args.datasets:
         df_ds = df[df["dataset"] == ds]
-        plot_cosine_per_dataset(df_ds, ds,
-            os.path.join(args.outdir, f"emission_cosine_sim_{ds}.png"))
+        # plot_cosine_per_dataset(df_ds, ds,
+        #     os.path.join(args.outdir, f"emission_cosine_sim_{ds}.png"))
         plot_gini_per_dataset(df_ds, ds,
             os.path.join(args.outdir, f"emission_gini_{ds}.png"))
 
-    plot_cosine_summary(df, args.datasets,
-        os.path.join(args.outdir, "emission_cosine_sim_summary.png"))
+    # plot_cosine_summary(df, args.datasets,
+    #     os.path.join(args.outdir, "emission_cosine_sim_summary.png"))
     plot_gini_summary(df, args.datasets,
         os.path.join(args.outdir, "emission_gini_summary.png"))
 
