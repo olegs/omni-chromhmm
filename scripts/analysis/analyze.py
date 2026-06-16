@@ -146,6 +146,8 @@ def rgb_str_to_hex(rgb):
     """Convert BED itemRgb '255,128,0' to matplotlib hex '#FF8000'."""
     try:
         r, g, b = (int(x) for x in rgb.split(","))
+        if r == 255 and g == 255 and b == 255:
+            return "#000000"
         return f"#{r:02X}{g:02X}{b:02X}"
     except Exception:
         return "#888888"
@@ -492,6 +494,95 @@ def save_transition_entropy(segs, bin_size, outdir):
         fig.tight_layout()
         fig.savefig(os.path.join(edir, f"transition_matrix{suffix}.png"), dpi=300)
         plt.close(fig)
+
+
+# --- consistency analysis ------------------------------------------------
+
+def compute_state_consistency(segs_list, bin_size=200, show_progress=False):
+    """Compute depth of state coverage (cumulative <= N) across multiple segmentations.
+
+    Returns: {state -> {depth -> cumulative_count_bins}} where depth is 1..len(segs_list)
+    """
+    state_depth_counts = defaultdict(lambda: defaultdict(int))
+    all_chroms = sorted(set(s[0] for segs in segs_list for s in segs))
+
+    chrom_iter = all_chroms
+    if show_progress:
+        try:
+            from tqdm.auto import tqdm
+            chrom_iter = tqdm(all_chroms, desc="Consistency", leave=False)
+        except ImportError:
+            pass
+
+    for chrom in chrom_iter:
+        states_in_chrom = sorted(set(s[3] for segs in segs_list for s in segs if s[0] == chrom))
+        for state in states_in_chrom:
+            events = []
+            for segs in segs_list:
+                for seg in segs:
+                    if seg[0] == chrom and seg[3] == state:
+                        events.append((seg[1], 1))
+                        events.append((seg[2], -1))
+            if not events:
+                continue
+            events.sort()
+            current_depth = 0
+            last_pos = events[0][0]
+            for pos, delta in events:
+                if pos > last_pos and current_depth > 0:
+                    state_depth_counts[state][current_depth] += (pos - last_pos) // bin_size
+                current_depth += delta
+                last_pos = pos
+
+    # Compute cumulative counts: supported by <= N segmentations
+    M = len(segs_list)
+    for state in state_depth_counts:
+        depths = state_depth_counts[state]
+        cumulative = 0
+        for d in range(1, M + 1):
+            cumulative += depths[d]
+            depths[d] = cumulative
+
+    # Convert defaultdict to regular dict for pickling (avoid lambda issues)
+    return {state: dict(depths) for state, depths in state_depth_counts.items()}
+
+
+def plot_state_consistency(state_depth_counts, title, out_path, colors=None):
+    """Build a cumulative plot of percentage of state coverage supported by <= N segmentations."""
+    if not state_depth_counts:
+        return
+    M = max(max(d.keys()) for d in state_depth_counts.values())
+
+    states = sorted(state_depth_counts.keys(), key=_natural_sort_key)
+
+    plt.figure(figsize=(8, 5))
+    for state in states:
+        depths = state_depth_counts[state]
+        total_bins = depths[M]
+        if total_bins == 0:
+            continue
+
+        x = np.arange(1, M + 1)
+        y = [depths[n] / total_bins * 100 for n in x]
+
+        color = colors.get(state) if colors else None
+        if isinstance(color, str) and "," in color:
+            color = rgb_str_to_hex(color)
+        
+        # Ensure white colors are visible on white background
+        if color in ["#FFFFFF", "#ffffff", "white", "#FFF", "#fff"]:
+            color = "black"
+
+        plt.plot(x, y, label=state, marker='.', markersize=4, color=color)
+
+    plt.title(f"State consistency ({title})", fontsize=11, fontweight="bold")
+    plt.xlabel("Supported by <= N segmentations", fontsize=9)
+    plt.ylabel("% of state coverage", fontsize=9)
+    plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize='x-small')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(out_path, bbox_inches="tight")
+    plt.close()
 
 
 # --- single-segmentation analysis ----------------------------------------
