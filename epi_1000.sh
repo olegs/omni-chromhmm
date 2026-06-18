@@ -56,40 +56,31 @@ for E in $(cat marks.txt); do echo $E; mkdir -p $E/homer;
  done;
 done;
 
-#KMeans states preprocessinjg
+#KMeans states preprocessing
 CHROMSIZES=hg19.chrom.sizes;
-BIN=100
-# Avoid joining peaks - create non-overlapping bins
-bedtools makewindows -g $CHROMSIZES -w $BIN > bins$BIN.bed;
-cat bins$BIN.bed | sort -k1,1 -k2,2n | awk '(NR%2)' > bins$BIN-0;
-cat bins$BIN.bed | sort -k1,1 -k2,2n | awk '!(NR%2)' > bins$BIN-1;
-
+BIN=100;
 #Means states processing
-for E in $(cat names.txt); do echo $E;
-for PC in homer macs2 omni; do echo $PC; STATES=$E/$PC/${E}_${PC}_kmeans_states.bed;
+for E in $(cat names.txt); do echo "===================="; echo $E;
+for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
+ STATES=$E/$PC/${E}_${PC}_kmeans_states.bed;
  if [[ -f $STATES ]]; then continue; fi;
- echo "Prepare";
- mkdir -p $E/$PC/chromhmm;
+ echo "States (KMeans peaks)";
+ MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac";
+ PEAKS=();
  for M in H3K4me3 H3K4me1 H3K36me3 H3K9me3 H3K27me3 H3K27ac; do
-  echo $M; cat $(ls $E/$PC/*${M}* | grep -v log) | grep chr | awk -v BIN=$BIN '{ printf "%s\t%d\t%d\n", $1, int($2 / BIN) * BIN, int($3 / BIN) * BIN }' | sort -k1,1 -k2,2n > $E/$PC/chromhmm/$M;
+  if [[ $PC == "omni" ]]; then
+    P=$(ls $E/$PC/*${M}*.peak 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+  elif [[ $PC == "homer" ]]; then
+    P=$(ls $E/$PC/*${M}*_homer.bed 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+  elif [[ $PC == "macs2" ]]; then
+    P=$(ls $E/$PC/*${M}*narrowPeak $E/$PC/*${M}*broadPeak 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+  else
+    echo "Unknown peak caller"; exit 1;
+  fi
+  PEAKS+=("${P:-NONE}");
  done;
-
- echo "Multiinter";
- bedtools multiinter -header -i bins$BIN-0 bins$BIN-1 $E/$PC/chromhmm/H3K4me3 $E/$PC/chromhmm/H3K4me1 $E/$PC/chromhmm/H3K36me3 $E/$PC/chromhmm/H3K9me3 $E/$PC/chromhmm/H3K27me3 $E/$PC/chromhmm/H3K27ac > $E/$PC/chromhmm/multiinter.tsv;
-
- echo "Bin files";
- for CHR in $(cut -f1,1 $CHROMSIZES | grep -v _); do T=$'\t';
-  FILE=$E/$PC/chromhmm/${E}_${CHR}_binary.txt;
-  echo "$E$T$CHR" > $FILE;
-  head -n 1 $E/$PC/chromhmm/multiinter.tsv | awk -v OFS=$T '{print $8,$9,$10,$11,$12,$13}' >> $FILE;
-  cat $E/$PC/chromhmm/multiinter.tsv | grep "$CHR$T" | awk -v OFS=$T '{print $8,$9,$10,$11,$12,$13}' >> $FILE;
-  gzip -f $FILE;
- done;
-
- echo "States";
- python ~/work/omni-chromhmm/scripts/rules/states.py --bin $BIN --states 15 --inputs $E/$PC/chromhmm/*binary.txt.gz > $STATES;
+ python ~/work/omni-chromhmm/scripts/rules/kmeans_peaks.py --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES --cell $E;
  echo "Done: $STATES";
- rm -rf $E/$PC/chromhmm;
 done;
 done;
 

@@ -34,17 +34,17 @@ import os
 METHOD_ORDER = [
     "ref",
     "chromhmm_default",
-    "chromhmm_homer",  "kmeans_homer",
-    "chromhmm_macs2",  "kmeans_macs2",
-    "chromhmm_omni",   "kmeans_omni",
+    "kmeans_homer",
+    "kmeans_macs2",
+    "kmeans_omni",
     "chromhmm_default_rep1",
-    "chromhmm_homer_rep1", "kmeans_homer_rep1",
-    "chromhmm_macs2_rep1", "kmeans_macs2_rep1",
-    "chromhmm_omni_rep1",  "kmeans_omni_rep1",
+    "kmeans_homer_rep1",
+    "kmeans_macs2_rep1",
+    "kmeans_omni_rep1",
     "chromhmm_default_rep2",
-    "chromhmm_homer_rep2", "kmeans_homer_rep2",
-    "chromhmm_macs2_rep2", "kmeans_macs2_rep2",
-    "chromhmm_omni_rep2",  "kmeans_omni_rep2",
+    "kmeans_homer_rep2",
+    "kmeans_macs2_rep2",
+    "kmeans_omni_rep2",
 ]
 
 # {method: rank} — for deterministic sorting.
@@ -54,25 +54,16 @@ METHOD_IDX = {m: i for i, m in enumerate(METHOD_ORDER)}
 DISPLAY_NAMES = {
     "ref":                   "ENCODE Ref",
     "chromhmm_default":      "Default ChromHMM",
-    "chromhmm_omni":         "OmniPeak ChromHMM",
-    "chromhmm_homer":        "Homer ChromHMM",
     "kmeans_omni":           "OmniPeak KMeans",
     "kmeans_homer":          "Homer KMeans",
-    "chromhmm_macs2":        "MACS2 ChromHMM",
     "kmeans_macs2":          "MACS2 KMeans",
     "chromhmm_default_rep1": "Default ChromHMM (rep1)",
-    "chromhmm_omni_rep1":    "OmniPeak ChromHMM (rep1)",
-    "chromhmm_homer_rep1":   "Homer ChromHMM (rep1)",
     "kmeans_omni_rep1":      "OmniPeak KMeans (rep1)",
     "kmeans_homer_rep1":     "Homer KMeans (rep1)",
-    "chromhmm_macs2_rep1":   "MACS2 ChromHMM (rep1)",
     "kmeans_macs2_rep1":     "MACS2 KMeans (rep1)",
     "chromhmm_default_rep2": "Default ChromHMM (rep2)",
-    "chromhmm_omni_rep2":    "OmniPeak ChromHMM (rep2)",
-    "chromhmm_homer_rep2":   "Homer ChromHMM (rep2)",
     "kmeans_omni_rep2":      "OmniPeak KMeans (rep2)",
     "kmeans_homer_rep2":     "Homer KMeans (rep2)",
-    "chromhmm_macs2_rep2":   "MACS2 ChromHMM (rep2)",
     "kmeans_macs2_rep2":     "MACS2 KMeans (rep2)",
 }
 
@@ -156,8 +147,6 @@ def seg_label(path):
         model = f"kmeans_{caller}" if caller else "kmeans"
     elif "chromhmm_default_result" in parts:
         model = "chromhmm_default"
-    elif "chromhmm_result" in parts and caller:
-        model = f"chromhmm_{caller}"
     else:
         model = basename.replace(".bed", "").replace("_matched", "")
 

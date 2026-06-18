@@ -8,7 +8,6 @@
 # subdir) and a {caller} wildcard (omni | homer).
 # This file owns:
 #   - Peak -> binary matrix:  {folder}/{caller}/chromhmm_peaks/
-#   - ChromHMM LearnModel over peaks:  {folder}/{caller}/chromhmm_result/
 #   - KMeans segmentation:    {folder}/{caller}/{caller}_kmeans_states.bed
 
 # Reference ChromHMM markup download.
@@ -112,76 +111,27 @@ rule chromhmm_default_mark_beds:
         "--outdir {params.outdir} {input}"
 
 
-# --- Peak -> ChromHMM binary matrix --------------------------------------
-
-rule cat_peaks_per_mark:
-    """Sort peaks for a given folder+caller and mark into the binary matrix input."""
-    input: lambda w: ancient(peak_file(w.folder,w.caller,w.mark))
-    output: temp("{folder}/{caller}/chromhmm_peaks/{mark}.sorted")
-    shell: "sort -k1,1 -k2,2n {input} > {output}"
-
-
-rule multiinter:
-    input:
-        bins=lambda w: ancient(f"bins{CALLER_BIN[w.caller]}.bed"),
-        peaks=lambda w: [ancient(f"{w.folder}/{w.caller}/chromhmm_peaks/{m}.sorted") for m in MARKS],
-    output: temp("{folder}/{caller}/chromhmm_peaks/multiinter.tsv")
-    conda: "../envs/bio.yaml"
-    shell:
-        r"""
-        trap "rm -f {output}" ERR
-        bash {SCRIPTS_DIR}/multiinter.sh {output} {input.bins} {input.peaks}
-        """
-
-
-rule binarize_per_chr:
-    """Extract per-chromosome binary matrix (mark columns) and gzip."""
-    input: ancient("{folder}/{caller}/chromhmm_peaks/multiinter.tsv")
-    # Kept (not temp) so binarized-emission information remains available for
-    # per-state emission analysis after the pipeline finishes.
-    output: "{folder}/{caller}/chromhmm_peaks/{cell}_{chr}_binary.txt.gz"
-    shell:
-        "bash {SCRIPTS_DIR}/binarize_per_chr.sh {input} {wildcards.cell} {wildcards.chr} {output}"
-
-# --- Segmentations over peak binarization --------------------------------
-
-rule chromhmm_learn_over_peaks:
-    input: ancient(_peaks_binary_files)
-    output:
-        dense="{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_dense.bed",
-        segments="{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_segments.bed",
-        emissions="{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_emissions.txt",
-        transitions="{folder}/{caller}/chromhmm_result/{caller}_{cell}_" + str(NSTATES) + "_transitions.txt",
-    log: "{folder}/{caller}/chromhmm_result/{caller}_{cell}_learn.log"
-    params:
-        indir="{folder}/{caller}/chromhmm_peaks",
-        outdir="{folder}/{caller}/chromhmm_result",
-        bin=lambda w: CALLER_BIN[w.caller],
-        n=NSTATES,
-        genome=GENOME,
-        chromsizes=TOOLS["chromsizes"],
-    shell:
-        r"""
-        mkdir -p {params.outdir}
-        {CHROMHMM} LearnModel -b {params.bin} -l {params.chromsizes} \
-            {params.indir} {params.outdir} {params.n} {params.genome} &> {log}
-        mv {params.outdir}/{wildcards.cell}_{params.n}_dense.bed {output.dense}
-        mv {params.outdir}/{wildcards.cell}_{params.n}_segments.bed {output.segments}
-        mv {params.outdir}/emissions_{params.n}.txt {output.emissions}
-        mv {params.outdir}/transitions_{params.n}.txt {output.transitions}
-        """
-
+# --- KMeans segmentation over peaks ---------------------------
 
 rule kmeans_states:
-    input: ancient(_peaks_binary_files)
-    output: "{folder}/{caller}/{caller}_kmeans_states.bed"
+    """Binarize peaks and run KMeans clustering in one step using kmeans_peaks.py."""
+    input:
+        peaks=lambda w: [ancient(peak_file(w.folder, w.caller, m)) for m in MARKS],
+        cs=ancient(TOOLS["chromsizes"])
+    output:
+        kmeans="{folder}/{caller}/{caller}_kmeans_states.bed",
+        bins=directory("{folder}/{caller}/chromhmm_peaks")
     log: "{folder}/{caller}/{caller}_kmeans_states.log"
     conda: "../envs/python.yaml"
     params:
         bin=lambda w: CALLER_BIN[w.caller],
         n=NSTATES,
-        indir="{folder}/{caller}/chromhmm_peaks",
+        marks=",".join(MARKS),
+        cell=lambda w: DATASETS[ds_of(w.folder)]["cell"],
+        outdir="{folder}/{caller}/chromhmm_peaks"
     shell:
-        "python {SCRIPTS_DIR}/states.py --bin {params.bin} --states {params.n} "
-        "--inputs {params.indir}/*.gz > {output} "
-        "2> {log}"
+        "python {SCRIPTS_DIR}/kmeans_peaks.py "
+        "--bin {params.bin} --chromsizes {input.cs} --marks {params.marks} "
+        "--peaks {input.peaks} --states {params.n} --out {output.kmeans} "
+        "--save-binary {params.outdir} --cell {params.cell} "
+        "&> {log}"

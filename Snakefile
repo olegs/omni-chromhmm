@@ -40,7 +40,6 @@ def _flag(key, default=True):
     return bool(val)
 
 
-DO_CHROMHMM_PEAKS = _flag("chromhmm_peaks")
 DO_REPLICATES = _flag("replicates")
 DO_OMNIPEAK = _flag("omnipeak")
 DO_HOMER = _flag("homer")
@@ -224,10 +223,6 @@ def all_results(ds):
         for mark in MARKS:
             t.append(f"{folder}/chromhmm_default_result/{mark}.bed")
         for caller in CALLERS:
-            if DO_CHROMHMM_PEAKS:
-                t.append(f"{folder}/{caller}/chromhmm_result/{caller}_{cell}_{NSTATES}_dense_ovlp_matched.bed")
-                t.append(f"{folder}/{caller}/chromhmm_result/{caller}_{cell}_{NSTATES}_dense_bwem_matched.bed")
-                t.append(f"{folder}/{caller}/chromhmm_result/{caller}_{cell}_{NSTATES}_dense_comb_matched.bed")
             t.append(f"{folder}/{caller}/{caller}_kmeans_states_ovlp_matched.bed")
             t.append(f"{folder}/{caller}/{caller}_kmeans_states_bwem_matched.bed")
             t.append(f"{folder}/{caller}/{caller}_kmeans_states_comb_matched.bed")
