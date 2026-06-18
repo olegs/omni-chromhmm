@@ -73,7 +73,7 @@ for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
   elif [[ $PC == "homer" ]]; then
     P=$(ls $E/$PC/*${M}*_homer.bed 2>/dev/null | tr '\n' ',' | sed 's/,$//');
   elif [[ $PC == "macs2" ]]; then
-    P=$(ls $E/$PC/*${M}*narrowPeak $E/$PC/*${M}*broadPeak 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+    P=$(ls $E/$PC/*${M}*Peak 2>/dev/null | tr '\n' ',' | sed 's/,$//');
   else
     echo "Unknown peak caller"; exit 1;
   fi
