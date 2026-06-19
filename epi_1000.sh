@@ -11,12 +11,48 @@ for E in $(cat names.txt | sed -E 's/-.*//g' | sort --unique); do
  if [ "$X" -eq 7 ]; then echo "$E" >> names.txt; fi
 done
 
+
+############### Precomputed segmentations ###################
+
+# Download joint model segmentations
+for E in $(cat marks.txt); do
+ echo $E;
+ wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/jointModel/n15/reordered/${E}_15_coreMarks_dense.bed.gz -O ${E}_15_coreMarks_dense_joint_reodered.bed.gz
+done;
+
+# Download individual segmentations
+for E in $(cat marks.txt); do
+ echo $E;
+ wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/indivModels/default_init/$E/n15/${E}_15_coreMarks_dense.bed;
+gzip ${E}_15_coreMarks_dense.bed;
+done;
+
+# Rematch to the joint model
+for E in $(cat marks.txt); do echo $E;
+ REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
+ WORK=${E}_15_coreMarks_dense.bed.gz;
+ MATCHED=${WORK/.bed.gz/_matched.bed};
+ if [[ -f $REF ]] & [[ -f $WORK ]]; then
+	python ~/work/omni-chromhmm/scripts/rules/match.py match --alpha 1  --ref $REF --work $WORK > $MATCHED;
+ fi;
+done;
+
+# Download joint 18 state extended models (core marks with H3K27ac)
+for E in $(cat marks.txt); do
+	echo $E;
+	wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/core_K27ac/jointModel/final/${E}_18_core_K27ac_dense.bed.gz;
+done
+
+
+############### Denovo ###################
+
 for E in $(cat names.txt); do
  echo $E;
  for m in H3K4me1 H3K4me3 H3K9me3 H3K27ac H3K27me3 H3K36me3 Input; do
   echo $m; wget "https://egg2.wustl.edu/roadmap/data/byFileType/alignments/consolidated/$E-$m.tagAlign.gz";
  done
 done
+
 
 # Omnipeak processing
 wget https://hgdownload.cse.ucsc.edu/goldenpath/hg19/bigZips/hg19.chrom.sizes
@@ -85,7 +121,6 @@ done;
 done;
 
 
-
 # ChromHMM processing
 TAB=$'\t';
 for E in $(cat names.txt); do echo $E; 
@@ -100,47 +135,26 @@ for E in $(cat names.txt); do echo $E;
  java -mx4000M -jar ChromHMM/ChromHMM.jar LearnModel $E/chromhmm_binary $E/${E}_chromhmm 15 hg19; 
 done;
 
-# Match states within each sample
-cd /Users/Oleg.Shpynov/data/2026_epi_1000
-
-
+# Rematch peak caller states to the joint model
 for E in $(cat names.txt); do echo $E;
 for PC in homer macs2 omni; do echo $PC;
- REF=$E/${E}_chromhmm/${E}_15_dense.bed;
- STATES=$E/$PC/${E}_${PC}_kmeans_states.bed;
- STATES_MATCH=${STATES/.bed/_matched.bed};
- if [[ -f $STATES_MATCH ]]; then continue; fi
- python ~/work/omni-chromhmm/scripts/rules/match.py match --ref $REF --work $STATES --alpha 1 > $STATES_MATCH;
-done;
-done;
-
-
-# Download individual and joint 15 state models
-# Download joint model segmentations
-for E in $(cat marks.txt | head -n 20); do
- echo $E;
- wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/jointModel/n15/reordered/${E}_15_coreMarks_dense.bed.gz -O ${E}_15_coreMarks_dense_joint_reodered.bed.gz
-done;
-
-# Download individual segmentations
-for E in $(cat marks.txt | head -n 20); do
- echo $E;
- wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/indivModels/default_init/$E/n15/${E}_15_coreMarks_dense.bed;
-gzip ${E}_15_coreMarks_dense.bed;
-done;
-
-# Rematch to the joint model
-for E in $(cat marks.txt); do echo $E;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
- WORK=${E}_15_coreMarks_dense.bed.gz;
+ WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
+ MATCHED=${WORK/.bed/_matched.bed};
  if [[ -f $REF ]] & [[ -f $WORK ]]; then
-	python ~/work/omni-chromhmm/scripts/rules/match.py match --ref $REF --work $WORK > ${WORK/.bed.gz/_matched.bed};
+	python ~/work/omni-chromhmm/scripts/rules/match.py match --alpha 1 --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
+done;
 
-
-# Download joint 18 state extended models (core marks with H3K27ac)
-for E in $(cat marks.txt); do
-	echo $E;
-	wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/core_K27ac/jointModel/final/${E}_18_core_K27ac_dense.bed.gz;
-done
+# Rematch de-novo chromhmm to the joint model
+for E in $(cat names.txt); do echo $E;
+for PC in homer macs2 omni; do echo $PC;
+ REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
+ WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
+ MATCHED=${WORK/.bed/_matched.bed};
+ if [[ -f $REF ]] & [[ -f $WORK ]]; then
+	python ~/work/omni-chromhmm/scripts/rules/match.py match --alpha 1 --ref $REF --work $WORK > $MATCHED;
+ fi;
+done;
+done;
