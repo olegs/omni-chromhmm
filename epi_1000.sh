@@ -33,7 +33,7 @@ for E in $(cat marks.txt); do echo $E;
  WORK=${E}_15_coreMarks_dense.bed.gz;
  MATCHED=${WORK/.bed.gz/_matched.bed};
  if [[ -f $REF ]] & [[ -f $WORK ]]; then
-	python ~/work/omni-chromhmm/scripts/rules/match.py match --alpha 1  --ref $REF --work $WORK > $MATCHED;
+	python ~/work/omni-chromhmm/scripts/rules/match.py match  --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
 
@@ -149,12 +149,10 @@ done;
 
 # Rematch de-novo chromhmm to the joint model
 for E in $(cat names.txt); do echo $E;
-for PC in homer macs2 omni; do echo $PC;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
- WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
+ WORK=${E}/${E}_chromhmm/${E}_15_dense.bed;
  MATCHED=${WORK/.bed/_matched.bed};
  if [[ -f $REF ]] & [[ -f $WORK ]]; then
 	python ~/work/omni-chromhmm/scripts/rules/match.py match --alpha 1 --ref $REF --work $WORK > $MATCHED;
  fi;
-done;
 done;

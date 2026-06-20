@@ -45,44 +45,48 @@ def open_text(path):
 
 def load_bed(path):
     """Load a BED file as a list of (chrom, start, end, name) tuples."""
-    segs = []
-    try:
-        with open_text(path) as f:
-            for line in f:
-                if not line.strip() or line.startswith(("#", "track", "browser")):
-                    continue
-                p = line.rstrip("\n").split("\t")
-                if len(p) < 3:
-                    continue
-                try:
-                    chrom, s, e = p[0], int(p[1]), int(p[2])
-                except ValueError:
-                    continue
-                name = p[3] if len(p) > 3 else "."
-                segs.append((chrom, s, e, name))
-    except (EOFError, gzip.BadGzipFile) as e:
-        print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
-    return segs
+    df = pd.read_csv(
+        path,
+        sep="\t",
+        comment="#",
+        header=None,
+        engine="c",
+        names=range(4),
+        usecols=range(4),
+        on_bad_lines="skip",
+        low_memory=False
+    )
+    df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
+    # Drop rows where chrom, start, or end are NaN
+    df = df.dropna(subset=[0, 1, 2])
+    # Ensure correct types
+    df[1] = df[1].astype(int)
+    df[2] = df[2].astype(int)
+    df[3] = df[3].fillna(".").astype(str)
+    # Convert to a list of tuples
+    return df.to_records(index=False).tolist()
 
 
 def _load_seg_full(path):
     """Load a BED file (plain or gzipped) as a list of (chrom, start, end, name, color) 5-tuples."""
-    segs = []
-    try:
-        with open_text(path) as f:
-            for line in f:
-                if not line.strip() or line.startswith(("#", "track", "browser")):
-                    continue
-                parts = line.rstrip("\n").split("\t")
-                if len(parts) < 3:
-                    continue
-                chrom, s, e = parts[0], int(parts[1]), int(parts[2])
-                name = parts[3] if len(parts) > 3 else "."
-                color = parts[8] if len(parts) >= 9 else "0,0,0"
-                segs.append((chrom, s, e, name, color))
-    except (EOFError, gzip.BadGzipFile) as e:
-        print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
-    return segs
+    df = pd.read_csv(
+        path,
+        sep="\t",
+        comment="#",
+        header=None,
+        engine="c",
+        names=range(9),
+        on_bad_lines="skip",
+        low_memory=False
+    )
+    df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
+    # Drop rows where chrom, start, or end are NaN
+    df = df.dropna(subset=[0, 1, 2])
+    df[1] = df[1].astype(int)
+    df[2] = df[2].astype(int)
+    df[3] = df[3].fillna(".").astype(str)
+    df[8] = df[8].fillna("0,0,0").astype(str)
+    return df[[0, 1, 2, 3, 8]].to_records(index=False).tolist()
 
 
 def load_bed_df(path, sample=None):
@@ -91,28 +95,31 @@ def load_bed_df(path, sample=None):
     Returns DataFrame with columns: chrom, start, end, state, length, rgb.
     Optionally adds a 'sample' column.
     """
-    rows = []
-    try:
-        with open_text(path) as fh:
-            for line in fh:
-                if line.startswith(("#", "track", "browser")):
-                    continue
-                parts = line.rstrip().split("\t")
-                if len(parts) < 4:
-                    continue
-                chrom, start, end, state = parts[0], int(parts[1]), int(parts[2]), parts[3]
-                rgb = parts[8] if len(parts) > 8 else "128,128,128"
-                rows.append((chrom, start, end, state, end - start, rgb))
-    except (EOFError, gzip.BadGzipFile) as e:
-        print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
+    df = pd.read_csv(
+        path,
+        sep="\t",
+        comment="#",
+        header=None,
+        engine="c",
+        names=range(9),
+        on_bad_lines="skip",
+        low_memory=False
+    )
+    df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
+    # Drop rows where chrom, start, end or state are NaN
+    df = df.dropna(subset=[0, 1, 2, 3])
 
-    df = pd.DataFrame(rows, columns=["chrom", "start", "end", "state", "length", "rgb"])
-    df["start"] = df["start"].astype(np.int64)
-    df["end"] = df["end"].astype(np.int64)
-    df["length"] = df["length"].astype(np.int64)
+    res = pd.DataFrame()
+    res["chrom"] = df[0].astype(str)
+    res["start"] = df[1].astype(np.int64)
+    res["end"] = df[2].astype(np.int64)
+    res["state"] = df[3].astype(str)
+    res["length"] = (res["end"] - res["start"]).astype(np.int64)
+    res["rgb"] = df[8].fillna("128,128,128").astype(str)
+
     if sample is not None:
-        df["sample"] = sample
-    return df
+        res["sample"] = sample
+    return res
 
 
 def load_binary(path):
@@ -146,8 +153,6 @@ def rgb_str_to_hex(rgb):
     """Convert BED itemRgb '255,128,0' to matplotlib hex '#FF8000'."""
     try:
         r, g, b = (int(x) for x in rgb.split(","))
-        if r == 255 and g == 255 and b == 255:
-            return "#000000"
         return f"#{r:02X}{g:02X}{b:02X}"
     except Exception:
         return "#888888"
@@ -569,10 +574,12 @@ def plot_state_consistency(state_depth_counts, title, out_path, colors=None):
         if isinstance(color, str) and "," in color:
             color = rgb_str_to_hex(color)
         
-        # Ensure white colors are visible on white background
-        if color in ["#FFFFFF", "#ffffff", "white", "#FFF", "#fff"]:
-            color = "black"
-
+        # Replace white or quiescent with black for visibility
+        if isinstance(color, str):
+            c_upper = color.upper()
+            if c_upper in ["#FFFFFF", "#FFF", "WHITE"] or "QUIES" in state.upper():
+                color = "black"
+        
         plt.plot(x, y, label=state, marker='.', markersize=4, color=color)
 
     plt.title(f"State consistency ({title})", fontsize=11, fontweight="bold")

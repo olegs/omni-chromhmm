@@ -73,7 +73,8 @@ def load_bed(path):
 def build_index(segs):
     """Group segs by chrom and sort; return (by_chr, starts_by_chr)."""
     by_chr = defaultdict(list)
-    for chrom, s, e, name, _ in segs:
+    for row in segs:
+        chrom, s, e, name = row[:4]
         by_chr[chrom].append((s, e, name))
     starts = {}
     for chrom in by_chr:
@@ -86,7 +87,8 @@ def pair_overlap(ref_segs, work_segs):
     """overlap[(work_name, ref_name)] = total overlapping bp."""
     ref_by_chr, ref_starts = build_index(ref_segs)
     overlap = defaultdict(int)
-    for chrom, ws, we, wname, _ in work_segs:
+    for row in work_segs:
+        chrom, ws, we, wname = row[:4]
         if chrom not in ref_by_chr:
             continue
         starts = ref_starts[chrom]
@@ -105,14 +107,18 @@ def pair_overlap(ref_segs, work_segs):
 
 def state_lengths(segs):
     out = defaultdict(int)
-    for _, s, e, name, _ in segs:
+    for row in segs:
+        name = row[3]
+        s, e = row[1], row[2]
         out[name] += e - s
     return out
 
 
 def state_colors(ref_segs):
     out = {}
-    for _, _, _, name, color in ref_segs:
+    for row in ref_segs:
+        name = row[3]
+        color = row[4] if len(row) > 4 else "0,0,0"
         out.setdefault(name, color)
     return out
 
@@ -479,7 +485,9 @@ def cmd_match(args):
                            alpha=args.alpha, matrix_out=args.matrix_out)
 
     colors = state_colors(ref_segs)
-    for chrom, s, e, name, color in work_segs:
+    for row in work_segs:
+        chrom, s, e, name = row[:4]
+        color = row[4] if len(row) > 4 else "0,0,0"
         new_name  = mapping.get(name, name)
         new_color = colors.get(new_name, color)
         print(f"{chrom}\t{s}\t{e}\t{new_name}\t0\t.\t{s}\t{e}\t{new_color}")
