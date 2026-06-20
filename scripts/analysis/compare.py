@@ -332,10 +332,8 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     bins_i = segmentation_to_bins(segs_i, bin_size)
     bins_j = segmentation_to_bins(segs_j, bin_size)
 
-    # Effective bins_j for base-wise metrics
+    # Effective bins_j for base-wise metrics: no remapping is performed.
     eff_bins_j = bins_j
-    if not is_rep_pair:
-        eff_bins_j = match.remap_bins(bins_j, mapping)
 
     kappa, po, pe, n_bins, _ = compute_kappa(bins_i, eff_bins_j)
     row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
@@ -347,12 +345,9 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     # Jaccard similarity: we use the mean per-state Jaccard.
     row["jaccard_similarity"] = compute_jaccard(bins_i, eff_bins_j)
 
-    # Overlap fraction: fraction of genome bp with identical (or mapped) state labels.
+    # Overlap fraction: fraction of genome bp with identical state labels.
     all_ref_states = {x[3] for x in segs_full_i}
-    if is_rep_pair:
-        total_same = sum(overlap.get((s, s), 0) for s in all_ref_states)
-    else:
-        total_same = sum(overlap.get((w, mapping[w]), 0) for w in work_states if w in mapping)
+    total_same = sum(overlap.get((s, s), 0) for s in all_ref_states)
     
     genome_len = sum(match_state_lengths(segs_full_i).values()) or 1
     row["overlap_fraction"] = total_same / genome_len
