@@ -142,7 +142,7 @@ for PC in homer macs2 omni; do echo $PC;
  WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
  MATCHED=${WORK/.bed/_matched.bed};
  if [[ -f $REF ]] & [[ -f $WORK ]]; then
-	python ~/work/omni-chromhmm/scripts/rules/match.py match --alpha 1 --ref $REF --work $WORK > $MATCHED;
+	python ~/work/omni-chromhmm/scripts/rules/match.py match --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
 done;
@@ -153,6 +153,6 @@ for E in $(cat names.txt); do echo $E;
  WORK=${E}/${E}_chromhmm/${E}_15_dense.bed;
  MATCHED=${WORK/.bed/_matched.bed};
  if [[ -f $REF ]] & [[ -f $WORK ]]; then
-	python ~/work/omni-chromhmm/scripts/rules/match.py match --alpha 1 --ref $REF --work $WORK > $MATCHED;
+	python ~/work/omni-chromhmm/scripts/rules/match.py match --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
