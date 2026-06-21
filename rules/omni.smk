@@ -1,5 +1,14 @@
 # Omnipeak peak calling
 
+rule omnipeak:
+    """Run Omnipeak for a specific dataset (e.g. snakemake imr90/omni/.done)."""
+    input:
+        lambda w: [peak_file(folder, "omni", mark)
+                   for folder in _folders(w.ds)
+                   for mark in MARKS]
+    output:
+        touch("{ds}/omni/.done")
+
 rule omnipeak_call:
     """Call peaks with Omnipeak on {folder}/bams/{mark}.bam."""
     input:

@@ -2,7 +2,7 @@ workdir: "~/data/2026_omni_chromhmm"
 
 tools:
   chromhmm_jar: "ChromHMM/ChromHMM.jar"
-  omnipeak_jar: "omnipeak-1.5.build.jar"
+  omnipeak_jar: "omnipeak-1.5.6815.jar"
   homer_dir: "homer"
   chromsizes: "ChromHMM/CHROMSIZES/hg38.txt"
   coords_dir: "ChromHMM/COORDS/hg38"

@@ -49,6 +49,16 @@ for ds in imr90 monocytes monocytes_mint gm12878_mint spleen; do
 done
 ```
 
+Relaunch Omnipeak:
+```bash
+for ds in imr90 monocytes monocytes_mint gm12878_mint spleen; do
+  snakemake -p $ds/omni/.done --use-conda --cores all --directory $(pwd) \
+  --snakefile ~/work/omni-chromhmm/Snakefile \
+  --configfile ~/work/omni-chromhmm/config.yaml \
+  --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 --rerun-incomplete --config omnipeak=True -n;
+done
+```
+
 Resource limits (pass via `--resources`):
 - `homer_tagdir=1` — limits Homer to 2 concurrent tag directories.
 - `merge_bam=1` — limits concurrent BAM merges in `pool_bams`. Each merge writes a
