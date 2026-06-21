@@ -156,3 +156,7 @@ for E in $(cat names.txt); do echo $E;
 	python ~/work/omni-chromhmm/scripts/rules/match.py match --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
+
+
+########### Alternative ##############
+Alternative reference:  REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
