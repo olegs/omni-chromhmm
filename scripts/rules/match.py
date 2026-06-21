@@ -83,9 +83,9 @@ def build_index(segs):
     return by_chr, starts
 
 
-def pair_overlap(ref_segs, work_segs):
+def pair_overlap(ref_segs, work_segs, ref_index=None):
     """overlap[(work_name, ref_name)] = total overlapping bp."""
-    ref_by_chr, ref_starts = build_index(ref_segs)
+    ref_by_chr, ref_starts = ref_index if ref_index is not None else build_index(ref_segs)
     overlap = defaultdict(int)
     for row in work_segs:
         chrom, ws, we, wname = row[:4]
