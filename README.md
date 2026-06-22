@@ -34,7 +34,7 @@ state are pre-computed as `.bw_emissions.npz` and used for combined/bwem matchin
 ```bash
 mkdir -p ~/data/2026_omni_chromhmm && cd ~/data/2026_omni_chromhmm
 wget https://compbio.mit.edu/ChromHMM/ChromHMM.zip && unzip -q ChromHMM.zip
-wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.4.6808.jar
+wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.5.6815.jar -O omnipeak.jar
 ```
 
 ## Run
