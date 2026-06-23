@@ -8,11 +8,10 @@
 # subdir) and a {caller} wildcard (omni | homer).
 # This file owns:
 #   - Peak -> binary matrix:  {folder}/{caller}/chromhmm_peaks/
-#   - KMeans segmentation:    {folder}/{caller}/{caller}_kmeans_states.bed
 
 # Reference ChromHMM markup download.
 
-_MARKUPS_DIR = os.path.join(workflow.basedir,"markups")
+_MARKUPS_DIR = os.path.join(workflow.basedir, "markups")
 
 rule download_markups:
     """Download ENCODE reference ChromHMM BED files into markups/."""
@@ -111,27 +110,3 @@ rule chromhmm_default_mark_beds:
         "--outdir {params.outdir} {input}"
 
 
-# --- KMeans segmentation over peaks ---------------------------
-
-rule kmeans_states:
-    """Binarize peaks and run KMeans clustering in one step using kmeans_peaks.py."""
-    input:
-        peaks=lambda w: [ancient(peak_file(w.folder, w.caller, m)) for m in MARKS],
-        cs=ancient(TOOLS["chromsizes"])
-    output:
-        kmeans="{folder}/{caller}/{caller}_kmeans_states.bed",
-        bins=directory("{folder}/{caller}/chromhmm_peaks")
-    log: "{folder}/{caller}/{caller}_kmeans_states.log"
-    conda: "../envs/python.yaml"
-    params:
-        bin=lambda w: CALLER_BIN[w.caller],
-        n=NSTATES,
-        marks=",".join(MARKS),
-        cell=lambda w: DATASETS[ds_of(w.folder)]["cell"],
-        outdir="{folder}/{caller}/chromhmm_peaks"
-    shell:
-        "python {SCRIPTS_DIR}/kmeans_peaks.py "
-        "--bin {params.bin} --chromsizes {input.cs} --marks {params.marks} "
-        "--peaks {input.peaks} --states {params.n} --out {output.kmeans} "
-        "--save-binary {params.outdir} --cell {params.cell} "
-        "&> {log}"

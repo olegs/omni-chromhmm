@@ -451,7 +451,7 @@ def _fallback_chromhmm_default_emissions(ds, adir):
         return None
 
     orig_bed = os.path.join(res_dir, f"{cell}_15_dense.bed")
-    matched_bed = os.path.join(res_dir, f"{cell}_15_dense_comb_matched.bed")
+    matched_bed = os.path.join(res_dir, f"{cell}_15_dense_matched.bed")
     emissions_txt = os.path.join(res_dir, f"{cell}_15_emissions.txt")
 
     if not (os.path.exists(orig_bed) and os.path.exists(matched_bed) and os.path.exists(emissions_txt)):

@@ -22,10 +22,8 @@ peaks converted to ChromHMM binary matrices. Two segmentations per mode: ChromHM
 `findPeaks -style histone`. Feeds the same downstream binarization / segmentation machinery
 as Omnipeak, providing a caller-independent cross-check.
 
-5. **State matching** (`rules/match.smk`) -- relabel all segmentations to the ENCODE reference label
-space using three strategies: combined overlap+bw-emission (default, `_comb_matched`),
-bigwig-emission-only (`_bwem_matched`), and overlap-only (`_ovlp_matched`). Bigwig emissions per
-state are pre-computed as `.bw_emissions.npz` and used for combined/bwem matching.
+5. **State matching** (`rules/match.smk`) -- relabel all segmentations to the ENCODE reference label space using overlap or jaccard strategy (`_matched`). 
+Binarize and Bigwig emissions per state are pre-computed and remapped to the matched states.
 
 6. Launch `analysis.ipynb` for analysis, cross-segmentation comparison and inter-dataset summary plots.
 
@@ -45,7 +43,8 @@ for ds in imr90 monocytes monocytes_mint gm12878_mint spleen; do
   snakemake -p imr90/.done --use-conda --cores all --directory $(pwd) \
   --snakefile ~/work/omni-chromhmm/Snakefile \
   --configfile ~/work/omni-chromhmm/config.yaml \
-  --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 -n;
+  --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
+  --rerun-incomplete --rerun-trigger mtime -n;
 done
 ```
 
@@ -55,7 +54,9 @@ for ds in imr90 monocytes monocytes_mint gm12878_mint spleen; do
   snakemake -p $ds/omni/.done --use-conda --cores all --directory $(pwd) \
   --snakefile ~/work/omni-chromhmm/Snakefile \
   --configfile ~/work/omni-chromhmm/config.yaml \
-  --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 --rerun-incomplete --config omnipeak=True -n;
+  --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
+  --rerun-incomplete --rerun-trigger mtime \
+  --config omnipeak=True -n;
 done
 ```
 

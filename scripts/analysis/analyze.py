@@ -124,28 +124,29 @@ def load_bed_df(path, sample=None):
 
 
 def load_binary(path):
-    rows = []
     chrom = "chrUnknown"
     marks = []
     try:
         with open_text(path) as f:
             line1 = f.readline()
             if not line1:
-                return chrom, marks, np.asarray(rows, dtype=np.int8)
+                return chrom, marks, np.array([], dtype=np.int8)
             head = line1.rstrip("\n").split("\t")
             chrom = head[1] if len(head) > 1 else "chrUnknown"
 
             line2 = f.readline()
             if not line2:
-                return chrom, marks, np.asarray(rows, dtype=np.int8)
+                return chrom, marks, np.array([], dtype=np.int8)
             marks = line2.rstrip("\n").split("\t")
 
-            for line in f:
-                if line.strip():
-                    rows.append(list(map(int, line.rstrip("\n").split("\t"))))
+            try:
+                df = pd.read_csv(f, sep="\t", header=None, dtype=np.int8)
+                return chrom, marks, df.values
+            except pd.errors.EmptyDataError:
+                return chrom, marks, np.array([], dtype=np.int8)
     except (EOFError, gzip.BadGzipFile) as e:
         print(f"Warning: Corrupted gzip file {path}: {e}. Data might be incomplete.", file=sys.stderr)
-    return chrom, marks, np.asarray(rows, dtype=np.int8)
+    return chrom, marks, np.array([], dtype=np.int8)
 
 
 # --- DataFrame helpers ---------------------------------------------------

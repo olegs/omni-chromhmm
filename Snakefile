@@ -15,7 +15,7 @@ HOMER_BIN = P["homer_bin"]
 MACS2_BIN = P["macs2_bin"]
 NSTATES = P["n_states"]
 GENOME = P["genome"]
-MATCH_METHOD = P["match_method"]
+MATCH_METHOD = P.get("match_method", "overlap")
 
 # Per-caller binarization bin sizes.
 CALLER_BIN = {"omni": OMNI_BIN, "homer": HOMER_BIN, "macs2": MACS2_BIN}
@@ -194,8 +194,7 @@ def peak_file(folder, caller, mark):
 
 def _peaks_binary_files(w):
     """Per-chromosome gz binary inputs for ChromHMM/KMeans over peaks."""
-    cell = DATASETS[ds_of(w.folder)]["cell"]
-    return [f"{w.folder}/{w.caller}/chromhmm_peaks/{cell}_{c}_binary.txt.gz"
+    return [f"{w.folder}/{w.caller}/chromhmm_peaks/{c}_binary.txt.gz"
             for c in CHROMS]
 
 
@@ -217,20 +216,18 @@ def all_results(ds):
         t.append(f"{ds}/atac_{cfg['atac']}.bed.gz")
 
     for folder in _folders(ds):
-        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_ovlp_matched.bed")
-        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_bwem_matched.bed")
-        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_comb_matched.bed")
+        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_matched.bed")
         for mark in MARKS:
             t.append(f"{folder}/chromhmm_default_result/{mark}.bed")
         for caller in CALLERS:
-            t.append(f"{folder}/{caller}/{caller}_kmeans_states_ovlp_matched.bed")
-            t.append(f"{folder}/{caller}/{caller}_kmeans_states_bwem_matched.bed")
-            t.append(f"{folder}/{caller}/{caller}_kmeans_states_comb_matched.bed")
+            t.append(f"{folder}/{caller}/{caller}_kmeans_states_matched.bed")
 
     # Per-state matching matrix (heatmap) produced alongside every matched BED.
     t += [f.replace("_matched.bed", "_matched.match.png")
           for f in list(t) if f.endswith("_matched.bed")]
     t += [f.replace(".bed", ".bw_emissions.npz")
+          for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed")]
+    t += [f.replace(".bed", ".bin_emissions.npz")
           for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed")]
 
     return t
@@ -238,17 +235,13 @@ def all_results(ds):
 
 rule all:
     input:
-        lambda wildcards: [f"{ds}/.done" for ds in DATASETS],
+        [f"{ds}/.done" for ds in DATASETS],
 
 
 rule dataset_done:
-    """Per-dataset sentinel: all segmentations matched against the reference.
-
-    Analysis, comparison and inter-dataset plots are produced separately in
-    analysis.ipynb, not by this pipeline.
-    """
+    """Per-dataset sentinel: all segmentations matched against the reference."""
     input:
-        lambda w: [ancient(f) for f in all_results(w.ds)],
+        lambda w: all_results(w.ds),
     output: touch("{ds}/.done")
 
 # Download and prepare
@@ -259,6 +252,8 @@ include: "rules/chromhmm.smk"
 include: "rules/omni.smk"
 include: "rules/homer.smk"
 include: "rules/macs2.smk"
+# KMeans segmentation
+include: "rules/kmeans.smk"
 # Matching vs reference
 include: "rules/match.smk"
 # Analysis, comparison and inter-dataset summary plots live in analysis.ipynb.

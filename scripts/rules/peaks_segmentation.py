@@ -68,7 +68,7 @@ def binarize_peaks(peak_files_groups, chroms, sizes, bin_size, marks):
 def write_binary_files(per_chrom, marks, cell, outdir):
     os.makedirs(outdir, exist_ok=True)
     for chrom, matrix in per_chrom:
-        outfile = os.path.join(outdir, f"{cell}_{chrom}_binary.txt.gz")
+        outfile = os.path.join(outdir, f"{chrom}_binary.txt.gz")
         print(f"Writing {outfile}...", file=sys.stderr)
         with gzip.open(outfile, "wt") as f:
             f.write(f"{cell}\t{chrom}\n")

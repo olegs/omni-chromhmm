@@ -33,7 +33,7 @@ for E in $(cat marks.txt); do echo $E;
  WORK=${E}_15_coreMarks_dense.bed.gz;
  MATCHED=${WORK/.bed.gz/_matched.bed};
  if [[ -f $REF ]] & [[ -f $WORK ]]; then
-	python ~/work/omni-chromhmm/scripts/rules/match.py match  --ref $REF --work $WORK > $MATCHED;
+	python ~/work/omni-chromhmm/scripts/rules/match.py --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
 
@@ -115,7 +115,7 @@ for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
   fi
   PEAKS+=("${P:-NONE}");
  done;
- python ~/work/omni-chromhmm/scripts/rules/kmeans_peaks.py --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES --cell $E;
+ python ~/work/omni-chromhmm/scripts/rules/peaks_segmentation.py --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES --cell $E;
  echo "Done: $STATES";
 done;
 done;
@@ -142,7 +142,7 @@ for PC in homer macs2 omni; do echo $PC;
  WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
  MATCHED=${WORK/.bed/_matched.bed};
  if [[ -f $REF ]] & [[ -f $WORK ]]; then
-	python ~/work/omni-chromhmm/scripts/rules/match.py match --ref $REF --work $WORK > $MATCHED;
+	python ~/work/omni-chromhmm/scripts/rules/match.py --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
 done;
@@ -153,7 +153,7 @@ for E in $(cat names.txt); do echo $E;
  WORK=${E}/${E}_chromhmm/${E}_15_dense.bed;
  MATCHED=${WORK/.bed/_matched.bed};
  if [[ -f $REF ]] & [[ -f $WORK ]]; then
-	python ~/work/omni-chromhmm/scripts/rules/match.py match --ref $REF --work $WORK > $MATCHED;
+	python ~/work/omni-chromhmm/scripts/rules/match.py --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
 
