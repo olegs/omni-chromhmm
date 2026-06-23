@@ -10,8 +10,14 @@ Usage:
 
 import argparse
 import os
+import sys
 
-from analysis.analyze import load_binary
+# Add scripts/analysis to sys.path so analyze.py can be imported.
+_analysis_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "analysis"))
+if _analysis_dir not in sys.path:
+    sys.path.insert(0, _analysis_dir)
+
+from analyze import load_binary
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)

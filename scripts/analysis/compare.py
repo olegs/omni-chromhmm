@@ -21,6 +21,11 @@ matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Add scripts/analysis to sys.path so analyze.py can be imported.
+_analysis_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "analysis"))
+if _analysis_dir not in sys.path:
+    sys.path.insert(0, _analysis_dir)
+
 from analyze import (load_bed, _natural_sort_key, _load_seg_full,
                      build_transition_matrix, transition_entropy)
 
@@ -30,8 +35,6 @@ if _rules_dir not in sys.path:
     sys.path.insert(0, _rules_dir)
 
 import match
-from bisect import bisect_left
-
 _EXCLUDE_STATES = {"Quies", "Het"}
 from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
                    should_compare as _should_compare

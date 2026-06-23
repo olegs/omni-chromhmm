@@ -2,12 +2,19 @@
 """Compute per-state emissions and save to .npz."""
 
 import argparse
+import numpy as np
+import os
+import pyBigWig
 import sys
 from collections import defaultdict
 
-import numpy as np
 
-from analysis.analyze import load_binary, _natural_sort_key, _load_seg_full as load_bed
+# Add scripts/analysis to sys.path so analyze.py can be imported.
+_analysis_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "analysis"))
+if _analysis_dir not in sys.path:
+    sys.path.insert(0, _analysis_dir)
+
+from analyze import (load_binary, _natural_sort_key, _load_seg_full as load_bed)
 
 
 def compute_emissions_from_bigwigs(segs, bigwig_paths, mark_names, bin_size):
@@ -15,8 +22,6 @@ def compute_emissions_from_bigwigs(segs, bigwig_paths, mark_names, bin_size):
 
     Returns (sorted_states, marks, matrix) where matrix is (n_states, n_marks).
     """
-    import pyBigWig
-
     n_marks = len(mark_names)
     bws = [pyBigWig.open(p) for p in bigwig_paths]
 
