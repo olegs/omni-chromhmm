@@ -47,7 +47,7 @@ rule homer_tagdir:
         # trap ERR removes the incomplete output directory on failure.
         """
         trap "rm -rf {output}" ERR
-        samtools view -h {input.bam} | {input.tool} {output} /dev/stdin -format sam &> {log}
+        samtools view -h {input.bam} | {input.tool} {output} /dev/stdin -format sam -single &> {log}
         test -f {output}/tagInfo.txt
         """
 
@@ -66,7 +66,7 @@ rule homer_control_tagdir:
         # trap ERR removes the incomplete output directory on failure.
         """
         trap "rm -rf {output}" ERR
-        samtools view -h {input.bam} | {input.tool} {output} /dev/stdin -format sam &> {log}
+        samtools view -h {input.bam} | {input.tool} {output} /dev/stdin -format sam -single &> {log}
         test -f {output}/tagInfo.txt
         """
 
