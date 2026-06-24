@@ -260,31 +260,48 @@ def _save_match_matrices(out_prefix, work_states, ref_states, mapping,
     plt.close(fig)
 
 
-def match_states(ref_segs, work_segs, matrix_out=None, method='overlap'):
+def match_states(ref_segs_list, work_segs_list, matrix_out=None, method='overlap'):
     """Match work states to ref states using overlap or jaccard.
 
     Maximizes total overlapping bp or Jaccard index (Hungarian algorithm).
     Returns dict mapping work_state -> ref_state.
     """
-    work_states_sorted = sorted({x[3] for x in work_segs}, key=_natural_sort_key)
-    ref_states_sorted  = sorted({x[3] for x in ref_segs}, key=_natural_sort_key)
+    if not isinstance(ref_segs_list, list) or (ref_segs_list and not isinstance(ref_segs_list[0], list)):
+        ref_segs_list = [ref_segs_list]
+    if not isinstance(work_segs_list, list) or (work_segs_list and not isinstance(work_segs_list[0], list)):
+        work_segs_list = [work_segs_list]
+
+    all_work_states = set()
+    all_ref_states = set()
+    total_overlap = defaultdict(int)
+    total_ref_len = defaultdict(int)
+    total_work_len = defaultdict(int)
+
+    for ref_segs, work_segs in zip(ref_segs_list, work_segs_list):
+        for x in work_segs: all_work_states.add(x[3])
+        for x in ref_segs: all_ref_states.add(x[3])
+        overlap = pair_overlap(ref_segs, work_segs)
+        rl = state_lengths(ref_segs)
+        wl = state_lengths(work_segs)
+        for k, v in overlap.items(): total_overlap[k] += v
+        for k, v in rl.items(): total_ref_len[k] += v
+        for k, v in wl.items(): total_work_len[k] += v
+
+    work_states_sorted = sorted(all_work_states, key=_natural_sort_key)
+    ref_states_sorted  = sorted(all_ref_states, key=_natural_sort_key)
     n_w = len(work_states_sorted)
     n_r = len(ref_states_sorted)
 
-    overlap  = pair_overlap(ref_segs, work_segs)
-    ref_len  = state_lengths(ref_segs)
-    work_len = state_lengths(work_segs)
-
     # Overlap matrix: normalize by genome length so scores are in [0, 1] for logging.
     # Assignment is invariant to global scaling.
-    genome_len = sum(ref_len.values()) or 1
+    genome_len = sum(total_ref_len.values()) or 1
     scores = np.zeros((n_w, n_r))
     jaccard = np.zeros((n_w, n_r))
     for i, w in enumerate(work_states_sorted):
         for j, r in enumerate(ref_states_sorted):
-            ov = overlap.get((w, r), 0)
+            ov = total_overlap.get((w, r), 0)
             scores[i, j] = ov / genome_len
-            union = ref_len.get(r, 0) + work_len.get(w, 0) - ov
+            union = total_ref_len.get(r, 0) + total_work_len.get(w, 0) - ov
             jaccard[i, j] = ov / union if union > 0 else 0.0
 
     if method == 'jaccard':
@@ -316,15 +333,16 @@ def match_states(ref_segs, work_segs, matrix_out=None, method='overlap'):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ref",            required=True, help="Reference segmentation BED")
-    ap.add_argument("--work",           required=True, help="Work segmentation BED to relabel")
-    ap.add_argument("--work-bw-emissions", default=None, dest="work_emissions",
+    ap.add_argument("--ref",            nargs='+', required=True, help="Reference segmentation BED(s)")
+    ap.add_argument("--work",           nargs='+', required=True, help="Work segmentation BED(s) to relabel")
+    ap.add_argument("--out",            nargs='+', help="Output remapped BED(s)")
+    ap.add_argument("--work-bw-emissions", nargs='+', default=None, dest="work_emissions",
                     help="Pre-computed work emissions .npz (for remapping only)")
-    ap.add_argument("--remap-bw-emissions", default=None, dest="remap_emissions",
+    ap.add_argument("--remap-bw-emissions", nargs='+', default=None, dest="remap_emissions",
                     help="Save work emissions .npz with remapped state names to this path")
-    ap.add_argument("--work-bin-emissions", default=None, dest="work_bin_emissions",
+    ap.add_argument("--work-bin-emissions", nargs='+', default=None, dest="work_bin_emissions",
                     help="Pre-computed work binarized emissions .npz (for remapping only)")
-    ap.add_argument("--remap-bin-emissions", default=None, dest="remap_bin_emissions",
+    ap.add_argument("--remap-bin-emissions", nargs='+', default=None, dest="remap_bin_emissions",
                     help="Save work binarized emissions .npz with remapped state names to this path")
     ap.add_argument("--compare-only",   default=None, dest="compare_only",
                     help="Write Jaccard heatmap to this directory instead of rewriting BED")
@@ -336,43 +354,70 @@ def main():
 
     args = ap.parse_args()
 
-    ref_segs  = load_bed(args.ref)
-    work_segs = load_bed(args.work)
+    if len(args.ref) != len(args.work):
+        if len(args.ref) == 1:
+            args.ref = args.ref * len(args.work)
+        elif len(args.work) == 1:
+            args.work = args.work * len(args.ref)
+        else:
+            sys.exit("Error: --ref and --work must have same number of files, or one must be 1.")
 
-    states_work = marks_work = mat_work = None
-    if args.work_emissions:
-        states_work, marks_work, mat_work = _load_emissions_npz(args.work_emissions)
+    if args.out and len(args.out) != len(args.work):
+        sys.exit("Error: --out must have same number of files as --work.")
 
-    states_bin_work = marks_bin_work = mat_bin_work = None
-    if args.work_bin_emissions:
-        states_bin_work, marks_bin_work, mat_bin_work = _load_emissions_npz(args.work_bin_emissions)
-
-    work_states = sorted({x[3] for x in work_segs}, key=_natural_sort_key)
-    ref_states  = sorted({x[3] for x in ref_segs}, key=_natural_sort_key)
+    ref_segs_list = [load_bed(p) for p in args.ref]
+    work_segs_list = [load_bed(p) for p in args.work]
 
     if args.compare_only:
-        overlap = pair_overlap(ref_segs, work_segs)
-        mapping = best_mapping(overlap, work_states, ref_states)
-        compare(ref_segs, work_segs, overlap, mapping, args.compare_only)
+        mapping = match_states(ref_segs_list, work_segs_list, matrix_out=args.matrix_out, method=args.method)
+        # Aggregated stats for compare()
+        total_overlap = defaultdict(int)
+        total_ref_len = defaultdict(int)
+        total_work_len = defaultdict(int)
+        for r_segs, w_segs in zip(ref_segs_list, work_segs_list):
+            ov = pair_overlap(r_segs, w_segs)
+            rl = state_lengths(r_segs)
+            wl = state_lengths(w_segs)
+            for k, v in ov.items(): total_overlap[k] += v
+            for k, v in rl.items(): total_ref_len[k] += v
+            for k, v in wl.items(): total_work_len[k] += v
+
+        ref_states = sorted(total_ref_len.keys(), key=_natural_sort_key)
+        work_states = sorted(total_work_len.keys(), key=_natural_sort_key)
+
+        dummy_ref = [("chr1", 0, total_ref_len[s], s, "0,0,0") for s in ref_states]
+        dummy_work = [("chr1", 0, total_work_len[s], s, "0,0,0") for s in work_states]
+        compare(dummy_ref, dummy_work, total_overlap, mapping, args.compare_only)
         return
 
-    mapping = match_states(ref_segs, work_segs, matrix_out=args.matrix_out, method=args.method)
+    mapping = match_states(ref_segs_list, work_segs_list, matrix_out=args.matrix_out, method=args.method)
 
-    colors = state_colors(ref_segs)
-    for row in work_segs:
-        chrom, s, e, name = row[:4]
-        color = row[4] if len(row) > 4 else "0,0,0"
-        new_name  = mapping.get(name, name)
-        new_color = colors.get(new_name, color)
-        print(f"{chrom}\t{s}\t{e}\t{new_name}\t0\t.\t{s}\t{e}\t{new_color}")
+    # Apply mapping to all work segmentations
+    for i, work_segs in enumerate(work_segs_list):
+        colors = state_colors(ref_segs_list[i])
+        out_f = open(args.out[i], "w") if args.out else sys.stdout
+        for row in work_segs:
+            chrom, s, e, name = row[:4]
+            color = row[4] if len(row) > 4 else "0,0,0"
+            new_name  = mapping.get(name, name)
+            new_color = colors.get(new_name, color)
+            out_f.write(f"{chrom}\t{s}\t{e}\t{new_name}\t0\t.\t{s}\t{e}\t{new_color}\n")
+        if args.out:
+            out_f.close()
 
-    if args.remap_emissions and states_work is not None:
-        remapped = [mapping.get(s, s) for s in states_work]
-        _save_emissions_npz(args.remap_emissions, remapped, marks_work, mat_work)
+    # Remap emissions
+    def _remap_em_list(in_paths, out_paths):
+        if not in_paths or not out_paths: return
+        if len(in_paths) != len(out_paths):
+            print(f"Warning: number of emission files doesn't match remapped paths", file=sys.stderr)
+            return
+        for ip, op in zip(in_paths, out_paths):
+            states, marks, mat = _load_emissions_npz(ip)
+            remapped = [mapping.get(s, s) for s in states]
+            _save_emissions_npz(op, remapped, marks, mat)
 
-    if args.remap_bin_emissions and states_bin_work is not None:
-        remapped_bin = [mapping.get(s, s) for s in states_bin_work]
-        _save_emissions_npz(args.remap_bin_emissions, remapped_bin, marks_bin_work, mat_bin_work)
+    _remap_em_list(args.work_emissions, args.remap_emissions)
+    _remap_em_list(args.work_bin_emissions, args.remap_bin_emissions)
 
 
 if __name__ == "__main__":

@@ -15,13 +15,13 @@ done
 ############### Precomputed segmentations ###################
 
 # Download joint model segmentations
-for E in $(cat marks.txt); do
+for E in $(cat names.txt); do
  echo $E;
  wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/jointModel/n15/reordered/${E}_15_coreMarks_dense.bed.gz -O ${E}_15_coreMarks_dense_joint_reodered.bed.gz
 done;
 
 # Download individual segmentations
-for E in $(cat marks.txt); do
+for E in $(cat names.txt); do
  echo $E;
  wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/indivModels/default_init/$E/n15/${E}_15_coreMarks_dense.bed;
 gzip ${E}_15_coreMarks_dense.bed;
@@ -38,7 +38,7 @@ for E in $(cat marks.txt); do echo $E;
 done;
 
 # Download joint 18 state extended models (core marks with H3K27ac)
-for E in $(cat marks.txt); do
+for E in $(cat names.txt); do
 	echo $E;
 	wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/core_K27ac/jointModel/final/${E}_18_core_K27ac_dense.bed.gz;
 done
@@ -58,7 +58,7 @@ done
 wget https://hgdownload.cse.ucsc.edu/goldenpath/hg19/bigZips/hg19.chrom.sizes
 wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.4.6808.jar
 
-for E in $(cat marks.txt); do echo $E; mkdir -p $E/omni;
+for E in $(cat names.txt); do echo $E; mkdir -p $E/omni;
  for m in H3K4me1 H3K4me3 H3K9me3 H3K27ac H3K27me3 H3K36me3; do
   echo $m;
    java --add-modules=jdk.incubator.vector  -Xmx8G  -jar /home/oshpynov/omnipeak-1.4.6808.jar \
@@ -67,7 +67,7 @@ for E in $(cat marks.txt); do echo $E; mkdir -p $E/omni;
 done
 
 # MACS2 processing
-for E in $(cat marks.txt); do echo $E; mkdir -p $E/macs2;
+for E in $(cat names.txt); do echo $E; mkdir -p $E/macs2;
  for m in H3K4me3 H3K27ac; do echo $m;
   t=$(mktemp -d);
   gunzip -c $E-$m.tagAlign.gz > $t/treatment.bed; gunzip -c $E-Input.tagAlign.gz > $t/control.bed;
@@ -82,7 +82,7 @@ for E in $(cat marks.txt); do echo $E; mkdir -p $E/macs2;
 done;
 
 # Homer processing
-for E in $(cat marks.txt); do echo $E; mkdir -p $E/homer;
+for E in $(cat names.txt); do echo $E; mkdir -p $E/homer;
  for m in H3K4me3 H3K27ac H3K4me1 H3K9me3 H3K27me3 H3K36me3; do echo $m; 
   t=$(mktemp -d);
   makeTagDirectory $t/treatment_tags $E-$m.tagAlign.gz -format bed -single;
@@ -95,6 +95,7 @@ done;
 #KMeans states preprocessing
 CHROMSIZES=hg19.chrom.sizes;
 BIN=100;
+
 #Means states processing
 for E in $(cat names.txt); do echo "===================="; echo $E;
 for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
@@ -152,7 +153,7 @@ for E in $(cat names.txt); do echo $E;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=${E}/${E}_chromhmm/${E}_15_dense.bed;
  MATCHED=${WORK/.bed/_matched.bed};
- if [[ -f $REF ]] & [[ -f $WORK ]]; then
+ if [[ -f $REF ]] && [[ -f $WORK ]]; then
 	python ~/work/omni-chromhmm/scripts/rules/match.py --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
@@ -160,3 +161,43 @@ done;
 
 ########### Alternative ##############
 Alternative reference:  REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
+
+
+# Joint KMeans states processing
+for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
+ mkdir -p joint_kmeans/$PC;
+ MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac";
+ CELLS=$(cat names.txt | tr '\n' ',' | sed 's/,$//');
+ ALL_PEAKS=();
+ for E in $(cat names.txt); do
+  for M in H3K4me3 H3K4me1 H3K36me3 H3K9me3 H3K27me3 H3K27ac; do
+   if [[ $PC == "omni" ]]; then
+     P=$(ls $E/$PC/*${M}*.peak 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+   elif [[ $PC == "homer" ]]; then
+     P=$(ls $E/$PC/*${M}*_homer.bed 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+   elif [[ $PC == "macs2" ]]; then
+     P=$(ls $E/$PC/*${M}*Peak 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+   fi
+   ALL_PEAKS+=("${P:-NONE}");
+  done;
+ done;
+ python ~/work/omni-chromhmm/scripts/rules/joint_peaks_segmentation.py --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --cells "$CELLS" --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_kmeans/$PC;
+done;
+
+
+# Rematch joint peak caller states to the joint model
+for PC in homer macs2 omni; do echo $PC;
+ REFS=(); WORKS=(); MATCHEDS=();
+ for E in $(cat names.txt); do
+  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
+  WORK=joint_kmeans/$PC/${E}_kmeans_joint_states.bed;
+  MATCHED=${WORK/.bed/_matched.bed};
+  if [[ -f $REF ]] && [[ -f $WORK ]]; then
+    REFS+=($REF); WORKS+=($WORK); MATCHEDS+=($MATCHED);
+  fi;
+ done;
+ if [ ${#WORKS[@]} -gt 0 ]; then
+  python ~/work/omni-chromhmm/scripts/rules/match.py --ref "${REFS[@]}" --work "${WORKS[@]}" --out "${MATCHEDS[@]}";
+ fi;
+done;
+
