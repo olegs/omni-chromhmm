@@ -201,3 +201,19 @@ for PC in homer macs2 omni; do echo $PC;
  fi;
 done;
 
+# Alternatively rematch joint peak caller states to IMR90
+for PC in homer macs2 omni; do echo $PC;
+ REFS=(); WORKS=(); MATCHEDS=();
+ for E in $(cat names.txt); do
+  REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
+  WORK=joint_kmeans/$PC/${E}_kmeans_joint_states.bed;
+  MATCHED=${WORK/.bed/_matched.bed};
+  if [[ -f $REF ]] && [[ -f $WORK ]]; then
+    REFS+=($REF); WORKS+=($WORK); MATCHEDS+=($MATCHED);
+  fi;
+ done;
+ if [ ${#WORKS[@]} -gt 0 ]; then
+  python ~/work/omni-chromhmm/scripts/rules/match.py --ref "${REFS[@]}" --work "${WORKS[@]}" --out "${MATCHEDS[@]}";
+ fi;
+done;
+
