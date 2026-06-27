@@ -52,20 +52,23 @@ def load_bed(path):
         comment="#",
         header=None,
         engine="c",
-        names=range(4),
-        usecols=range(4),
         on_bad_lines="skip",
         low_memory=False
     )
     df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
     # Drop rows where chrom, start, or end are NaN
     df = df.dropna(subset=[0, 1, 2])
+    # Take first 4 columns at most
+    df = df.iloc[:, :4]
+    # Ensure we have column 3 (name)
+    if 3 not in df.columns:
+        df[3] = "."
     # Ensure correct types
     df[1] = df[1].astype(int)
     df[2] = df[2].astype(int)
     df[3] = df[3].fillna(".").astype(str)
     # Convert to a list of tuples
-    return df.to_records(index=False).tolist()
+    return df[[0, 1, 2, 3]].to_records(index=False).tolist()
 
 
 def _load_seg_full(path):
@@ -76,13 +79,16 @@ def _load_seg_full(path):
         comment="#",
         header=None,
         engine="c",
-        names=range(9),
         on_bad_lines="skip",
         low_memory=False
     )
     df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
     # Drop rows where chrom, start, or end are NaN
     df = df.dropna(subset=[0, 1, 2])
+    # Ensure we have enough columns. ChromHMM dense bed has at least 9.
+    for col in [3, 8]:
+        if col not in df.columns:
+            df[col] = "." if col == 3 else "0,0,0"
     df[1] = df[1].astype(int)
     df[2] = df[2].astype(int)
     df[3] = df[3].fillna(".").astype(str)
@@ -102,12 +108,13 @@ def load_bed_df(path, sample=None):
         comment="#",
         header=None,
         engine="c",
-        names=range(9),
         on_bad_lines="skip",
         low_memory=False
     )
     df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
     # Drop rows where chrom, start, end or state are NaN
+    if 3 not in df.columns:
+        df[3] = "."
     df = df.dropna(subset=[0, 1, 2, 3])
 
     res = pd.DataFrame()
@@ -116,7 +123,12 @@ def load_bed_df(path, sample=None):
     res["end"] = df[2].astype(np.int64)
     res["state"] = df[3].astype(str)
     res["length"] = (res["end"] - res["start"]).astype(np.int64)
-    res["rgb"] = df[8].fillna("128,128,128").astype(str)
+
+    rgb_col = 8
+    if rgb_col not in df.columns:
+        res["rgb"] = "128,128,128"
+    else:
+        res["rgb"] = df[8].fillna("128,128,128").astype(str)
 
     if sample is not None:
         res["sample"] = sample

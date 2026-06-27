@@ -319,13 +319,9 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     # For all other pairs, we use the best mapping found by overlap.
     is_rep_pair = _is_replicate(label_i) and _is_replicate(label_j) and (label_i[:-5] == label_j[:-5])
 
-    # Composition similarity: compute only for replicate pairs as per instruction.
-    if is_rep_pair:
-        row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j)
-        row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES)
-    else:
-        row["composition_similarity"] = 0.0
-        row["composition_noqh_similarity"] = 0.0
+    # Composition similarity: compute for all compared pairs.
+    row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j)
+    row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES)
 
     overlap = match_pair_overlap(segs_full_i, segs_full_j)
     work_states = sorted({x[3] for x in segs_full_j}, key=_natural_sort_key)
@@ -421,16 +417,16 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
         if os.path.exists(p.replace(".bed", ".bw_emissions.npz"))
     }
 
-    kappa_mat           = np.zeros((n, n))
-    comp_sim_mat        = np.zeros((n, n))
-    comp_sim_noqh_mat   = np.zeros((n, n))
-    jaccard_mat         = np.zeros((n, n))
-    overlap_mat         = np.zeros((n, n))
-    kappa_noqh_mat      = np.zeros((n, n))
-    overlap_noqh_mat    = np.zeros((n, n))
-    jaccard_noqh_mat    = np.zeros((n, n))
-    em_sim_mat          = np.zeros((n, n))
-    bw_sim_mat          = np.zeros((n, n))
+    kappa_mat           = np.eye(n)
+    comp_sim_mat        = np.eye(n)
+    comp_sim_noqh_mat   = np.eye(n)
+    jaccard_mat         = np.eye(n)
+    overlap_mat         = np.eye(n)
+    kappa_noqh_mat      = np.eye(n)
+    overlap_noqh_mat    = np.eye(n)
+    jaccard_noqh_mat    = np.eye(n)
+    em_sim_mat          = np.eye(n)
+    bw_sim_mat          = np.eye(n)
 
     pair_order = [
         (i, j)

@@ -267,6 +267,16 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
 
         # Enrichment
         enrichment = load_enrichment(_adir(method), method)
+        def _get_val(data, st, ann):
+            if st not in data: return np.nan
+            if ann in data[st]: return data[st][ann]
+            # Fallback to label without genome suffix
+            base = ann.split(".")[0]
+            for k in data[st]:
+                if k.split(".")[0] == base:
+                    return data[st][k]
+            return np.nan
+
         for state, annotation, col in [
             ("Tx",   "RefSeqGene.hg38",        "enrich_Tx_RefSeqGene"),
             ("Tx",   "ExpressedGeneBodies",     "enrich_Tx_ExpressedGeneBodies"),
@@ -274,16 +284,18 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             ("Tss",  "RefSeqTSS2kb.hg38",       "enrich_Tss_RefSeqTSS2kb"),
             ("Enh1", "ExpressedTSS",            "enrich_Enh1_ExpressedTSS"),
         ]:
-            if state in enrichment and annotation in enrichment[state]:
-                row[col] = enrichment[state][annotation]
+            val = _get_val(enrichment, state, annotation)
+            if not np.isnan(val):
+                row[col] = val
 
         # Jaccard vs expressed annotations
         jaccard = load_jaccard(_adir(method), method)
         for state, annotation, col in [
             ("Tx",  "ExpressedGeneBodies", "jaccard_Tx_ExpressedGeneBodies"),
         ]:
-            if state in jaccard and annotation in jaccard[state]:
-                row[col] = jaccard[state][annotation]
+            val = _get_val(jaccard, state, annotation)
+            if not np.isnan(val):
+                row[col] = val
 
         # Jaccard vs ATAC (any atac_* label)
         if "Tss" in jaccard:

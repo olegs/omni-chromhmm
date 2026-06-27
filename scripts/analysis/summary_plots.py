@@ -85,7 +85,7 @@ STATE_COLORS = {
 
 # (key, display label, hex color) — key matches METHOD_ORDER keys
 INTER_DS_METHODS = [
-    ("reference",        "ENCODE Ref",      BIN_COLORS["reference"]),
+    ("ref",              "ENCODE Ref",      BIN_COLORS["reference"]),
     ("chromhmm_default", "Default ChromHMM", BIN_COLORS["default"]),
     ("chromhmm_homer",   "ChromHMM HOMER",     BIN_COLORS["homer"]),
     ("kmeans_homer",     "KMeans HOMER",       BIN_COLORS["homer"]),
@@ -107,12 +107,15 @@ def sort_states(states):
 def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method="comb"):
     """Return Path for a single (dataset, method) {match_method}_matched BED."""
     root = Path(workdir) / ds
-    sfx = f"{match_method}_matched"
+    sfx = match_method if match_method.endswith("matched") else f"{match_method}_matched"
     mapping = {
         "chromhmm_default": root / "chromhmm_default_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
         "kmeans_omni":      root / "omni"  / f"omni_kmeans_states_{sfx}.bed",
         "kmeans_homer":     root / "homer" / f"homer_kmeans_states_{sfx}.bed",
         "kmeans_macs2":     root / "macs2" / f"macs2_kmeans_states_{sfx}.bed",
+        "chromhmm_omni":    root / "omni"  / f"omni_chromhmm_states_{sfx}.bed",
+        "chromhmm_homer":   root / "homer" / f"homer_chromhmm_states_{sfx}.bed",
+        "chromhmm_macs2":   root / "macs2" / f"macs2_chromhmm_states_{sfx}.bed",
     }
     return mapping[method_key]
 
@@ -171,7 +174,7 @@ def _load_jaccard_value(analysis_dir, method, state, label):
     For the special 'ref' method the jaccard.tsv lives one level above the
     variant dir (e.g. analysis/ref/ rather than analysis/ovlp/ref/).
     """
-    if method == "ref":
+    if method in ("ref", "reference"):
         path = os.path.join(os.path.dirname(analysis_dir), "ref",
                             "enrichment", "jaccard.tsv")
     else:
@@ -179,7 +182,13 @@ def _load_jaccard_value(analysis_dir, method, state, label):
     if not os.path.exists(path):
         return np.nan
     df = pd.read_csv(path, sep="\t")
+
+    # Try exact match first, then fallback to label without genome suffix.
     mask = (df["state"] == state) & (df["label"] == label)
+    if not mask.any():
+        base_label = label.split(".")[0]
+        mask = (df["state"] == state) & (df["label"].str.split(".").str[0] == base_label)
+
     if not mask.any():
         return np.nan
     return float(df.loc[mask, "jaccard"].iloc[0])
@@ -226,7 +235,7 @@ def _collect_jaccard(datasets, analysis_dirs, state, label):
 
 def _load_jaccard_atac_value(analysis_dir, method, state):
     """Return Jaccard of (state, atac_*) — matches any atac_ label."""
-    if method == "ref":
+    if method in ("ref", "reference"):
         path = os.path.join(os.path.dirname(analysis_dir), "ref",
                             "enrichment", "jaccard.tsv")
     else:
@@ -504,6 +513,63 @@ def _plot_rep_consistency(datasets, methods_dirs, outdir):
         _plot_summary(data, title, ylabel, outpath, partial_note=True)
 
 
+def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=False):
+    """Bar plot: replicate consistency distribution per de-novo method and metric."""
+    suffix = "_noqh" if noqh else ""
+    metric_configs = [
+        ("Composition", f"composition{suffix}_rep1_vs_rep2", "#E8833A"),
+        ("Kappa",       f"kappa{suffix}_rep1_vs_rep2",       "#4878CF"),
+        ("Jaccard",     f"jaccard{suffix}_rep1_vs_rep2",     "#2CA02C"),
+    ]
+
+    rows = []
+    for metric, col, _ in metric_configs:
+        data = _collect_table_col(datasets, methods_dirs, col)
+        for method in data.index:
+            label = _SAMPLE_TO_INFO.get(method, (method,))[0]
+            for val in data.loc[method].dropna():
+                rows.append({"Method": label, "Metric": metric, "value": float(val)})
+
+    if not rows:
+        print(f"  skipping {outfile}: no data", file=sys.stderr)
+        return
+
+    plot_df = pd.DataFrame(rows)
+    method_labels = [_SAMPLE_TO_INFO.get(m, (m,))[0] for m in METHODS_POOLED
+                     if _SAMPLE_TO_INFO.get(m, (m,))[0] in plot_df["Method"].unique()]
+
+    palette = {metric: color for metric, _, color in metric_configs}
+
+    n_methods = len(method_labels)
+    fig, ax = plt.subplots(figsize=(max(8, n_methods * 1.2 + 2), 5))
+    sns.barplot(
+        data=plot_df, x="Method", y="value", hue="Metric",
+        order=method_labels,
+        hue_order=[m[0] for m in metric_configs],
+        palette=palette,
+        estimator="mean", errorbar="se",
+        ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
+    )
+    ax.set_xlabel("")
+    ax.set_ylabel("Replicate similarity", fontsize=9)
+    ax.set_ylim(0, 1)
+    ax.grid(axis="y", alpha=0.3, linewidth=0.5)
+    mode = "NOQH (excl. Quies/Het)" if noqh else "Full"
+    n_ds = len(datasets)
+    ax.set_title(
+        f"Replicate consistency by method — {mode}\n"
+        f"({n_methods} methods, {n_ds} datasets with replicates)",
+        fontsize=10, fontweight="bold",
+    )
+    ax.tick_params(axis="x", rotation=30, labelsize=8)
+    ax.legend(title="Metric", fontsize=8, title_fontsize=9,
+              bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
+    fig.tight_layout()
+    fig.savefig(outfile, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved {outfile}")
+
+
 # Segment length violin (from matched_stats_all.tsv)
 # ---------------------------------------------------------------------------
 
@@ -689,7 +755,7 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
 
     for key, label, _ in INTER_DS_METHODS:
         per_ds = []
-        if key == "reference":
+        if key == "ref":
             cov = _coverage(ref_beds(markups_dir))
             if cov:
                 total = sum(cov.values())
@@ -798,7 +864,7 @@ def _plot_violin(datasets, cells, workdir, markups_dir, nstates, outfile, match_
     frames = [load_reference_segments(markups_dir)]
 
     for key, label, _ in INTER_DS_METHODS:
-        if key == "reference":
+        if key == "ref":
             continue
         paths = [str(ds_method_bed(workdir, ds, cell, nstates, key, match_method))
                  for ds, cell in zip(datasets, cells)]
@@ -883,6 +949,8 @@ def _plot_reference_composition(markups_dir, outfile):
     """Stacked bar chart: state fraction per ENCODE reference segmentation."""
     from analyze import load_bed_df
     beds = ref_beds(markups_dir)
+    # Sort beds by cell type label (part after the ENCFF..._ prefix)
+    beds = sorted(beds, key=lambda p: "_".join(Path(p).name.replace(".bed.gz", "").replace(".bed", "").split("_")[1:]))
     if not beds:
         print(f"  skipping {outfile}: no reference beds", file=sys.stderr)
         return
@@ -921,7 +989,7 @@ def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, out
     coverages = {}
     labels_out = []
     for key, label, _ in INTER_DS_METHODS:
-        if key == "reference":
+        if key == "ref":
             beds = ref_beds(markups_dir)
             per_ds = [_fracs_from_path(b) for b in beds]
         else:
@@ -1143,6 +1211,46 @@ def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
     print(f"  saved {outfile}")
 
 
+def _plot_per_dataset_all_methods_composition(datasets, cells, workdir, nstates,
+                                              methods, outdir, match_method="comb"):
+    """Stacked bar chart: state fraction per method for each dataset."""
+    from analyze import load_bed_df
+
+    def _fracs_from_path(path):
+        p = Path(path)
+        if not p.exists():
+            return {}
+        df = load_bed_df(str(p))[["state", "length"]]
+        totals = df.groupby("state")["length"].sum()
+        total_bp = totals.sum()
+        return (totals / total_bp).to_dict() if total_bp > 0 else {}
+
+    for ds, cell in zip(datasets, cells):
+        coverages = {}
+        labels_out = []
+        for key, label, _ in methods:
+            if key == "ref":
+                continue
+            try:
+                bed = ds_method_bed(workdir, ds, cell, nstates, key, match_method)
+                fracs = _fracs_from_path(bed)
+                if fracs:
+                    coverages[label] = fracs
+                    labels_out.append(label)
+            except KeyError:
+                continue
+
+        if not coverages:
+            continue
+
+        outfile = os.path.join(outdir, f"ds_composition_{ds}.png")
+        _stacked_composition_chart(
+            coverages, labels_out,
+            f"State composition — {ds} (all de-novo methods)",
+            outfile, label_fontsize=9,
+        )
+
+
 def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       outdir=None, workdir=None, markups_dir=None, cells=None,
                       methods=None, nstates=15, match_method="comb",
@@ -1158,6 +1266,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       ref_dist_noqh_outfile=None,
                       method_composition_outfile=None,
                       method_ds_composition_outdir=None,
+                      all_methods_composition_outdir=None,
                       rep_consistency_outdir=None,
                       method_sim_dist_indir=None, method_sim_dist_methods=None,
                       method_sim_dist_outfile=None,
@@ -1189,6 +1298,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         ref_dist_noqh_outfile=ref_dist_noqh_outfile,
         method_composition_outfile=method_composition_outfile,
         method_ds_composition_outdir=method_ds_composition_outdir,
+        all_methods_composition_outdir=all_methods_composition_outdir,
         rep_consistency_outdir=rep_consistency_outdir,
         method_sim_dist_indir=method_sim_dist_indir,
         method_sim_dist_methods=method_sim_dist_methods or [],
@@ -1208,8 +1318,8 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         # composition, violin) — their titles read "ENCODE reference vs de-novo
         # methods", and the bar/table plots key the reference off "ref" instead,
         # so a stray "reference" entry here is harmless to them.
-        if "reference" not in args.methods and "reference" in methods_map:
-            new_methods.append(methods_map["reference"])
+        if "ref" not in args.methods and "ref" in methods_map:
+            new_methods.append(methods_map["ref"])
         for k in args.methods:
             if k in methods_map:
                 new_methods.append(methods_map[k])
@@ -1230,13 +1340,13 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_summary(data, "Transition matrix entropy (full)",
                       "Entropy (bits)",
                       os.path.join(args.outdir, "summary_entropy.png"),
-                      order=["ref"] + METHODS_POOLED)
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         data = _collect_table_col(ds, mdirs, "entropy_noqh", include_ref=True)
         _plot_summary(data, "Transition matrix entropy (NOQH, excl. Quies/Het)",
                       "Entropy (bits)",
                       os.path.join(args.outdir, "summary_entropy_noqh.png"),
-                      order=["ref"] + METHODS_POOLED)
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         data = _collect_table_col(ds, mdirs, "jaccard_Tx_ExpressedGeneBodies")
         _plot_summary(data, "Jaccard: Tx state vs expressed gene bodies", "Jaccard",
@@ -1251,12 +1361,12 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         data = _collect_table_col(ds, mdirs, "median_Tx_length", include_ref=True)
         _plot_summary(data, "Median Tx (transcription) segment length", "bp",
                       os.path.join(args.outdir, "summary_median_tx_length.png"),
-                      order=["ref"] + METHODS_POOLED)
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         data = _collect_table_col(ds, mdirs, "mean_Tx_length", include_ref=True)
         _plot_summary(data, "Mean Tx (transcription) segment length", "bp",
                       os.path.join(args.outdir, "summary_mean_tx_length.png"),
-                      order=["ref"] + METHODS_POOLED)
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         data = _collect_jaccard(ds, adirs, "Tss", "RefSeqTSS2kb.hg38")
         _plot_summary(data, "Jaccard: Tss state vs RefSeq TSS ±1 kb", "Jaccard",
@@ -1271,23 +1381,19 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         data = _collect_table_col(ds, mdirs, "n_segments", include_ref=True) / 1000.0
         _plot_summary(data, "Total number of segments", "Segments (×10³)",
                       os.path.join(args.outdir, "summary_n_segments.png"),
-                      order=["ref"] + METHODS_POOLED)
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         # Similarity vs ENCODE reference (3 variants)
-        _plot_summary(_collect_table_col(ds, mdirs, "kappa_vs_ref"),
+        _plot_summary(_collect_table_col(ds, mdirs, "kappa_vs_ref", include_ref=True),
                       "Agreement vs ENCODE reference (Kappa)", "Cohen's Kappa",
                       os.path.join(args.outdir, "summary_kappa_vs_ref.png"),
-                      order=METHODS_POOLED)
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        _plot_summary(_collect_table_col(ds, mdirs, "jaccard_vs_ref"),
+        _plot_summary(_collect_table_col(ds, mdirs, "jaccard_vs_ref", include_ref=True),
                       "Agreement vs ENCODE reference (Jaccard)", "Mean per-state Jaccard",
                       os.path.join(args.outdir, "summary_jaccard_vs_ref.png"),
-                      order=METHODS_POOLED)
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        _plot_summary(_collect_table_col(ds, mdirs, "composition_vs_ref"),
-                      "State composition similarity vs ENCODE reference", "Cosine similarity",
-                      os.path.join(args.outdir, "summary_composition_similarity.png"),
-                      order=METHODS_POOLED)
 
         _plot_per_state_kappa(ds, adirs, args.outdir, match_method=args.match_method)
 
@@ -1404,6 +1510,16 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         if len(args.datasets) != len(args.methods_dirs):
             raise ValueError("--datasets and --methods-dirs must have equal lengths")
         _plot_rep_consistency(args.datasets, args.methods_dirs, args.rep_consistency_outdir)
+        _plot_rep_similarity_distribution(
+            args.datasets, args.methods_dirs,
+            os.path.join(args.rep_consistency_outdir, "rep_consistency_distribution.png"),
+            noqh=False,
+        )
+        _plot_rep_similarity_distribution(
+            args.datasets, args.methods_dirs,
+            os.path.join(args.rep_consistency_outdir, "rep_consistency_distribution_noqh.png"),
+            noqh=True,
+        )
 
     # --- method state composition -------------------------------------------
     if args.method_composition_outfile:
@@ -1437,3 +1553,14 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                 args.datasets, args.cells, args.workdir, args.nstates,
                 method_key, method_label, outfile, args.match_method,
             )
+
+    # --- per-method state composition for each dataset -----------------------
+    if args.all_methods_composition_outdir:
+        if not (args.workdir and args.cells and args.datasets):
+            raise ValueError("--workdir, --datasets and --cells are required for "
+                             "--all-methods-composition-outdir")
+        os.makedirs(args.all_methods_composition_outdir, exist_ok=True)
+        _plot_per_dataset_all_methods_composition(
+            args.datasets, args.cells, args.workdir, args.nstates,
+            INTER_DS_METHODS, args.all_methods_composition_outdir, args.match_method
+        )
