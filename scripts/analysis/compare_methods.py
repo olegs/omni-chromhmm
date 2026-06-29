@@ -303,6 +303,12 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             if atac_label:
                 row["jaccard_Tss_ATAC"] = jaccard["Tss"][atac_label]
 
+        # Enrichment vs ATAC (any atac_* label)
+        if "Tss" in enrichment:
+            atac_label = next((l for l in enrichment["Tss"] if l.startswith("atac_")), None)
+            if atac_label:
+                row["enrich_Tss_ATAC"] = enrichment["Tss"][atac_label]
+
         rows.append(row)
 
     return pd.DataFrame(rows)

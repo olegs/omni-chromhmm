@@ -1379,6 +1379,15 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       os.path.join(args.outdir, "summary_jaccard_tss_atac.png"),
                       partial_note=True)
 
+        data = _collect_table_col(ds, mdirs, "enrich_Tss_RefSeqTSS2kb")
+        _plot_summary(data, "Tss enrichment at RefSeq TSS ±1 kb", "Fold enrichment",
+                      os.path.join(args.outdir, "summary_enrich_tss.png"))
+
+        data = _collect_table_col(ds, mdirs, "enrich_Tss_ATAC")
+        _plot_summary(data, "Tss enrichment at ATAC-seq peaks", "Fold enrichment",
+                      os.path.join(args.outdir, "summary_enrich_tss_atac.png"),
+                      partial_note=True)
+
         # Total number of segments, including the ENCODE reference.
         data = _collect_table_col(ds, mdirs, "n_segments", include_ref=True) / 1000.0
         _plot_summary(data, "Total number of segments", "Segments (×10³)",

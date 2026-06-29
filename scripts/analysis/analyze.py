@@ -57,15 +57,19 @@ def load_bed(path):
     )
     df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
     # Drop rows where chrom, start, or end are NaN
-    df = df.dropna(subset=[0, 1, 2])
+    subset = [c for c in [0, 1, 2] if c in df.columns]
+    if subset:
+        df = df.dropna(subset=subset)
     # Take first 4 columns at most
     df = df.iloc[:, :4]
-    # Ensure we have column 3 (name)
-    if 3 not in df.columns:
-        df[3] = "."
+    # Ensure we have all 4 columns for return
+    for col in range(4):
+        if col not in df.columns:
+            df[col] = "." if col == 3 else 0
     # Ensure correct types
-    df[1] = df[1].astype(int)
-    df[2] = df[2].astype(int)
+    df[0] = df[0].astype(str)
+    df[1] = pd.to_numeric(df[1], errors="coerce").fillna(0).astype(int)
+    df[2] = pd.to_numeric(df[2], errors="coerce").fillna(0).astype(int)
     df[3] = df[3].fillna(".").astype(str)
     # Convert to a list of tuples
     return df[[0, 1, 2, 3]].to_records(index=False).tolist()
@@ -84,13 +88,19 @@ def _load_seg_full(path):
     )
     df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
     # Drop rows where chrom, start, or end are NaN
-    df = df.dropna(subset=[0, 1, 2])
+    subset = [c for c in [0, 1, 2] if c in df.columns]
+    if subset:
+        df = df.dropna(subset=subset)
     # Ensure we have enough columns. ChromHMM dense bed has at least 9.
-    for col in [3, 8]:
+    for col in [0, 1, 2, 3, 8]:
         if col not in df.columns:
-            df[col] = "." if col == 3 else "0,0,0"
-    df[1] = df[1].astype(int)
-    df[2] = df[2].astype(int)
+            if col == 0: df[col] = "chrUnk"
+            elif col in (1, 2): df[col] = 0
+            elif col == 3: df[col] = "."
+            elif col == 8: df[col] = "0,0,0"
+    df[0] = df[0].astype(str)
+    df[1] = pd.to_numeric(df[1], errors="coerce").fillna(0).astype(int)
+    df[2] = pd.to_numeric(df[2], errors="coerce").fillna(0).astype(int)
     df[3] = df[3].fillna(".").astype(str)
     df[8] = df[8].fillna("0,0,0").astype(str)
     return df[[0, 1, 2, 3, 8]].to_records(index=False).tolist()
@@ -113,14 +123,15 @@ def load_bed_df(path, sample=None):
     )
     df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
     # Drop rows where chrom, start, end or state are NaN
-    if 3 not in df.columns:
-        df[3] = "."
+    for col in [0, 1, 2, 3]:
+        if col not in df.columns:
+            df[col] = "." if col in (0, 3) else 0
     df = df.dropna(subset=[0, 1, 2, 3])
 
     res = pd.DataFrame()
     res["chrom"] = df[0].astype(str)
-    res["start"] = df[1].astype(np.int64)
-    res["end"] = df[2].astype(np.int64)
+    res["start"] = pd.to_numeric(df[1], errors="coerce").fillna(0).astype(np.int64)
+    res["end"] = pd.to_numeric(df[2], errors="coerce").fillna(0).astype(np.int64)
     res["state"] = df[3].astype(str)
     res["length"] = (res["end"] - res["start"]).astype(np.int64)
 
