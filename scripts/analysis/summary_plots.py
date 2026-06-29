@@ -10,7 +10,7 @@ Plots are generated:
   summary_jaccard_tx.png          — Jaccard: Tx state vs expressed gene bodies
   summary_enrich_tx.png           — Tx fold enrichment at expressed gene bodies
   summary_mean_tx_length.png      — mean Tx segment length
-  summary_jaccard_tss.png         — Jaccard: Tss state vs RefSeqTSS ±1 kb
+  summary_jaccard_tss.png         — Jaccard: Tss state vs RefSeqTSS ±2 kb
   summary_jaccard_tss_atac.png    — Jaccard: Tss state vs ATAC-seq peaks
   summary_n_segments.png          — total number of segments
 
@@ -1371,7 +1371,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         data = _collect_jaccard(ds, adirs, "Tss", "RefSeqTSS2kb.hg38")
-        _plot_summary(data, "Jaccard: Tss state vs RefSeq TSS ±1 kb", "Jaccard",
+        _plot_summary(data, "Jaccard: Tss state vs RefSeq TSS ±2 kb", "Jaccard",
                       os.path.join(args.outdir, "summary_jaccard_tss.png"))
 
         data = _collect_jaccard_atac(ds, adirs, "Tss")
@@ -1380,7 +1380,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       partial_note=True)
 
         data = _collect_table_col(ds, mdirs, "enrich_Tss_RefSeqTSS2kb")
-        _plot_summary(data, "Tss enrichment at RefSeq TSS ±1 kb", "Fold enrichment",
+        _plot_summary(data, "Tss enrichment at RefSeq TSS ±2 kb", "Fold enrichment",
                       os.path.join(args.outdir, "summary_enrich_tss.png"))
 
         data = _collect_table_col(ds, mdirs, "enrich_Tss_ATAC")
