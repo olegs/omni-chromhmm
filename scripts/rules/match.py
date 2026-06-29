@@ -95,6 +95,28 @@ def state_colors(ref_segs):
     return out
 
 
+def normalize_state_name(name):
+    """Normalize ENCODE state names to canonical 15-state labels."""
+    # Remove leading number: "1_TssA" -> "TssA", "01_TssA" -> "TssA"
+    name = re.sub(r'^\d+_', '', name)
+    # Common mappings
+    if "TssA" in name and "Flnk" not in name: return "Tss"
+    if "Tss" in name and "Flnk" in name: return "TssFlnk"
+    if "Tx" in name and "Flnk" in name: return "TssFlnk"
+    if "TxWk" in name or ("Tx" in name and "Wk" in name): return "TxWk"
+    if "Tx" in name: return "Tx"
+    if "EnhG" in name: return "EnhG"
+    if "Enh" in name and ("Wk" in name or "Lo" in name): return "EnhLo"
+    if "Enh" in name: return "Enh"
+    if "Biv" in name: return "Biv"
+    if "ReprPC" in name and "Wk" in name: return "ReprPCWk"
+    if "ReprPC" in name: return "ReprPC"
+    if "Quies" in name: return "Quies"
+    if "ZNF" in name: return "ZNF/Rpts"
+    if "Het" in name: return "Het"
+    return name
+
+
 def best_mapping(overlap, work_states, ref_states):
     """One-to-one mapping work→ref via Hungarian algorithm on raw overlap length."""
     n_r = len(ref_states)
@@ -349,8 +371,8 @@ def main():
     ap.add_argument("--matrix-out",     default=None, dest="matrix_out",
                     help="Path prefix to persist the per-state matching matrices "
                          "(.score.tsv/.jaccard.tsv/.mapping.tsv/.png)")
-    ap.add_argument("--method",         default="overlap", choices=["overlap", "jaccard"],
-                    help="Matching method: overlap or jaccard (default: overlap)")
+    ap.add_argument("--method",         default="jaccard", choices=["overlap", "jaccard"],
+                    help="Matching method: overlap or jaccard (default: jaccard)")
 
     args = ap.parse_args()
 
@@ -399,8 +421,9 @@ def main():
         for row in work_segs:
             chrom, s, e, name = row[:4]
             color = row[4] if len(row) > 4 else "0,0,0"
-            new_name  = mapping.get(name, name)
-            new_color = colors.get(new_name, color)
+            raw_new_name = mapping.get(name, name)
+            new_name  = normalize_state_name(raw_new_name)
+            new_color = colors.get(raw_new_name, color)
             out_f.write(f"{chrom}\t{s}\t{e}\t{new_name}\t0\t.\t{s}\t{e}\t{new_color}\n")
         if args.out:
             out_f.close()
@@ -413,7 +436,7 @@ def main():
             return
         for ip, op in zip(in_paths, out_paths):
             states, marks, mat = _load_emissions_npz(ip)
-            remapped = [mapping.get(s, s) for s in states]
+            remapped = [normalize_state_name(mapping.get(s, s)) for s in states]
             _save_emissions_npz(op, remapped, marks, mat)
 
     _remap_em_list(args.work_emissions, args.remap_emissions)

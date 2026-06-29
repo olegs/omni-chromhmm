@@ -268,13 +268,25 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
         # Enrichment
         enrichment = load_enrichment(_adir(method), method)
         def _get_val(data, st, ann):
-            if st not in data: return np.nan
-            if ann in data[st]: return data[st][ann]
+            # 1. Flexible state lookup
+            target_state = st
+            if st not in data:
+                # Try case-insensitive or substring match (e.g. "Tss" -> "1_TssA")
+                matches = [s for s in data if st.lower() in s.lower()]
+                if matches:
+                    # Prefer exact match if possible, otherwise first match
+                    target_state = next((s for s in matches if s.lower() == st.lower()), matches[0])
+                else:
+                    return np.nan
+            
+            # 2. Flexible annotation lookup
+            if ann in data[target_state]:
+                return data[target_state][ann]
             # Fallback to label without genome suffix
             base = ann.split(".")[0]
-            for k in data[st]:
+            for k in data[target_state]:
                 if k.split(".")[0] == base:
-                    return data[st][k]
+                    return data[target_state][k]
             return np.nan
 
         for state, annotation, col in [
