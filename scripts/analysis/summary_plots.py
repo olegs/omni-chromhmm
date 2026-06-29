@@ -308,7 +308,7 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.8), 4.2))
 
     ax.bar(x, np.nan_to_num(means), color=colors,
-           edgecolor="white", linewidth=0.5)
+           edgecolor="lightgrey", linewidth=1)
 
     for i, (m, se, c) in enumerate(zip(means, ses, counts)):
         if np.isnan(m) or c == 0:
@@ -549,6 +549,7 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
         palette=palette,
         estimator="mean", errorbar="se",
         ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
+        edgecolor="lightgrey", linewidth=1,
     )
     ax.set_xlabel("")
     ax.set_ylabel("Replicate similarity", fontsize=9)
@@ -628,7 +629,7 @@ def _peak_bar(data, col, ylabel, title, outpath):
         means, stds = np.array(means), np.array(stds)
         ax.bar(x + offset, np.nan_to_num(means), width=width * 0.9,
                color=_PEAK_METHOD_COLORS[method], label=method,
-               edgecolor="white", linewidth=0.4)
+               edgecolor="lightgrey", linewidth=1)
         valid = ~np.isnan(means)
         ax.errorbar(x[valid] + offset, means[valid], yerr=stds[valid],
                     fmt="none", color="black", capsize=2, linewidth=0.8)
@@ -809,6 +810,7 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
             estimator="mean", errorbar="se",
             ax=ax, capsize=0.15, err_kws={"linewidth": 1.0},
             legend=(ax is ax_top),
+            edgecolor="lightgrey", linewidth=1,
         )
 
     ax_top.set_ylim(BREAK_HIGH, 1.02)
@@ -927,8 +929,7 @@ def _stacked_composition_chart(coverages, labels, title, outfile, label_fontsize
 
     for s in states:
         vals = np.array([coverages[lbl].get(s, 0.0) for lbl in labels])
-        ax.bar(x, vals, bottom=bottom, label=s, color=state_colors[s],
-               edgecolor="white", linewidth=0.3)
+        ax.bar(x, vals, bottom=bottom, label=s, color=state_colors[s])
         bottom += vals
 
     ax.set_xticks(x)
@@ -1109,6 +1110,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
         palette=palette,
         estimator="mean", errorbar="se",
         ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
+        edgecolor="lightgrey", linewidth=1,
     )
     ax.set_xlabel("")
     ax.set_ylabel("Pairwise similarity", fontsize=9)
@@ -1154,7 +1156,7 @@ def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
                 palette={"Composition": "#E8833A", "Kappa": "#4878CF", "Jaccard": "#2CA02C"},
                 estimator="mean", errorbar="se",
                 ax=ax, capsize=0.15, err_kws={"linewidth": 1.0},
-                legend=False)
+                legend=False, edgecolor="lightgrey", linewidth=1)
     ax.set_xlabel("")
     ax.set_ylabel("Pairwise similarity", fontsize=9)
     ax.set_ylim(0, 1)
@@ -1195,7 +1197,7 @@ def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
         return
     fig, ax = plt.subplots(figsize=(max(5, len(labs) * 1.2), 4.2))
     x = np.arange(len(labs))
-    ax.bar(x, vals, color=BIN_COLORS["reference"], edgecolor="white", linewidth=0.5)
+    ax.bar(x, vals, color=BIN_COLORS["reference"], edgecolor="lightgrey", linewidth=1)
     ax.set_xticks(x)
     ax.set_xticklabels(labs, rotation=45, ha="right", fontsize=8)
     ax.set_ylabel("Segments (×10³)", fontsize=9)

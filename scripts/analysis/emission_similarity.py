@@ -208,7 +208,7 @@ def _grouped_bars(ax, methods, df_slice, y_col, err_col):
         means, errs = np.array(means), np.array(errs)
         ax.bar(x + offsets[etype], np.nan_to_num(means),
                width=width * 0.9, color=EMISSION_COLORS[etype],
-               label=EMISSION_LABELS[etype], edgecolor="white", linewidth=0.5)
+               label=EMISSION_LABELS[etype], edgecolor="lightgrey", linewidth=1)
         valid = ~np.isnan(means) & ~np.isnan(errs)
         if valid.any():
             ax.errorbar(x[valid] + offsets[etype], means[valid],
@@ -521,6 +521,7 @@ def plot_out_binem(df, methods, outfile, cross_assay=False):
         color="#5B8DB8",
         estimator="mean", errorbar="sd",
         ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
+        edgecolor="lightgrey", linewidth=1,
     )
     ax.set_xlabel("")
     ax.set_ylabel("Mean cosine similarity (matched states)", fontsize=9)

@@ -686,7 +686,7 @@ def plot_segment_lengths(segs, outdir):
     means = [np.mean(lengths[s]) for s in states]
 
     fig, ax = plt.subplots(figsize=(max(4, 0.3 * len(states)), 3))
-    ax.bar(states, means)
+    ax.bar(states, means, edgecolor="lightgrey", linewidth=1)
     ax.set_xticks(range(len(states)))
     ax.set_xticklabels(states, rotation=90)
     ax.set_title("Average segment length per state")

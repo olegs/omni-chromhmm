@@ -222,7 +222,8 @@ def _bar_plot(df, value_col, ylabel, title, outpath):
         sub = df[df["method"] == method].set_index("mark")
         vals = [sub.loc[m, value_col] if m in sub.index else 0 for m in marks]
         ax.bar(x + i * width, vals, width, label=method,
-               color=PALETTE.get(method, "#555555"))
+               color=PALETTE.get(method, "#555555"),
+               edgecolor="lightgrey", linewidth=1)
     ax.set_xticks(x + width)
     ax.set_xticklabels(marks, rotation=30, ha="right")
     ax.set_ylabel(ylabel)
