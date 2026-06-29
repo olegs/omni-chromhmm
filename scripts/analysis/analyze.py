@@ -44,6 +44,21 @@ def open_text(path):
     return gzip.open(path, "rt") if str(path).endswith(".gz") else open(path)
 
 
+def _get_skiprows(path):
+    """Count 'track' or 'browser' lines at the beginning of a BED file."""
+    skip = 0
+    try:
+        with open_text(path) as f:
+            for line in f:
+                if line.startswith(("track", "browser")):
+                    skip += 1
+                else:
+                    break
+    except Exception:
+        pass
+    return skip
+
+
 def load_bed(path):
     """Load a BED file as a list of (chrom, start, end, name) tuples."""
     df = pd.read_csv(
@@ -51,11 +66,11 @@ def load_bed(path):
         sep="\t",
         comment="#",
         header=None,
+        skiprows=_get_skiprows(path),
         engine="c",
         on_bad_lines="skip",
         low_memory=False
     )
-    df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
     # Drop rows where chrom, start, or end are NaN
     subset = [c for c in [0, 1, 2] if c in df.columns]
     if subset:
@@ -82,11 +97,11 @@ def _load_seg_full(path):
         sep="\t",
         comment="#",
         header=None,
+        skiprows=_get_skiprows(path),
         engine="c",
         on_bad_lines="skip",
         low_memory=False
     )
-    df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
     # Drop rows where chrom, start, or end are NaN
     subset = [c for c in [0, 1, 2] if c in df.columns]
     if subset:
@@ -117,11 +132,11 @@ def load_bed_df(path, sample=None):
         sep="\t",
         comment="#",
         header=None,
+        skiprows=_get_skiprows(path),
         engine="c",
         on_bad_lines="skip",
         low_memory=False
     )
-    df = df[~df[0].astype(str).str.startswith(("track", "browser"))]
     # Drop rows where chrom, start, end or state are NaN
     for col in [0, 1, 2, 3]:
         if col not in df.columns:
@@ -857,7 +872,7 @@ def compute_enrichment(segs, annotation_items):
             union = state_total[st] + ann_bp - overlap
             jaccard = overlap / union if union > 0 else 0
             rows.append({"state": st, "label": label,
-                         "fold_enrichment": fold, "jaccard": jaccard})
+                         "fold_enrichment": fold, "jaccard": jaccard, "coverage": state_frac})
 
     if not rows:
         return pd.DataFrame(columns=["state", "label", "fold_enrichment"])
@@ -873,6 +888,10 @@ def save_enrichment_table(enrich_df, outdir):
     if "jaccard" in enrich_df.columns:
         (enrich_df[["state", "label", "jaccard"]]
          .to_csv(os.path.join(edir, "jaccard.tsv"),
+                 sep="\t", index=False, float_format="%.6f"))
+    if "coverage" in enrich_df.columns:
+        (enrich_df[["state", "label", "coverage"]]
+         .to_csv(os.path.join(edir, "coverage.tsv"),
                  sep="\t", index=False, float_format="%.6f"))
 
 
