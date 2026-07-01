@@ -11,7 +11,7 @@ Plots are generated:
   summary_enrich_tx.png           — Tx fold enrichment at expressed gene bodies
   summary_mean_tx_length.png      — mean Tx segment length
   summary_jaccard_tss.png         — Jaccard: Tss state vs RefSeqTSS ±2 kb
-  summary_jaccard_tss_atac.png    — Jaccard: Tss state vs ATAC-seq peaks
+  summary_coverage_tss_atac.png   — coverage: Tss state by ATAC-seq peaks
   summary_n_segments.png          — total number of segments
 
 Importable module (no CLI). Drive it from analysis.ipynb:
@@ -104,7 +104,7 @@ def sort_states(states):
     return sorted(states, key=lambda s: (STATE_IDX.get(s, 999), s))
 
 
-def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method="comb"):
+def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method):
     """Return Path for a single (dataset, method) {match_method}_matched BED."""
     root = Path(workdir) / ds
     sfx = match_method if match_method.endswith("matched") else f"{match_method}_matched"
@@ -183,11 +183,25 @@ def _load_jaccard_value(analysis_dir, method, state, label):
         return np.nan
     df = pd.read_csv(path, sep="\t")
 
-    # Try exact match first, then fallback to label without genome suffix.
+    # Try exact match first, then fallback to substring match for state,
+    # then fallback to label without genome suffix.
     mask = (df["state"] == state) & (df["label"] == label)
     if not mask.any():
+        # Try finding a state that contains 'state' (e.g. "Tss" matches "1_TssA")
+        matches = [s for s in df["state"].unique() if state.lower() in s.lower()]
+        if matches:
+            target_state = next((s for s in matches if s.lower() == state.lower()), matches[0])
+            mask = (df["state"] == target_state) & (df["label"] == label)
+
+    if not mask.any():
         base_label = label.split(".")[0]
-        mask = (df["state"] == state) & (df["label"].str.split(".").str[0] == base_label)
+        # Try matching state (flexible) and base label
+        potential_states = [s for s in df["state"].unique() if state.lower() in s.lower()]
+        if not potential_states: potential_states = [state]
+        
+        for st in potential_states:
+            mask = (df["state"] == st) & (df["label"].str.split(".").str[0] == base_label)
+            if mask.any(): break
 
     if not mask.any():
         return np.nan
@@ -233,24 +247,37 @@ def _collect_jaccard(datasets, analysis_dirs, state, label):
     return pd.DataFrame(records).T
 
 
-def _load_jaccard_atac_value(analysis_dir, method, state):
-    """Return Jaccard of (state, atac_*) — matches any atac_ label."""
+def _load_coverage_atac_value(analysis_dir, method, state):
+    """Return coverage (state_frac) of (state, atac_*) — matches any atac_ label."""
     if method in ("ref", "reference"):
         path = os.path.join(os.path.dirname(analysis_dir), "ref",
-                            "enrichment", "jaccard.tsv")
+                            "enrichment", "coverage.tsv")
     else:
-        path = os.path.join(analysis_dir, method, "enrichment", "jaccard.tsv")
+        path = os.path.join(analysis_dir, method, "enrichment", "coverage.tsv")
+    if not os.path.exists(path):
+        # Fallback to enrichment.tsv if coverage.tsv doesn't exist yet
+        path = path.replace("coverage.tsv", "enrichment.tsv")
     if not os.path.exists(path):
         return np.nan
     df = pd.read_csv(path, sep="\t")
-    mask = (df["state"] == state) & df["label"].str.startswith("atac_")
+    # Try finding a state that matches 'state' (flexible)
+    target_state = state
+    if state not in df["state"].values:
+        matches = [s for s in df["state"].unique() if state.lower() in s.lower()]
+        if matches:
+            target_state = next((s for s in matches if s.lower() == state.lower()), matches[0])
+
+    mask = (df["state"] == target_state) & df["label"].str.startswith("atac_")
     if not mask.any():
         return np.nan
-    return float(df.loc[mask, "jaccard"].iloc[0])
+    col = "coverage" if "coverage" in df.columns else "state_frac"
+    if col not in df.columns: # fallback if neither is present
+        return np.nan
+    return float(df.loc[mask, col].iloc[0])
 
 
-def _collect_jaccard_atac(datasets, analysis_dirs, state):
-    """Collect ATAC-seq Jaccard values for *state* across datasets.
+def _collect_coverage_atac(datasets, analysis_dirs, state):
+    """Collect ATAC-seq coverage values for *state* across datasets.
 
     Matches any label starting with 'atac_' (dataset-specific accession).
     Datasets without ATAC data contribute NaN.
@@ -259,7 +286,7 @@ def _collect_jaccard_atac(datasets, analysis_dirs, state):
     records = {}
     for ds, adir in zip(datasets, analysis_dirs):
         for method in METHODS_POOLED:
-            val = _load_jaccard_atac_value(adir, method, state)
+            val = _load_coverage_atac_value(adir, method, state)
             records.setdefault(method, {})[ds] = val
     return pd.DataFrame(records).T
 
@@ -366,7 +393,7 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     print(f"  saved {outpath}")
 
 
-def _collect_per_state_kappa(datasets, analysis_dirs, match_method="comb"):
+def _collect_per_state_kappa(datasets, analysis_dirs, match_method):
     """Collect per-state kappa vs reference for all datasets."""
     all_stacked = []
     for ds, adir in zip(datasets, analysis_dirs):
@@ -447,7 +474,7 @@ def _save_kappa_heatmap(df, title, outfile):
     print(f"  saved {outfile}")
 
 
-def _plot_per_state_kappa(datasets, analysis_dirs, outdir, match_method="comb"):
+def _plot_per_state_kappa(datasets, analysis_dirs, outdir, match_method):
     """Generate per-dataset and summary per-state kappa plots."""
     df = _collect_per_state_kappa(datasets, analysis_dirs, match_method)
     if df.empty:
@@ -733,7 +760,7 @@ def _plot_peak_length(datasets, workdir, outpath):
 # State coverage (total bp per state)
 # ---------------------------------------------------------------------------
 
-def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile, match_method="comb"):
+def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile, match_method):
     """Grouped bar chart: fraction of genome per chromatin state, method as hue, all datasets pooled."""
     from analyze import load_bed_df
 
@@ -860,7 +887,7 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
 # Main
 # ---------------------------------------------------------------------------
 
-def _plot_violin(datasets, cells, workdir, markups_dir, nstates, outfile, match_method="comb"):
+def _plot_violin(datasets, cells, workdir, markups_dir, nstates, outfile, match_method):
     """Single violin panel: per-state segment length, method as hue, all datasets pooled."""
     print("Loading reference ...")
     frames = [load_reference_segments(markups_dir)]
@@ -974,7 +1001,7 @@ def _plot_reference_composition(markups_dir, outfile):
     )
 
 
-def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, outfile, match_method="comb"):
+def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, outfile, match_method):
     """Stacked bar chart: mean state fraction per method, averaged across datasets."""
     from analyze import load_bed_df
 
@@ -1017,7 +1044,7 @@ def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, out
 
 
 def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
-                                         method_key, method_label, outfile, match_method="comb"):
+                                         method_key, method_label, outfile, match_method):
     """Stacked bar chart: state fraction per dataset for a single method."""
     from analyze import load_bed_df
 
@@ -1214,7 +1241,7 @@ def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
 
 
 def _plot_per_dataset_all_methods_composition(datasets, cells, workdir, nstates,
-                                              methods, outdir, match_method="comb"):
+                                              methods, outdir, match_method):
     """Stacked bar chart: state fraction per method for each dataset."""
     from analyze import load_bed_df
 
@@ -1255,7 +1282,7 @@ def _plot_per_dataset_all_methods_composition(datasets, cells, workdir, nstates,
 
 def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       outdir=None, workdir=None, markups_dir=None, cells=None,
-                      methods=None, nstates=15, match_method="comb",
+                      methods=None, nstates=15, match_method='jaccard',
                       violin_outfile=None, state_coverage_outfile=None,
                       peak_count_outfile=None, peak_length_outfile=None,
                       peak_gap_violin_outfile=None,
@@ -1374,9 +1401,9 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_summary(data, "Jaccard: Tss state vs RefSeq TSS ±2 kb", "Jaccard",
                       os.path.join(args.outdir, "summary_jaccard_tss.png"))
 
-        data = _collect_jaccard_atac(ds, adirs, "Tss")
-        _plot_summary(data, "Jaccard: Tss state vs ATAC-seq", "Jaccard",
-                      os.path.join(args.outdir, "summary_jaccard_tss_atac.png"),
+        data = _collect_coverage_atac(ds, adirs, "Tss") * 100.0
+        _plot_summary(data, "Tss state coverage by ATAC-seq peaks", "% covered",
+                      os.path.join(args.outdir, "summary_coverage_tss_atac.png"),
                       partial_note=True)
 
         data = _collect_table_col(ds, mdirs, "enrich_Tss_RefSeqTSS2kb")

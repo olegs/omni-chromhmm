@@ -860,6 +860,17 @@ def compute_enrichment(segs, annotation_items):
         else:
             ann_segs = bed_data
 
+        # Merge overlapping annotation segments to avoid > 100% coverage
+        ann_by_chrom = defaultdict(list)
+        for row in ann_segs:
+            ann_by_chrom[row[0]].append([row[1], row[2]])
+
+        merged_ann_segs = []
+        for chrom in sorted(ann_by_chrom):
+            for s, e in merge_intervals(ann_by_chrom[chrom]):
+                merged_ann_segs.append((chrom, s, e))
+        ann_segs = merged_ann_segs
+
         ann_bp = sum(row[2] - row[1] for row in ann_segs)
         ann_frac = ann_bp / total_bp if total_bp > 0 else 0
 

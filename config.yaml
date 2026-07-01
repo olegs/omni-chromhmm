@@ -22,7 +22,7 @@ params:
   homer: false          # run HOMER-based binarization and segmentation
   macs2: false          # run MACS2-based binarization and segmentation
   omnipeak: false       # run OmniPeak-based binarization and segmentation
-  match_method: overlap # possible options: overlap | jaccard
+  match_method: jaccard # possible options: overlap | jaccard
 
 datasets:
 

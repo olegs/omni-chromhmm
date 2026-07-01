@@ -320,6 +320,16 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             atac_label = next((l for l in enrichment["Tss"] if l.startswith("atac_")), None)
             if atac_label:
                 row["enrich_Tss_ATAC"] = enrichment["Tss"][atac_label]
+                # Also include coverage if present
+                path = os.path.join(_adir(method), method, "enrichment", "coverage.tsv")
+                if method == "ref":
+                    path = os.path.join(ref_dir, "ref", "enrichment", "coverage.tsv")
+                if os.path.exists(path):
+                    cov_df = pd.read_csv(path, sep="\t")
+                    # Flexible Tss match
+                    m = (cov_df["state"].str.contains("Tss", case=False)) & (cov_df["label"] == atac_label)
+                    if m.any():
+                        row["coverage_Tss_ATAC"] = cov_df.loc[m, "coverage"].iloc[0]
 
         rows.append(row)
 
@@ -419,11 +429,13 @@ def plot_comparison(df, outdir):
         ("enrich_Tx_ExpressedGeneBodies",  "Tx enrichment vs expressed gene bodies"),
         ("jaccard_Tx_ExpressedGeneBodies", "Jaccard: Tx state vs expressed gene bodies"),
         ("jaccard_Tss_ATAC",               "Jaccard: Tss state vs ATAC-seq"),
+        ("coverage_Tss_ATAC",              "Tss state coverage by ATAC-seq"),
         ("median_Tx_length",               "Median Tx (transcription) segment length"),
         ("mean_Tx_length",                 "Mean Tx (transcription) segment length"),
     ]:
         ylabel = "Fold enrichment" if col.startswith("enrich") else \
-                 "Jaccard" if col.startswith("jaccard") else "bp"
+                 "Jaccard" if col.startswith("jaccard") else \
+                 "Fraction" if col.startswith("coverage") else "bp"
         if col in df_main.columns and df_main[col].notna().any():
             fig, ax = _make_fig()
             _bar_panel(ax, df_main, col, title, ylabel)
