@@ -136,9 +136,13 @@ for E in $(cat names.txt); do echo $E;
  java -mx4000M -jar ChromHMM/ChromHMM.jar LearnModel $E/chromhmm_binary $E/${E}_chromhmm 15 hg19; 
 done;
 
-# Rematch peak caller states to the joint model
+
+########## Matching ###################
+
+# Rematch peak caller states
 for E in $(cat names.txt); do echo $E;
 for PC in homer macs2 omni; do echo $PC;
+# REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
  MATCHED=${WORK/.bed/_matched.bed};
@@ -148,8 +152,9 @@ for PC in homer macs2 omni; do echo $PC;
 done;
 done;
 
-# Rematch de-novo chromhmm to the joint model
+# Rematch de-novo chromhmm
 for E in $(cat names.txt); do echo $E;
+# REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=${E}/${E}_chromhmm/${E}_15_dense.bed;
  MATCHED=${WORK/.bed/_matched.bed};
@@ -158,10 +163,7 @@ for E in $(cat names.txt); do echo $E;
  fi;
 done;
 
-
-########### Alternative ##############
-Alternative reference:  REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
-
+########## Joint models ###################
 
 # Joint KMeans states processing
 for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
@@ -185,27 +187,12 @@ for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
 done;
 
 
-# Rematch joint peak caller states to the joint model
+# Rematch joint peak caller states
 for PC in homer macs2 omni; do echo $PC;
  REFS=(); WORKS=(); MATCHEDS=();
  for E in $(cat names.txt); do
+#  REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
   REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
-  WORK=joint_kmeans/$PC/${E}_kmeans_joint_states.bed;
-  MATCHED=${WORK/.bed/_matched.bed};
-  if [[ -f $REF ]] && [[ -f $WORK ]]; then
-    REFS+=($REF); WORKS+=($WORK); MATCHEDS+=($MATCHED);
-  fi;
- done;
- if [ ${#WORKS[@]} -gt 0 ]; then
-  python ~/work/omni-chromhmm/scripts/rules/match.py --ref "${REFS[@]}" --work "${WORKS[@]}" --out "${MATCHEDS[@]}";
- fi;
-done;
-
-# Alternatively rematch joint peak caller states to IMR90
-for PC in homer macs2 omni; do echo $PC;
- REFS=(); WORKS=(); MATCHEDS=();
- for E in $(cat names.txt); do
-  REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
   WORK=joint_kmeans/$PC/${E}_kmeans_joint_states.bed;
   MATCHED=${WORK/.bed/_matched.bed};
   if [[ -f $REF ]] && [[ -f $WORK ]]; then
