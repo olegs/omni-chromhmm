@@ -49,11 +49,12 @@ METHODS_POOLED = [m for m in METHOD_ORDER
 
 # Canonical chromatin state order (ENCODE 15-state naming convention)
 STATE_ORDER = [
-    "Tss", "TssFlnk", "TssFlnkU", "TssFlnkD",
+    "TssA", "Tss", "TssAFlnk", "TssFlnk", "TssFlnkU", "TssFlnkD", "TxFlnk",
     "Tx", "TxWk",
     "EnhG", "EnhG1", "EnhG2",
     "Enh", "Enh1", "Enh2", "EnhLo",
-    "ZNF/Rpts", "Het", "Biv",
+    "ZNF/Rpts", "Het",
+    "TssBiv", "BivFlnk", "EnhBiv", "Biv",
     "ReprPC", "ReprPCWk",
     "Quies", "Unknown",
 ]
@@ -62,10 +63,13 @@ STATE_IDX = {s: i for i, s in enumerate(STATE_ORDER)}
 # ENCODE 15-state canonical RGB colors (from BED column 9, consistent across all references)
 _RGB = lambda r, g, b: (r / 255, g / 255, b / 255)
 STATE_COLORS = {
+    "TssA":     _RGB(255,   0,   0),
     "Tss":      _RGB(255,   0,   0),
+    "TssAFlnk": _RGB(255,  69,   0),
     "TssFlnk":  _RGB(255,  69,   0),
     "TssFlnkU": _RGB(255,  69,   0),
     "TssFlnkD": _RGB(255,  69,   0),
+    "TxFlnk":   _RGB( 50, 205,  50),
     "Tx":       _RGB(  0, 128,   0),
     "TxWk":     _RGB( 63, 154,  80),
     "EnhG":     _RGB(170, 223,   7),
@@ -77,6 +81,9 @@ STATE_COLORS = {
     "EnhLo":    _RGB(255, 223,   0),
     "ZNF/Rpts": _RGB(104, 205, 170),
     "Het":      _RGB( 75,   0, 130),
+    "TssBiv":   _RGB(205,  92,  92),
+    "BivFlnk":  _RGB(233, 150, 122),
+    "EnhBiv":   _RGB(189, 183, 107),
     "Biv":      _RGB(205,  92,  92),
     "ReprPC":   _RGB(137,  55, 223),
     "ReprPCWk": _RGB(137,  55, 223),

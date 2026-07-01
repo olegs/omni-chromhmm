@@ -98,23 +98,7 @@ def state_colors(ref_segs):
 def normalize_state_name(name):
     """Normalize ENCODE state names to canonical 15-state labels."""
     # Remove leading number: "1_TssA" -> "TssA", "01_TssA" -> "TssA"
-    name = re.sub(r'^\d+_', '', name)
-    # Common mappings
-    if "TssA" in name and "Flnk" not in name: return "Tss"
-    if "Tss" in name and "Flnk" in name: return "TssFlnk"
-    if "Tx" in name and "Flnk" in name: return "TssFlnk"
-    if "TxWk" in name or ("Tx" in name and "Wk" in name): return "TxWk"
-    if "Tx" in name: return "Tx"
-    if "EnhG" in name: return "EnhG"
-    if "Enh" in name and ("Wk" in name or "Lo" in name): return "EnhLo"
-    if "Enh" in name: return "Enh"
-    if "Biv" in name: return "Biv"
-    if "ReprPC" in name and "Wk" in name: return "ReprPCWk"
-    if "ReprPC" in name: return "ReprPC"
-    if "Quies" in name: return "Quies"
-    if "ZNF" in name: return "ZNF/Rpts"
-    if "Het" in name: return "Het"
-    return name
+    return re.sub(r'^\d+_', '', name)
 
 
 def best_mapping(overlap, work_states, ref_states):
