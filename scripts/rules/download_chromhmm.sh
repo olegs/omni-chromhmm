@@ -5,7 +5,7 @@
 set -euo pipefail
 
 BASE="https://www.encodeproject.org/files"
-OUT_DIR="${1:-$(cd "$(dirname "$0")" && pwd)}"
+OUT_DIR = markups
 
 # Format: "ACCESSION:Label"  — all GRCh38
 FILES_15=(
