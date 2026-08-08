@@ -1,4 +1,6 @@
-cd ~/2026_epi_1000
+cd ~/data/2026_epi_1000
+
+# Prepare file names.txt - is a list with names from E001 to E120
 
 # Download 1000 epigenomes datasets
 rm marks.txt;

@@ -1,10 +1,10 @@
 # Omni ChromHMM
 
 Snakemake pipeline comparing default ChromHMM against peak-caller-based
-binarization (Omnipeak, Homer `findPeaks -style histone`), with both ChromHMM
-LearnModel and KMeans clustering applied on top of each peak-caller binarization.
-All peak callers are run in control-free mode so the pipeline works on ENCODE
-datasets that lack matched input BAMs.
+binarization (HOMER, MACS2, Omnipeak), with both ChromHMM LearnModel and KMeans 
+clustering applied on top of each peak-caller binarization.
+All peak callers support both with control and without control settings, 
+so the pipeline works on datasets that lack matched input BAMs.
 
 ## Pipeline steps
 
@@ -25,9 +25,8 @@ as Omnipeak, providing a caller-independent cross-check.
 5. **State matching** (`rules/match.smk`) -- relabel all segmentations to the ENCODE reference label space using overlap or jaccard strategy (`_matched`). 
 Binarize and Bigwig emissions per state are pre-computed and remapped to the matched states.
 
-6. Launch `analysis.ipynb` for analysis, cross-segmentation comparison and inter-dataset summary plots.
 
-## Setup
+## Processing 
 
 ```bash
 mkdir -p ~/data/2026_omni_chromhmm && cd ~/data/2026_omni_chromhmm
@@ -37,6 +36,8 @@ wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.5.6815.jar -O om
 
 ## Run
 
+### ENCODE analysis
+
 ```bash
 # Dry run
 for ds in imr90 monocytes monocytes_mint gm12878_mint spleen; do
@@ -45,18 +46,6 @@ for ds in imr90 monocytes monocytes_mint gm12878_mint spleen; do
   --configfile ~/work/omni-chromhmm/config.yaml \
   --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
   --rerun-incomplete --rerun-trigger mtime -n;
-done
-```
-
-Relaunch Omnipeak:
-```bash
-for ds in imr90 monocytes monocytes_mint gm12878_mint spleen; do
-  snakemake -p $ds/omni/.done --use-conda --cores all --directory $(pwd) \
-  --snakefile ~/work/omni-chromhmm/Snakefile \
-  --configfile ~/work/omni-chromhmm/config.yaml \
-  --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
-  --rerun-incomplete --rerun-trigger mtime \
-  --config omnipeak=True -n;
 done
 ```
 
@@ -70,3 +59,16 @@ Resource limits (pass via `--resources`):
 Useful flags: `-p` (echo commands), `-r` (reasons), `--dag | dot -Tpng > dag.png` (DAG visualization).
 
 
+### 1000 epigenomes analysis
+
+```bash
+bash epi_1000.sh
+```
+
+## Analysis
+
+1. Launch `analysis.ipynb` for analysis, cross-segmentation comparison and inter-dataset summary plots.
+2. Launch `analysis_epi_1000.ipynb` for analysis of the 1000 epigenomes dataset.
+
+## Questions?
+Contact Oleg Shpynov (oleg.shpynov@jetbrains.com).
