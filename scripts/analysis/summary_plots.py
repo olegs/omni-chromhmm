@@ -56,7 +56,7 @@ STATE_ORDER = [
     "ZNF/Rpts", "Het",
     "TssBiv", "BivFlnk", "EnhBiv", "Biv",
     "ReprPC", "ReprPCWk",
-    "Quies", "Unknown",
+    "Quies",
 ]
 STATE_IDX = {s: i for i, s in enumerate(STATE_ORDER)}
 
@@ -961,10 +961,25 @@ def _stacked_composition_chart(coverages, labels, title, outfile, label_fontsize
     x = np.arange(len(labels))
     bottom = np.zeros(len(labels))
 
+    # Pre-calculate normalized coverages to ensure they sum to 1.0 after discarding
+    norm_coverages = {}
+    for lbl in labels:
+        fracs = coverages[lbl]
+        total = sum(fracs.get(st, 0.0) for st in states)
+        if total > 0:
+            norm_coverages[lbl] = {st: fracs.get(st, 0.0) / total for st in states}
+        else:
+            norm_coverages[lbl] = {st: 0.0 for st in states}
+
     for s in states:
-        vals = np.array([coverages[lbl].get(s, 0.0) for lbl in labels])
-        ax.bar(x, vals, bottom=bottom, label=s, color=state_colors[s])
+        vals = np.array([norm_coverages[lbl].get(s, 0.0) for lbl in labels])
+        ax.bar(x, vals, bottom=bottom, label=s, color=state_colors[s],
+               edgecolor='none', width=0.8)
         bottom += vals
+
+    # Draw a single 1px border around the whole stacked bar
+    ax.bar(x, bottom, color='none', edgecolor='lightgrey', linewidth=1,
+           width=0.8, label='_nolegend_')
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=label_fontsize, rotation=45, ha="right")
