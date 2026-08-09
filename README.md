@@ -8,21 +8,23 @@ so the pipeline works on datasets that lack matched input BAMs.
 
 ## Pipeline steps
 
-1. **Data** (`rules/data.smk`) -- download ENCODE BAMs, reference ChromHMM annotations,
+1. **Config** (`config.yaml`) -- configure dataset-specific parameters, input files. 
+
+2. **Data** (`rules/data.smk`) -- download ENCODE BAMs, reference ChromHMM annotations,
 optional RNA-seq; pool BAMs per mark.
 
-2. **Default ChromHMM** (`rules/chromhmm.smk`) -- BinarizeBam + LearnModel on pooled BAMs
+3. **Default ChromHMM** (`rules/chromhmm.smk`) -- BinarizeBam + LearnModel on pooled BAMs
 to produce 15-state segmentation. Per-mark BED files are extracted from the binarized profiles.
 Repeated per replicate when available.
 
-3. **Omnipeak** (`rules/omni.smk`) -- control-free peak calling in pooled/per-replicate modes;
+4. **Omnipeak** (`rules/omni.smk`) -- control-free peak calling in pooled/per-replicate modes;
 peaks converted to ChromHMM binary matrices. Two segmentations per mode: ChromHMM LearnModel and KMeans.
 
-4. **Homer** (`rules/homer.smk`) -- parallel control-free peak caller via `makeTagDirectory` +
+5. **Homer** (`rules/homer.smk`) -- parallel control-free peak caller via `makeTagDirectory` +
 `findPeaks -style histone`. Feeds the same downstream binarization / segmentation machinery
 as Omnipeak, providing a caller-independent cross-check.
 
-5. **State matching** (`rules/match.smk`) -- relabel all segmentations to the ENCODE reference label space using overlap or jaccard strategy (`_matched`). 
+6. **State matching** (`rules/match.smk`) -- relabel all segmentations to the ENCODE reference label space using overlap or jaccard strategy (`_matched`). 
 Binarize and Bigwig emissions per state are pre-computed and remapped to the matched states.
 
 
@@ -67,7 +69,7 @@ bash epi_1000.sh
 
 ## Analysis
 
-1. Launch `analysis.ipynb` for analysis, cross-segmentation comparison and inter-dataset summary plots.
+1. Launch `analysis.ipynb` for ENCODE analysis, cross-segmentation comparison and inter-dataset summary plots.
 2. Launch `analysis_epi_1000.ipynb` for analysis of the 1000 epigenomes dataset.
 
 ## Questions?
