@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Snakemake
+.snakemake/
+
+# IDEs
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Conda environments
+envs/*/
+
+# AI assistants
+.junie/
+.claude/
