@@ -22,9 +22,16 @@ display_name(method)          → str
 seg_label(path)               → method key derived from a BED file path
 is_replicate(label)           → bool
 should_compare(label_i, label_j) → bool
+scatter_points(ax, x, values) → overlay individual points on a matplotlib bar
+strip_points(ax, ...)         → overlay individual points on a sns.barplot
+bar_label_y(ax, *values)      → y for a value label, kept inside the axes
 """
 
 import os
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
 # ---------------------------------------------------------------------------
 # Canonical method registry
@@ -179,3 +186,77 @@ def should_compare(label_i, label_j):
     if not (is_replicate(label_i) and is_replicate(label_j)):
         return False
     return label_i[:-5] == label_j[:-5]  # strip "_rep1" / "_rep2" (5 chars)
+
+
+# ---------------------------------------------------------------------------
+# Individual data points on top of bars with error bars
+# ---------------------------------------------------------------------------
+
+# Every bar chart that shows an error bar also shows the underlying observations,
+# so the spread behind the mean stays visible.
+POINT_STYLE = dict(color="#333333", alpha=0.75, linewidth=0.3, edgecolor="white",
+                   zorder=5)
+POINT_SIZE = 12   # matplotlib scatter marker area
+STRIP_SIZE = 3    # seaborn stripplot marker diameter
+_STYLE_KEYS = ("color", "alpha", "linewidth", "edgecolor", "zorder")
+
+
+def _point_style(size, small, kwargs):
+    """POINT_STYLE with per-call overrides pulled out of *kwargs*."""
+    style = dict(POINT_STYLE)
+    if size < small:
+        style["linewidth"] = 0   # a white outline would swallow tiny markers
+    for key in _STYLE_KEYS:
+        if key in kwargs:
+            style[key] = kwargs.pop(key)
+    return style
+
+
+def scatter_points(ax, xpos, values, jitter=0.08, size=POINT_SIZE, **kwargs):
+    """Scatter individual observations on top of a matplotlib bar centred at *xpos*.
+
+    Jitter comes from an RNG seeded by *xpos*, so each bar gets its own pattern
+    and re-running reproduces the same figure. Style keys (color, alpha, ...)
+    may be overridden per call.
+    """
+    vals = np.asarray(np.ravel(values), dtype=float)
+    vals = vals[~np.isnan(vals)]
+    if len(vals) == 0:
+        return
+    rng = np.random.default_rng(int(round(abs(xpos) * 1000)))
+    offs = rng.uniform(-jitter, jitter, len(vals)) if len(vals) > 1 else np.zeros(1)
+    ax.scatter(xpos + offs, vals, s=size, **_point_style(size, 8, kwargs), **kwargs)
+
+
+def bar_label_y(ax, *values):
+    """Y position for a value label: clear of *values* but inside the axes.
+
+    Keeps the number readable on crowded bars, where the label would otherwise
+    end up on top of the point cloud or off the figure.
+    """
+    lo, hi = ax.get_ylim()
+    top = max([v for v in values if v is not None and not pd.isna(v)], default=lo)
+    return min(top + 0.01 * (hi - lo), hi - 0.05 * (hi - lo))
+
+
+def strip_points(ax, jitter=0.15, size=STRIP_SIZE, dodge=True, **kwargs):
+    """Overlay individual observations matching a sns.barplot on *ax*.
+
+    Pass the same data/x/y/hue/order/hue_order as the barplot; use dodge=False
+    when the barplot itself is not dodged (hue == x). Style keys (color, alpha,
+    ...) may be overridden per call — crowded bars (hundreds of observations)
+    stay readable with a smaller size and lower alpha.
+    """
+    style = _point_style(size, 2.5, kwargs)
+    hue = kwargs.get("hue")
+    if hue is not None:
+        # With a hue, color= would build a gradient palette (one shade per
+        # level); a flat palette keeps every point the same neutral colour.
+        levels = kwargs.get("hue_order")
+        if levels is None:
+            data = kwargs.get("data")
+            levels = pd.unique(data[hue] if data is not None else hue)
+        color = style.pop("color")
+        kwargs["palette"] = {lvl: color for lvl in levels}
+    sns.stripplot(ax=ax, dodge=dodge, jitter=jitter, size=size, legend=False,
+                  **style, **kwargs)

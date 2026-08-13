@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Cross-dataset summary bar plots with mean ± std error bars.
+"""Cross-dataset summary bar plots with mean ± std error bars and individual points.
 
 Reads per-dataset comparison_table.tsv and per-method jaccard.tsv files,
 then produces one grouped bar chart per metric showing performance across
-all datasets (mean ± std).
+all datasets (mean ± std, with one point per dataset).
 
 Plots are generated:
   summary_entropy_noqh.png        — transition matrix entropy (NOQH)
@@ -36,7 +36,8 @@ from matplotlib.patches import Patch
 import seaborn as sns
 
 sys.path.insert(0, os.path.dirname(__file__))
-from utils import METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO
+from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
+                   scatter_points, strip_points)
 from analyze import load_bed_df
 
 METHODS_POOLED = [m for m in METHOD_ORDER
@@ -350,6 +351,7 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
         if not np.isnan(se) and c > 1:
             ax.errorbar(x[i], m, yerr=se, fmt="none", color="black",
                         capsize=3, linewidth=1.2)
+        scatter_points(ax, x[i], data.loc[methods[i]].values)
 
     ax.set_xticks(x)
     ax.set_xticklabels(display, rotation=45, ha="right", fontsize=8)
@@ -363,6 +365,10 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
         if np.isnan(m) or c == 0:
             continue
         top = m + (se if not np.isnan(se) and c > 1 else 0)
+        # Keep the label clear of the individual points as well
+        vmax = data.loc[methods[i]].max(skipna=True)
+        if not pd.isna(vmax):
+            top = max(top, float(vmax))
         lbl = f"{m:.2f}"
         if partial_note and c < n_ds:
             lbl += f"\n(n={c})"
@@ -389,7 +395,7 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
         ax.legend(handles=legend_elements, fontsize=6,
                   bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
 
-    n_note = f"mean ± SE across {n_ds} datasets"
+    n_note = f"mean ± SE across {n_ds} datasets (points: individual datasets)"
     if partial_note:
         n_note += " (n = datasets with data)"
     ax.set_xlabel(n_note, fontsize=7, color="grey")
@@ -585,6 +591,8 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
         ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
         edgecolor="lightgrey", linewidth=1,
     )
+    strip_points(ax, data=plot_df, x="Method", y="value", hue="Metric",
+                 order=method_labels, hue_order=[m[0] for m in metric_configs])
     ax.set_xlabel("")
     ax.set_ylabel("Replicate similarity", fontsize=9)
     ax.set_ylim(0, 1)
@@ -655,9 +663,10 @@ def _peak_bar(data, col, ylabel, title, outpath):
     offsets = np.linspace(-(len(methods)-1)/2, (len(methods)-1)/2, len(methods)) * width
     fig, ax = plt.subplots(figsize=(max(6, len(marks) * len(methods) * 0.22 + 2), 4.5))
     for offset, method in zip(offsets, methods):
-        means, stds = [], []
+        means, stds, per_mark = [], [], []
         for mark in marks:
             vals = data.loc[(data["method"] == method) & (data["mark"] == mark), col].values
+            per_mark.append(vals)
             means.append(np.mean(vals) if len(vals) else np.nan)
             stds.append(np.std(vals) if len(vals) > 1 else 0.0)
         means, stds = np.array(means), np.array(stds)
@@ -667,6 +676,9 @@ def _peak_bar(data, col, ylabel, title, outpath):
         valid = ~np.isnan(means)
         ax.errorbar(x[valid] + offset, means[valid], yerr=stds[valid],
                     fmt="none", color="black", capsize=2, linewidth=0.8)
+        for xi, vals in zip(x, per_mark):
+            scatter_points(ax, xi + offset, vals,
+                           jitter=width * 0.25, size=6)
     ax.set_xticks(x)
     ax.set_xticklabels(marks, fontsize=9)
     ax.set_ylabel(ylabel, fontsize=9)
@@ -846,6 +858,9 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
             legend=(ax is ax_top),
             edgecolor="lightgrey", linewidth=1,
         )
+        strip_points(ax, data=plot_df, x="State", y="fraction", hue="Method",
+                     order=states, hue_order=labels,
+                     size=1.5, alpha=0.4, jitter=0.2)
 
     ax_top.set_ylim(BREAK_HIGH, 1.02)
     ax_bot.set_ylim(0, BREAK_LOW)
@@ -1161,6 +1176,9 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
         ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
         edgecolor="lightgrey", linewidth=1,
     )
+    strip_points(ax, data=plot_df, x="Method", y="value", hue="Metric",
+                 order=method_labels,
+                 hue_order=["Composition", "Kappa", "Jaccard"], size=2)
     ax.set_xlabel("")
     ax.set_ylabel("Pairwise similarity", fontsize=9)
     ax.set_ylim(0, 1)
@@ -1206,6 +1224,8 @@ def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
                 estimator="mean", errorbar="se",
                 ax=ax, capsize=0.15, err_kws={"linewidth": 1.0},
                 legend=False, edgecolor="lightgrey", linewidth=1)
+    strip_points(ax, data=plot_df, x="Metric", y="value",
+                 order=["Composition", "Kappa", "Jaccard"], dodge=False)
     ax.set_xlabel("")
     ax.set_ylabel("Pairwise similarity", fontsize=9)
     ax.set_ylim(0, 1)

@@ -46,7 +46,7 @@ matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
-from utils import METHOD_ORDER, DISPLAY_NAMES
+from utils import METHOD_ORDER, DISPLAY_NAMES, scatter_points, strip_points
 
 
 # ---------------------------------------------------------------------------
@@ -104,17 +104,17 @@ def _analysis_base(analysis_dir, method):
 # ---------------------------------------------------------------------------
 
 def _pairwise_cosine_sim(mat):
-    """Mean and std of all N*(N-1)/2 off-diagonal pairwise cosine similarities.
+    """Mean, std and raw values of all N*(N-1)/2 pairwise cosine similarities.
 
     mat : (n_states, n_marks) — each row is a state emission vector.
     """
     n = len(mat)
     if n < 2:
-        return np.nan, np.nan
+        return np.nan, np.nan, np.array([])
     norms = np.linalg.norm(mat, axis=1, keepdims=True)
     normed = mat / np.where(norms > 0, norms, 1.0)
     sims = (normed @ normed.T)[np.triu_indices(n, k=1)]
-    return float(np.mean(sims)), float(np.std(sims))
+    return float(np.mean(sims)), float(np.std(sims)), sims
 
 
 def _gini_index(vec):
@@ -136,15 +136,17 @@ def _gini_index(vec):
 
 
 def _mean_gini(mat):
-    """Mean and std of per-state Gini indices across all states.
+    """Mean, std and raw values of per-state Gini indices across all states.
 
     mat : (n_states, n_marks)
     """
     ginis = np.array([_gini_index(row) for row in mat])
     valid = ginis[~np.isnan(ginis)]
     if len(valid) == 0:
-        return np.nan, np.nan
-    return float(np.mean(valid)), float(np.std(valid) if len(valid) > 1 else 0.0)
+        return np.nan, np.nan, valid
+    return (float(np.mean(valid)),
+            float(np.std(valid) if len(valid) > 1 else 0.0),
+            valid)
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +156,8 @@ def _mean_gini(mat):
 def collect_records(datasets, analysis_dirs, methods):
     """Return DataFrame with columns:
       dataset, method, emission_type,
-      mean_sim, std_sim, mean_gini, std_gini.
+      mean_sim, std_sim, mean_gini, std_gini,
+      sims, ginis (raw per-state-pair / per-state values, for point overlays).
 
     Rows are produced only when the TSV file exists. Missing bigwig emission
     files are silently skipped so the plot degrades gracefully.
@@ -170,8 +173,8 @@ def collect_records(datasets, analysis_dirs, methods):
                 if res is None:
                     continue
                 _, mat, _ = res
-                mean_sim, std_sim = _pairwise_cosine_sim(mat)
-                mean_g, std_g = _mean_gini(mat)
+                mean_sim, std_sim, sims = _pairwise_cosine_sim(mat)
+                mean_g, std_g, ginis = _mean_gini(mat)
                 records.append({
                     "dataset":       ds,
                     "method":        method,
@@ -180,6 +183,8 @@ def collect_records(datasets, analysis_dirs, methods):
                     "std_sim":       std_sim,
                     "mean_gini":     mean_g,
                     "std_gini":      std_g,
+                    "sims":          np.asarray(sims, dtype=float),
+                    "ginis":         np.asarray(ginis, dtype=float),
                 })
     return pd.DataFrame(records)
 
@@ -188,15 +193,19 @@ def collect_records(datasets, analysis_dirs, methods):
 # Generic grouped-bar plotting
 # ---------------------------------------------------------------------------
 
-def _grouped_bars(ax, methods, df_slice, y_col, err_col):
-    """Grouped bars (bin/bw hue) for the methods list on *ax*."""
+def _grouped_bars(ax, methods, df_slice, y_col, err_col, points_col=None):
+    """Grouped bars (bin/bw hue) for the methods list on *ax*.
+
+    points_col : column holding the raw observations behind each mean (an
+        array per row); they are scattered on top of the bars.
+    """
     n = len(methods)
     width = 0.35
     offsets = {"bin": -width / 2, "bw": width / 2}
     x = np.arange(n)
 
     for etype in EMISSION_TYPES:
-        means, errs = [], []
+        means, errs, points = [], [], []
         for method in methods:
             row = df_slice[
                 (df_slice["method"] == method) &
@@ -204,6 +213,8 @@ def _grouped_bars(ax, methods, df_slice, y_col, err_col):
             ]
             means.append(float(row[y_col].iloc[0]) if not row.empty else np.nan)
             errs.append(float(row[err_col].iloc[0]) if not row.empty else np.nan)
+            points.append(row[points_col].iloc[0]
+                          if points_col and not row.empty else [])
 
         means, errs = np.array(means), np.array(errs)
         ax.bar(x + offsets[etype], np.nan_to_num(means),
@@ -214,6 +225,9 @@ def _grouped_bars(ax, methods, df_slice, y_col, err_col):
             ax.errorbar(x[valid] + offsets[etype], means[valid],
                         yerr=errs[valid], fmt="none", color="black",
                         capsize=3, linewidth=1.0)
+        for xi, vals in zip(x, points):
+            scatter_points(ax, xi + offsets[etype], vals,
+                           jitter=width * 0.3, size=5)
 
     ax.set_xticks(x)
     ax.set_xticklabels([DISPLAY_NAMES.get(m, m) for m in methods],
@@ -238,14 +252,14 @@ def _save_fig(fig, ax, ylabel, title, xlabel, outpath):
 # Per-dataset plots
 # ---------------------------------------------------------------------------
 
-def _plot_per_dataset(df_ds, dataset, y_col, err_col, ylabel,
+def _plot_per_dataset(df_ds, dataset, y_col, err_col, points_col, ylabel,
                       title_metric, title_note, xlabel_note, outpath):
     methods = [m for m in METHODS_POOLED if m in df_ds["method"].values]
     if not methods:
         print(f"  skipping {outpath}: no data")
         return
     fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.9), 4.5))
-    _grouped_bars(ax, methods, df_ds, y_col, err_col)
+    _grouped_bars(ax, methods, df_ds, y_col, err_col, points_col=points_col)
     _save_fig(fig, ax,
               ylabel=ylabel,
               title=f"{title_metric} — {dataset}\n({title_note})",
@@ -256,11 +270,11 @@ def _plot_per_dataset(df_ds, dataset, y_col, err_col, ylabel,
 def plot_cosine_per_dataset(df_ds, dataset, outpath):
     _plot_per_dataset(
         df_ds, dataset,
-        y_col="mean_sim", err_col="std_sim",
+        y_col="mean_sim", err_col="std_sim", points_col="sims",
         ylabel="Mean pairwise cosine similarity",
         title_metric="State emission pairwise cosine similarity",
         title_note="higher = states more similar = less discriminative",
-        xlabel_note="mean ± std of all N×(N−1)/2 state-pair similarities",
+        xlabel_note="mean ± std of all N×(N−1)/2 state-pair similarities (points: state pairs)",
         outpath=outpath,
     )
 
@@ -268,11 +282,11 @@ def plot_cosine_per_dataset(df_ds, dataset, outpath):
 def plot_gini_per_dataset(df_ds, dataset, outpath):
     _plot_per_dataset(
         df_ds, dataset,
-        y_col="mean_gini", err_col="std_gini",
+        y_col="mean_gini", err_col="std_gini", points_col="ginis",
         ylabel="Mean Gini index (across states)",
         title_metric="State emission Gini index",
         title_note="higher = signal concentrated in fewer marks = more specific state",
-        xlabel_note="mean ± std of per-state Gini coefficients",
+        xlabel_note="mean ± std of per-state Gini coefficients (points: states)",
         outpath=outpath,
     )
 
@@ -294,6 +308,7 @@ def _aggregate(df, methods, y_col, std_col):
                 "emission_type": etype,
                 y_col:           float(np.mean(vals)),
                 std_col:         float(np.std(vals)) if len(vals) > 1 else 0.0,
+                "points":        np.asarray(vals, dtype=float),
             })
     return pd.DataFrame(rows)
 
@@ -309,11 +324,11 @@ def _plot_summary(df, datasets, y_col, std_col, ylabel,
         return
     n_ds = len(datasets)
     fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.9), 4.5))
-    _grouped_bars(ax, methods, df_agg, y_col, std_col)
+    _grouped_bars(ax, methods, df_agg, y_col, std_col, points_col="points")
     _save_fig(fig, ax,
               ylabel=ylabel,
               title=f"{title_metric} — all datasets\n({title_note}; n={n_ds})",
-              xlabel=f"mean ± std across {n_ds} datasets",
+              xlabel=f"mean ± std across {n_ds} datasets (points: individual datasets)",
               outpath=outpath)
 
 
@@ -523,6 +538,8 @@ def plot_out_binem(df, methods, outfile, cross_assay=False):
         ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
         edgecolor="lightgrey", linewidth=1,
     )
+    strip_points(ax, data=plot_df, x="Method", y="mean_sim",
+                 order=method_labels, dodge=False, size=2)
     ax.set_xlabel("")
     ax.set_ylabel("Mean cosine similarity (matched states)", fontsize=9)
     ax.set_ylim(0, 1)
