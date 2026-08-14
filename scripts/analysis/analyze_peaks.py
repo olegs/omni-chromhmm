@@ -142,26 +142,6 @@ def peak_stats(regions):
     }
 
 
-def gap_lengths(regions):
-    """Return list of gap lengths (bp) between adjacent peaks on the same chromosome.
-
-    Regions are sorted by chrom then start. Only positive gaps are returned
-    (overlapping/adjacent peaks produce no gap entry).
-    """
-    if not regions:
-        return []
-    by_chrom = defaultdict(list)
-    for chrom, s, e in regions:
-        by_chrom[chrom].append((s, e))
-    gaps = []
-    for ivs in by_chrom.values():
-        ivs.sort()
-        for i in range(1, len(ivs)):
-            gap = ivs[i][0] - ivs[i - 1][1]
-            if gap > 0:
-                gaps.append(gap)
-    return gaps
-
 
 def jaccard(a, b):
     """Compute Jaccard similarity (intersection_bp / union_bp) between two region lists."""
@@ -239,10 +219,10 @@ def _bar_plot(df, value_col, ylabel, title, outpath):
 # ---------------------------------------------------------------------------
 
 def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
-    """Per-mark peak statistics, gap lengths and replicate Jaccard for all callers.
+    """Per-mark peak statistics and replicate Jaccard for all callers.
 
     Direct-call entry point (the former CLI). Writes peak_stats.tsv,
-    gap_lengths.tsv.gz and bar plots under *outdir*; called from analysis.ipynb.
+    and bar plots under *outdir*; called from analysis.ipynb.
     """
     args = SimpleNamespace(ds=ds, cell=cell, marks=marks, outdir=outdir,
                            omni_bin=omni_bin, chromhmm_bin=chromhmm_bin)
@@ -340,20 +320,6 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
     stats_path = os.path.join(args.outdir, "peak_stats.tsv")
     df.to_csv(stats_path, sep="\t", index=False, float_format="%.4f")
     print(f"Saved {stats_path}", file=sys.stderr)
-
-    # -----------------------------------------------------------------------
-    # Gap-length distribution (pooled regions only)
-    # -----------------------------------------------------------------------
-    gap_rows = []
-    for method in ["OmniPeak", "HOMER", "MACS2", "Default"]:
-        for mark in marks:
-            pooled = regions[method][mark].get("pooled", [])
-            for g in gap_lengths(pooled):
-                gap_rows.append({"method": method, "mark": mark, "gap_length": g})
-    gap_df = pd.DataFrame(gap_rows)
-    gap_path = os.path.join(args.outdir, "gap_lengths.tsv.gz")
-    gap_df.to_csv(gap_path, sep="\t", index=False, compression="gzip")
-    print(f"Saved {gap_path}", file=sys.stderr)
 
     # -----------------------------------------------------------------------
     # Plots (pooled stats)

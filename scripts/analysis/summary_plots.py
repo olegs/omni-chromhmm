@@ -104,8 +104,6 @@ INTER_DS_METHODS = [
 ]
 METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
 
-MAX_SEGS_PER_METHOD = 500_000
-
 
 def sort_states(states):
     """Sort chromatin state names in canonical ENCODE order."""
@@ -136,31 +134,6 @@ def ref_beds(markups_dir):
         print(f"  WARNING: no reference BED files in {markups_path}", file=sys.stderr)
     return [str(f) for f in files]
 
-
-def load_bed_segments(path, max_rows=MAX_SEGS_PER_METHOD):
-    """Load a BED file; return DataFrame[state, log_length] (downsampled)."""
-    p = Path(path)
-    if not p.exists():
-        print(f"  WARNING: missing {p}", file=sys.stderr)
-        return pd.DataFrame(columns=["state", "log_length"])
-    df = load_bed_df(str(p))[["state", "length"]]
-    if len(df) > max_rows:
-        df = df.sample(max_rows, random_state=42)
-    df["log_length"] = np.log10(df["length"].values + 1)
-    return df[["state", "log_length"]]
-
-
-def load_reference_segments(markups_dir, max_rows=MAX_SEGS_PER_METHOD):
-    """Pool all ENCODE reference BED files; return DataFrame[state, log_length, method]."""
-    frames = [load_bed_df(p)[["state", "length"]] for p in ref_beds(markups_dir)]
-    if not frames:
-        return pd.DataFrame(columns=["state", "log_length", "method"])
-    df = pd.concat(frames, ignore_index=True)
-    if len(df) > max_rows:
-        df = df.sample(max_rows, random_state=42)
-    df["log_length"] = np.log10(df["length"].values + 1)
-    df["method"] = "ENCODE Ref"
-    return df[["state", "log_length", "method"]]
 
 
 # ---------------------------------------------------------------------------
@@ -251,50 +224,6 @@ def _collect_jaccard(datasets, analysis_dirs, state, label):
     for ds, adir in zip(datasets, analysis_dirs):
         for method in METHODS_POOLED:
             val = _load_jaccard_value(adir, method, state, label)
-            records.setdefault(method, {})[ds] = val
-    return pd.DataFrame(records).T
-
-
-def _load_coverage_atac_value(analysis_dir, method, state):
-    """Return coverage (state_frac) of (state, atac_*) — matches any atac_ label."""
-    if method in ("ref", "reference"):
-        path = os.path.join(os.path.dirname(analysis_dir), "ref",
-                            "enrichment", "coverage.tsv")
-    else:
-        path = os.path.join(analysis_dir, method, "enrichment", "coverage.tsv")
-    if not os.path.exists(path):
-        # Fallback to enrichment.tsv if coverage.tsv doesn't exist yet
-        path = path.replace("coverage.tsv", "enrichment.tsv")
-    if not os.path.exists(path):
-        return np.nan
-    df = pd.read_csv(path, sep="\t")
-    # Try finding a state that matches 'state' (flexible)
-    target_state = state
-    if state not in df["state"].values:
-        matches = [s for s in df["state"].unique() if state.lower() in s.lower()]
-        if matches:
-            target_state = next((s for s in matches if s.lower() == state.lower()), matches[0])
-
-    mask = (df["state"] == target_state) & df["label"].str.startswith("atac_")
-    if not mask.any():
-        return np.nan
-    col = "coverage" if "coverage" in df.columns else "state_frac"
-    if col not in df.columns: # fallback if neither is present
-        return np.nan
-    return float(df.loc[mask, col].iloc[0])
-
-
-def _collect_coverage_atac(datasets, analysis_dirs, state):
-    """Collect ATAC-seq coverage values for *state* across datasets.
-
-    Matches any label starting with 'atac_' (dataset-specific accession).
-    Datasets without ATAC data contribute NaN.
-    Returns DataFrame with index=method, columns=dataset.
-    """
-    records = {}
-    for ds, adir in zip(datasets, analysis_dirs):
-        for method in METHODS_POOLED:
-            val = _load_coverage_atac_value(adir, method, state)
             records.setdefault(method, {})[ds] = val
     return pd.DataFrame(records).T
 
@@ -613,8 +542,6 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
     print(f"  saved {outfile}")
 
 
-# Segment length violin (from matched_stats_all.tsv)
-# ---------------------------------------------------------------------------
 
 # Map matched_stats sample key → (display label, binarization key)
 _SAMPLE_TO_INFO = {
@@ -685,68 +612,6 @@ def _peak_bar(data, col, ylabel, title, outpath):
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     ax.legend(fontsize=7, bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
     ax.set_title(title, fontsize=10, fontweight="bold")
-    fig.tight_layout()
-    fig.savefig(outpath, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outpath}")
-
-
-def _load_gap_frames(datasets, workdir):
-    frames = []
-    for ds in datasets:
-        path = os.path.join(workdir, ds, "peaks", "gap_lengths.tsv.gz")
-        if not os.path.exists(path):
-            print(f"  skipping {path}: not found")
-            continue
-        df = pd.read_csv(path, sep="\t", compression="gzip")[["method", "mark", "gap_length"]]
-        df["dataset"] = ds
-        frames.append(df)
-    return pd.concat(frames, ignore_index=True) if frames else None
-
-
-def _plot_peak_gap_violin(datasets, workdir, outpath):
-    """Violin plot: distribution of gap lengths between adjacent binarized elements.
-
-    x-axis: method; hue: histone modification (mark); y-axis: log10(gap_length+1).
-    Data pooled across all datasets.
-    """
-    data = _load_gap_frames(datasets, workdir)
-    if data is None:
-        print(f"  skipping {outpath}: no data")
-        return
-
-    marks   = [m for m in _MARK_ORDER if m in data["mark"].unique()]
-    methods = [m for m in _PEAK_METHOD_ORDER if m in data["method"].unique()]
-
-    data = data[data["method"].isin(methods) & data["mark"].isin(marks)].copy()
-    data["log_gap"] = np.log10(data["gap_length"].values + 1)
-    data["method"] = pd.Categorical(data["method"], categories=methods, ordered=True)
-    data["mark"]   = pd.Categorical(data["mark"],   categories=marks,   ordered=True)
-
-    mark_palette = sns.color_palette("tab10", n_colors=len(marks))
-    mark_colors  = {m: mark_palette[i] for i, m in enumerate(marks)}
-
-    fig, ax = plt.subplots(figsize=(max(8, len(methods) * len(marks) * 0.35 + 2), 5))
-    sns.violinplot(
-        data=data, x="method", y="log_gap", hue="mark",
-        order=methods, hue_order=marks,
-        palette=mark_colors,
-        linewidth=0.4, density_norm="width", inner="quartile", cut=0,
-        ax=ax,
-    )
-    ax.set_xlabel("Binarization method", fontsize=9)
-    ax.set_ylabel("log₁₀(gap length + 1)  [bp]", fontsize=9)
-    ax.tick_params(axis="x", labelsize=8)
-    ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.legend(title="Mark", fontsize=7, title_fontsize=8,
-              bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
-    n = len(datasets)
-    ax.set_title(
-        f"Gap lengths between adjacent binarized elements\n"
-        f"(pooled across {n} datasets)",
-        fontsize=10, fontweight="bold",
-    )
-    os.makedirs(os.path.dirname(os.path.abspath(outpath)), exist_ok=True)
     fig.tight_layout()
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
@@ -908,58 +773,6 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-
-def _plot_violin(datasets, cells, workdir, markups_dir, nstates, outfile, match_method):
-    """Single violin panel: per-state segment length, method as hue, all datasets pooled."""
-    print("Loading reference ...")
-    frames = [load_reference_segments(markups_dir)]
-
-    for key, label, _ in INTER_DS_METHODS:
-        if key == "ref":
-            continue
-        paths = [str(ds_method_bed(workdir, ds, cell, nstates, key, match_method))
-                 for ds, cell in zip(datasets, cells)]
-        print(f"Loading {key} ...")
-        sub = [f for f in (load_bed_segments(p) for p in paths) if not f.empty]
-        if sub:
-            df = pd.concat(sub, ignore_index=True)
-            if len(df) > MAX_SEGS_PER_METHOD:
-                df = df.sample(MAX_SEGS_PER_METHOD, random_state=42)
-            df["method"] = label
-            frames.append(df)
-
-    combined = pd.concat(frames, ignore_index=True)
-    present = [s for s in sort_states(combined["state"].unique())
-               if (combined["state"] == s).sum() >= 5]
-    combined = combined[combined["state"].isin(present)].copy()
-    combined["state"] = pd.Categorical(combined["state"], categories=present, ordered=True)
-    hue_order = [lbl for _, lbl, _ in INTER_DS_METHODS if lbl in combined["method"].unique()]
-
-    fig_w = max(16, len(present) * len(INTER_DS_METHODS) * 0.22)
-    fig, ax = plt.subplots(figsize=(fig_w, 5))
-    sns.violinplot(
-        data=combined, x="state", y="log_length",
-        hue="method", hue_order=hue_order,
-        palette=METHOD_PALETTE, order=present,
-        linewidth=0.4, density_norm="width", inner="quartile", cut=0,
-        ax=ax,
-    )
-    ax.set_ylim(1.8, 6)
-    ax.set_ylabel("log₁₀(segment length + 1)  [bp]", fontsize=9)
-    ax.set_xlabel("Chromatin state", fontsize=9)
-    ax.tick_params(axis="x", labelsize=7, rotation=55)
-    ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.legend(title="Method", fontsize=7, title_fontsize=8,
-              bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
-    ax.set_title(
-        "Segment length per chromatin state — ENCODE reference vs de-novo methods\n"
-        f"(datasets: {', '.join(datasets)})",
-        fontsize=10, fontweight="bold",
-    )
-    fig.savefig(outfile, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outfile}")
-
 
 def _stacked_composition_chart(coverages, labels, title, outfile, label_fontsize=7):
     """Shared helper: stacked 100% bar chart from {label: {state: fraction}} dict."""
@@ -1325,9 +1138,8 @@ def _plot_per_dataset_all_methods_composition(datasets, cells, workdir, nstates,
 def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       outdir=None, workdir=None, markups_dir=None, cells=None,
                       methods=None, nstates=15, match_method='jaccard',
-                      violin_outfile=None, state_coverage_outfile=None,
+                      state_coverage_outfile=None,
                       peak_count_outfile=None, peak_length_outfile=None,
-                      peak_gap_violin_outfile=None,
                       ref_composition_outfile=None,
                       ref_comp_matrix=None,
                       ref_kappa_matrix=None, ref_jaccard_matrix=None,
@@ -1356,9 +1168,8 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         analysis_dirs=analysis_dirs or [], outdir=outdir, workdir=workdir,
         markups_dir=markups_dir, cells=cells or [], methods=methods or [],
         nstates=nstates, match_method=match_method,
-        violin_outfile=violin_outfile, state_coverage_outfile=state_coverage_outfile,
+        state_coverage_outfile=state_coverage_outfile,
         peak_count_outfile=peak_count_outfile, peak_length_outfile=peak_length_outfile,
-        peak_gap_violin_outfile=peak_gap_violin_outfile,
         ref_composition_outfile=ref_composition_outfile,
         ref_comp_matrix=ref_comp_matrix,
         ref_kappa_matrix=ref_kappa_matrix, ref_jaccard_matrix=ref_jaccard_matrix,
@@ -1386,7 +1197,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         methods_map = {m[0]: m for m in INTER_DS_METHODS}
         new_methods = []
         # Always keep the ENCODE reference on state-level plots (coverage,
-        # composition, violin) — their titles read "ENCODE reference vs de-novo
+        # composition) — their titles read "ENCODE reference vs de-novo
         # methods", and the bar/table plots key the reference off "ref" instead,
         # so a stray "reference" entry here is harmless to them.
         if "ref" not in args.methods and "ref" in methods_map:
@@ -1443,18 +1254,19 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_summary(data, "Jaccard: Tss state vs RefSeq TSS ±2 kb", "Jaccard",
                       os.path.join(args.outdir, "summary_jaccard_tss.png"))
 
-        data = _collect_coverage_atac(ds, adirs, "Tss") * 100.0
-        _plot_summary(data, "Tss state coverage by ATAC-seq peaks", "% covered",
-                      os.path.join(args.outdir, "summary_coverage_tss_atac.png"),
-                      partial_note=True)
-
         data = _collect_table_col(ds, mdirs, "enrich_Tss_RefSeqTSS2kb")
         _plot_summary(data, "Tss enrichment at RefSeq TSS ±2 kb", "Fold enrichment",
                       os.path.join(args.outdir, "summary_enrich_tss.png"))
 
-        data = _collect_table_col(ds, mdirs, "enrich_Tss_ATAC")
-        _plot_summary(data, "Tss enrichment at ATAC-seq peaks", "Fold enrichment",
-                      os.path.join(args.outdir, "summary_enrich_tss_atac.png"),
+        # Reconsidered ATAC-seq comparison: focus on Active chromatin (Tss + Enh)
+        data = _collect_table_col(ds, mdirs, "sensitivity_Active_ATAC") * 100.0
+        _plot_summary(data, "Fraction of ATAC-seq peaks covered by Active states", "% covered",
+                      os.path.join(args.outdir, "summary_sensitivity_active_atac.png"),
+                      partial_note=True)
+
+        data = _collect_table_col(ds, mdirs, "enrich_Active_ATAC")
+        _plot_summary(data, "Active chromatin enrichment at ATAC-seq peaks", "Fold enrichment",
+                      os.path.join(args.outdir, "summary_enrich_active_atac.png"),
                       partial_note=True)
 
         # Total number of segments, including the ENCODE reference.
@@ -1477,20 +1289,15 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
 
         _plot_per_state_kappa(ds, adirs, args.outdir, match_method=args.match_method)
 
-    if args.violin_outfile or args.state_coverage_outfile:
+    if args.state_coverage_outfile:
         if not (args.workdir and args.markups_dir and args.cells):
-            raise ValueError("--workdir, --markups-dir and --cells are required for violin/coverage plots")
+            raise ValueError("--workdir, --markups-dir and --cells are required for coverage plots")
         if len(args.datasets) != len(args.cells):
             raise ValueError("--datasets and --cells must have equal lengths")
 
-        if args.violin_outfile:
-            os.makedirs(os.path.dirname(os.path.abspath(args.violin_outfile)), exist_ok=True)
-            _plot_violin(args.datasets, args.cells, args.workdir, args.markups_dir,
-                         args.nstates, args.violin_outfile, args.match_method)
-        if args.state_coverage_outfile:
-            os.makedirs(os.path.dirname(os.path.abspath(args.state_coverage_outfile)), exist_ok=True)
-            _plot_state_coverage(args.datasets, args.cells, args.workdir, args.markups_dir,
-                                 args.nstates, args.state_coverage_outfile, args.match_method)
+        os.makedirs(os.path.dirname(os.path.abspath(args.state_coverage_outfile)), exist_ok=True)
+        _plot_state_coverage(args.datasets, args.cells, args.workdir, args.markups_dir,
+                             args.nstates, args.state_coverage_outfile, args.match_method)
 
     # --- peak count bar chart ----------------------------------------------
     if args.peak_count_outfile:
@@ -1505,12 +1312,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
             raise ValueError("--workdir is required for --peak-length-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.peak_length_outfile)), exist_ok=True)
         _plot_peak_length(args.datasets, args.workdir, args.peak_length_outfile)
-
-    # --- gap-length violin -------------------------------------------------
-    if args.peak_gap_violin_outfile:
-        if not args.workdir:
-            raise ValueError("--workdir is required for --peak-gap-violin-outfile")
-        _plot_peak_gap_violin(args.datasets, args.workdir, args.peak_gap_violin_outfile)
 
     # --- inter-reference state composition ----------------------------------
     if args.ref_composition_outfile:

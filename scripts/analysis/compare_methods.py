@@ -130,6 +130,20 @@ def load_enrichment(analysis_dir, method):
     return df.pivot(index="state", columns="label", values="fold_enrichment").to_dict("index")
 
 
+def load_coverage(analysis_dir, method):
+    """Returns dict: state → {annotation → coverage}."""
+    path = os.path.join(analysis_dir, method, "enrichment", "coverage.tsv")
+    if not os.path.exists(path):
+        # Fallback to enrichment.tsv if coverage.tsv doesn't exist
+        path = os.path.join(analysis_dir, method, "enrichment", "enrichment.tsv")
+    if not os.path.exists(path):
+        return {}
+    df = pd.read_csv(path, sep="\t")
+    if "coverage" not in df.columns:
+        return {}
+    return df.pivot(index="state", columns="label", values="coverage").to_dict("index")
+
+
 def load_jaccard(analysis_dir, method):
     """Returns dict: state → {annotation → jaccard}."""
     path = os.path.join(analysis_dir, method, "enrichment", "jaccard.tsv")
@@ -309,27 +323,58 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             if not np.isnan(val):
                 row[col] = val
 
-        # Jaccard vs ATAC (any atac_* label)
-        if "Tss" in jaccard:
-            atac_label = next((l for l in jaccard["Tss"] if l.startswith("atac_")), None)
+        # ATAC-seq validation (pooled active states)
+        coverage = load_coverage(_adir(method), method)
+        
+        # Find any atac_* label
+        atac_label = None
+        for st_data in enrichment.values():
+            atac_label = next((l for l in st_data if l.startswith("atac_")), None)
             if atac_label:
-                row["jaccard_Tss_ATAC"] = jaccard["Tss"][atac_label]
-
-        # Enrichment vs ATAC (any atac_* label)
-        if "Tss" in enrichment:
-            atac_label = next((l for l in enrichment["Tss"] if l.startswith("atac_")), None)
-            if atac_label:
-                row["enrich_Tss_ATAC"] = enrichment["Tss"][atac_label]
-                # Also include coverage if present
-                path = os.path.join(_adir(method), method, "enrichment", "coverage.tsv")
-                if method == "ref":
-                    path = os.path.join(ref_dir, "ref", "enrichment", "coverage.tsv")
-                if os.path.exists(path):
-                    cov_df = pd.read_csv(path, sep="\t")
-                    # Flexible Tss match
-                    m = (cov_df["state"].str.contains("Tss", case=False)) & (cov_df["label"] == atac_label)
-                    if m.any():
-                        row["coverage_Tss_ATAC"] = cov_df.loc[m, "coverage"].iloc[0]
+                break
+            
+        if atac_label:
+            report = load_report(_adir(method), method)
+            total_bp = sum(s["total_bp"] for s in report.values())
+            
+            # Find any state that has fold > 0 to calculate ann_frac (ann_bp / total_bp)
+            ann_frac = np.nan
+            for st in enrichment:
+                if atac_label in enrichment[st] and atac_label in coverage.get(st, {}):
+                    f = enrichment[st][atac_label]
+                    c = coverage[st][atac_label]
+                    if f > 0:
+                        ann_frac = c / f
+                        break
+            
+            for pool_name, substrs in [("Tss", ["Tss"]), 
+                                       ("Enh", ["Enh"]), 
+                                       ("Active", ["Tss", "Enh"])]:
+                # Pool states: match any substr, but exclude "Biv"
+                pooled_states = [st for st in enrichment 
+                                if any(sub.lower() in st.lower() for sub in substrs)
+                                and "biv" not in st.lower()]
+                
+                if pooled_states:
+                    overlap_sum = 0
+                    state_bp_sum = 0
+                    for st in pooled_states:
+                        st_bp = report.get(st, {}).get("total_bp", 0)
+                        st_cov = coverage.get(st, {}).get(atac_label, 0)
+                        overlap_sum += st_cov * st_bp
+                        state_bp_sum += st_bp
+                    
+                    if state_bp_sum > 0:
+                        pooled_cov = overlap_sum / state_bp_sum
+                        row[f"coverage_{pool_name}_ATAC"] = pooled_cov
+                        
+                        if not np.isnan(ann_frac) and ann_frac > 0:
+                            ann_bp = ann_frac * total_bp
+                            row[f"enrich_{pool_name}_ATAC"] = pooled_cov / ann_frac
+                            # Sensitivity: fraction of ATAC peaks covered by these states
+                            row[f"sensitivity_{pool_name}_ATAC"] = overlap_sum / ann_bp
+                            # Correct pooled Jaccard
+                            row[f"jaccard_{pool_name}_ATAC"] = overlap_sum / (state_bp_sum + ann_bp - overlap_sum)
 
         rows.append(row)
 
@@ -428,12 +473,15 @@ def plot_comparison(df, outdir):
     for col, title in [
         ("enrich_Tx_ExpressedGeneBodies",  "Tx enrichment vs expressed gene bodies"),
         ("jaccard_Tx_ExpressedGeneBodies", "Jaccard: Tx state vs expressed gene bodies"),
-        ("jaccard_Tss_ATAC",               "Jaccard: Tss state vs ATAC-seq"),
-        ("coverage_Tss_ATAC",              "Tss state coverage by ATAC-seq"),
+        ("enrich_Active_ATAC",             "Active chromatin enrichment at ATAC-seq peaks"),
+        ("sensitivity_Active_ATAC",        "Fraction of ATAC-seq peaks in Active states"),
+        ("jaccard_Active_ATAC",            "Jaccard: Active states vs ATAC-seq"),
+        ("coverage_Active_ATAC",           "Active state coverage by ATAC-seq"),
         ("median_Tx_length",               "Median Tx (transcription) segment length"),
         ("mean_Tx_length",                 "Mean Tx (transcription) segment length"),
     ]:
         ylabel = "Fold enrichment" if col.startswith("enrich") else \
+                 "Fraction" if col.startswith("sensitivity") else \
                  "Jaccard" if col.startswith("jaccard") else \
                  "Fraction" if col.startswith("coverage") else "bp"
         if col in df_main.columns and df_main[col].notna().any():
