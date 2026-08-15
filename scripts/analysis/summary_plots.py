@@ -1368,6 +1368,11 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       os.path.join(args.outdir, "summary_jaccard_tss_exptss2kb.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
+        data = _collect_table_col(ds, mdirs, "enrich_Tss_ExpressedTSS2kb", include_ref=True)
+        _plot_summary(data, "Tss enrichment at Expressed TSS ±2 kb", "Fold enrichment",
+                      os.path.join(args.outdir, "summary_enrich_tss_exptss2kb.png"),
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
         data = _collect_table_col(ds, mdirs, "sensitivity_Tss_ExpressedTSS", include_ref=True) * 100.0
         _plot_summary(data, "Fraction of Expressed TSS covered by Tss states", "% overlap",
                       os.path.join(args.outdir, "summary_sensitivity_tss_exptss.png"),

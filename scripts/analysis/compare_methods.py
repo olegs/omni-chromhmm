@@ -536,6 +536,7 @@ def plot_comparison(df, outdir):
         ("sensitivity_Tss_RefSeqTSS2kb",   "Fraction of RefSeq TSS ±2 kb covered by Tss states"),
         ("coverage_Tss_RefSeqTSS2kb",      "Fraction of Tss states covered by RefSeq TSS ±2 kb"),
         ("enrich_Tss_ExpressedTSS",        "Tss enrichment at Expressed TSS"),
+        ("enrich_Tss_ExpressedTSS2kb",      "Tss enrichment at Expressed TSS ±2 kb"),
         ("jaccard_Tss_ExpressedTSS",       "Jaccard: Tss state vs Expressed TSS"),
         ("jaccard_Tss_ExpressedTSS2kb",    "Jaccard: Tss state vs Expressed TSS ±2 kb"),
         ("sensitivity_Tss_ExpressedTSS",   "Fraction of Expressed TSS covered by Tss states"),
