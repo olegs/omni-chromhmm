@@ -272,6 +272,7 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
 
         # Report: mean lengths for key states
         report = load_report(_adir(method), method)
+        total_bp = sum(s["total_bp"] for s in report.values())
         for state, col_base in [("Tx", "Tx_length"),
                                 ("Tss", "Tss_length"),
                                 ("TxWk", "TxWk_length")]:
@@ -334,9 +335,6 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                 break
             
         if atac_label:
-            report = load_report(_adir(method), method)
-            total_bp = sum(s["total_bp"] for s in report.values())
-            
             # Find any state that has fold > 0 to calculate ann_frac (ann_bp / total_bp)
             ann_frac = np.nan
             for st in enrichment:
@@ -349,7 +347,8 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             
             for pool_name, substrs in [("Tss", ["Tss"]), 
                                        ("Enh", ["Enh"]), 
-                                       ("Active", ["Tss", "Enh"])]:
+                                       ("Active", ["Tss", "Enh"]),
+                                       ("Quies", ["Quies", "Het", "ZNF"])]:
                 # Pool states: match any substr, but exclude "Biv"
                 pooled_states = [st for st in enrichment 
                                 if any(sub.lower() in st.lower() for sub in substrs)
@@ -375,6 +374,60 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                             row[f"sensitivity_{pool_name}_ATAC"] = overlap_sum / ann_bp
                             # Correct pooled Jaccard
                             row[f"jaccard_{pool_name}_ATAC"] = overlap_sum / (state_bp_sum + ann_bp - overlap_sum)
+
+        # Additional biological validation sensitivities (fraction of annotation covered by states)
+        for pool_name, substrs, ann_name, col_prefix in [
+            ("Tss",    ["Tss"], "RefSeqTSS2kb.hg38",      "Tss_RefSeqTSS2kb"),
+            ("Tx",     ["Tx"],  "ExpressedGeneBodies",    "Tx_ExpressedGeneBodies"),
+            ("Tss",    ["Tss"], "ExpressedTSS",           "Tss_ExpressedTSS"),
+            ("Tss",    ["Tss"], "ExpressedTSS2kb",         "Tss_ExpressedTSS2kb"),
+            ("Active", ["Tss", "Enh"], "ExpressedTSS",    "Active_ExpressedTSS"),
+            ("Active", ["Tss", "Enh"], "NonExpressedGeneBodies", "Active_NonExpGeneBodies"),
+            ("Quies",  ["Quies", "Het", "ZNF"], "NonExpressedGeneBodies", "Quies_NonExpGeneBodies"),
+        ]:
+            # Find actual annotation label (flexible matching)
+            target_ann = None
+            for st in enrichment:
+                if ann_name in enrichment[st]:
+                    target_ann = ann_name
+                    break
+            if not target_ann:
+                base = ann_name.split(".")[0]
+                for st in enrichment:
+                    for k in enrichment[st]:
+                        if k.split(".")[0] == base:
+                            target_ann = k
+                            break
+                    if target_ann: break
+            
+            if target_ann and total_bp > 0:
+                ann_frac = np.nan
+                for st in enrichment:
+                    if target_ann in enrichment[st] and target_ann in coverage.get(st, {}):
+                        f = enrichment[st][target_ann]
+                        c = coverage[st][target_ann]
+                        if f > 0:
+                            ann_frac = c / f
+                            break
+                
+                if not np.isnan(ann_frac) and ann_frac > 0:
+                    pooled_states = [st for st in enrichment 
+                                    if any(sub.lower() in st.lower() for sub in substrs)
+                                    and "biv" not in st.lower()]
+                    if pooled_states:
+                        overlap_sum = 0
+                        state_bp_sum = 0
+                        for st in pooled_states:
+                            st_bp = report.get(st, {}).get("total_bp", 0)
+                            st_cov = coverage.get(st, {}).get(target_ann, 0)
+                            overlap_sum += st_cov * st_bp
+                            state_bp_sum += st_bp
+                        
+                        ann_bp = ann_frac * total_bp
+                        row[f"sensitivity_{col_prefix}"] = overlap_sum / ann_bp
+                        row[f"coverage_{col_prefix}"] = overlap_sum / state_bp_sum if state_bp_sum > 0 else np.nan
+                        row[f"enrich_{col_prefix}"] = (overlap_sum / state_bp_sum) / ann_frac if state_bp_sum > 0 else np.nan
+                        row[f"jaccard_{col_prefix}"] = overlap_sum / (state_bp_sum + ann_bp - overlap_sum) if (state_bp_sum + ann_bp - overlap_sum) > 0 else np.nan
 
         rows.append(row)
 
@@ -473,10 +526,22 @@ def plot_comparison(df, outdir):
     for col, title in [
         ("enrich_Tx_ExpressedGeneBodies",  "Tx enrichment vs expressed gene bodies"),
         ("jaccard_Tx_ExpressedGeneBodies", "Jaccard: Tx state vs expressed gene bodies"),
+        ("sensitivity_Tx_ExpressedGeneBodies", "Fraction of expressed gene bodies covered by Tx states"),
         ("enrich_Active_ATAC",             "Active chromatin enrichment at ATAC-seq peaks"),
-        ("sensitivity_Active_ATAC",        "Fraction of ATAC-seq peaks in Active states"),
+        ("sensitivity_Active_ATAC",        "Fraction of ATAC-seq peaks covered by Active states"),
         ("jaccard_Active_ATAC",            "Jaccard: Active states vs ATAC-seq"),
-        ("coverage_Active_ATAC",           "Active state coverage by ATAC-seq"),
+        ("coverage_Active_ATAC",           "Fraction of Active states covered by ATAC-seq peaks"),
+        ("enrich_Tss_RefSeqTSS2kb",        "Tss enrichment at RefSeq TSS ±2 kb"),
+        ("jaccard_Tss_RefSeqTSS2kb",       "Jaccard: Tss state vs RefSeq TSS ±2 kb"),
+        ("sensitivity_Tss_RefSeqTSS2kb",   "Fraction of RefSeq TSS ±2 kb covered by Tss states"),
+        ("coverage_Tss_RefSeqTSS2kb",      "Fraction of Tss states covered by RefSeq TSS ±2 kb"),
+        ("enrich_Tss_ExpressedTSS",        "Tss enrichment at Expressed TSS"),
+        ("jaccard_Tss_ExpressedTSS",       "Jaccard: Tss state vs Expressed TSS"),
+        ("jaccard_Tss_ExpressedTSS2kb",    "Jaccard: Tss state vs Expressed TSS ±2 kb"),
+        ("sensitivity_Tss_ExpressedTSS",   "Fraction of Expressed TSS covered by Tss states"),
+        ("coverage_Tss_ExpressedTSS",      "Fraction of Tss states covered by Expressed TSS"),
+        ("enrich_Active_NonExpGeneBodies",  "Active states enrichment at non-expressed genes"),
+        ("enrich_Quies_NonExpGeneBodies",   "Quiescent states enrichment at non-expressed genes"),
         ("median_Tx_length",               "Median Tx (transcription) segment length"),
         ("mean_Tx_length",                 "Mean Tx (transcription) segment length"),
     ]:

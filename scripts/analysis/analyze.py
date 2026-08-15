@@ -266,28 +266,33 @@ def save_stats(df, out_path, extra_groupby=None):
 
 # --- RNA-seq expressed gene annotations ----------------------------------
 
-def load_expressed_gene_ids(rnaseq_path, tpm_threshold=1.0):
-    """Parse ENCODE RNA-seq quantification TSV; return set of expressed gene IDs."""
-    expressed = set()
+def load_gene_tpms(rnaseq_path):
+    """Parse ENCODE RNA-seq quantification TSV; return dict of gene ID -> TPM."""
+    tpms = {}
     with open(rnaseq_path) as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
             try:
                 tpm = float(row["TPM"])
                 gene_id = row["gene_id"].strip()
-                if tpm >= tpm_threshold:
-                    expressed.add(gene_id)
-                    if "." in gene_id:
-                        expressed.add(gene_id.split(".")[0])
+                tpms[gene_id] = tpm
+                if "." in gene_id:
+                    tpms[gene_id.split(".")[0]] = tpm
             except (ValueError, KeyError):
                 continue
-    return expressed
+    return tpms
 
 
-def load_expressed_gene_coords(gtf_path, expressed_ids):
-    """Parse GENCODE GTF for expressed gene bodies and TSS regions."""
-    gene_bodies = []
-    tss_regions = []
+def load_expressed_gene_ids(rnaseq_path, tpm_threshold=1.0):
+    """Parse ENCODE RNA-seq quantification TSV; return set of expressed gene IDs."""
+    tpms = load_gene_tpms(rnaseq_path)
+    return {gid for gid, tpm in tpms.items() if tpm >= tpm_threshold}
+
+
+def load_gene_coords(gtf_path, gene_tpms, exp_thresh=1.0, nonexp_thresh=0.1):
+    """Parse GENCODE GTF for expressed and non-expressed gene bodies and TSS regions."""
+    exp_bodies, exp_tss = [], []
+    nonexp_bodies, nonexp_tss = [], []
     try:
         with open_text(gtf_path) as f:
             for line in f:
@@ -305,40 +310,63 @@ def load_expressed_gene_coords(gtf_path, expressed_ids):
                         gene_id = attr.split('"')[1] if '"' in attr else attr.split()[-1]
                     elif attr.startswith("gene_name"):
                         gene_name = attr.split('"')[1] if '"' in attr else attr.split()[-1]
-                matched = False
-                if gene_id and (gene_id in expressed_ids or gene_id.split(".")[0] in expressed_ids):
-                    matched = True
-                if gene_name and gene_name in expressed_ids:
-                    matched = True
-                if not matched:
-                    continue
+
+                tpm = 0.0
+                if gene_id in gene_tpms:
+                    tpm = gene_tpms[gene_id]
+                elif gene_name in gene_tpms:
+                    tpm = gene_tpms[gene_name]
+                elif gene_id and "." in gene_id and gene_id.split(".")[0] in gene_tpms:
+                    tpm = gene_tpms[gene_id.split(".")[0]]
+
                 label = gene_name or gene_id
                 chrom = cols[0]
                 start = int(cols[3]) - 1
                 end = int(cols[4])
                 strand = cols[6]
-                gene_bodies.append((chrom, start, end, label))
                 tss = start if strand == "+" else end - 1
-                tss_regions.append((chrom, tss, tss + 1, label))
+
+                if tpm >= exp_thresh:
+                    exp_bodies.append((chrom, start, end, label))
+                    exp_tss.append((chrom, tss, tss + 1, label))
+                elif tpm <= nonexp_thresh:
+                    nonexp_bodies.append((chrom, start, end, label))
+                    nonexp_tss.append((chrom, tss, tss + 1, label))
     except (EOFError, gzip.BadGzipFile) as e:
         print(f"Warning: Corrupted gzip file {gtf_path}: {e}. Data might be incomplete.", file=sys.stderr)
-    return gene_bodies, tss_regions
+    return exp_bodies, exp_tss, nonexp_bodies, nonexp_tss
+
+
+def load_expressed_gene_coords(gtf_path, expressed_ids):
+    """Parse GENCODE GTF for expressed gene bodies and TSS regions."""
+    # Fallback/Backward compatibility wrapper
+    tpms = {gid: 100.0 for gid in expressed_ids}
+    exp_b, exp_t, _, _ = load_gene_coords(gtf_path, tpms, exp_thresh=1.0)
+    return exp_b, exp_t
 
 
 def make_expressed_annotations(rnaseq_path, gtf_path):
-    """Build expressed gene body and TSS BED annotations from RNA-seq + GTF."""
-    expressed_ids = load_expressed_gene_ids(rnaseq_path)
-    print(f"  RNA-seq: {len(expressed_ids)} expressed gene IDs (TPM >= 1)", file=sys.stderr)
+    """Build expressed and non-expressed gene body/TSS BED annotations."""
+    gene_tpms = load_gene_tpms(rnaseq_path)
+    exp_b, exp_t, nonexp_b, nonexp_t = load_gene_coords(gtf_path, gene_tpms)
 
-    gene_bodies, tss_regions = load_expressed_gene_coords(gtf_path, expressed_ids)
-    print(f"  GTF: {len(gene_bodies)} expressed gene bodies, {len(tss_regions)} TSS regions",
-          file=sys.stderr)
+    # Windowed TSS versions (+/- 2kb)
+    def window(tss_list):
+        return [(chrom, max(0, s - 2000), e + 2000, label) for chrom, s, e, label in tss_list]
+
+    exp_t2k = window(exp_t)
+    nonexp_t2k = window(nonexp_t)
+
+    print(f"  RNA-seq: {len([t for t in gene_tpms.values() if t >= 1.0])} expressed gene IDs (TPM >= 1)", file=sys.stderr)
+    print(f"  GTF: {len(exp_b)} exp bodies, {len(nonexp_b)} non-exp bodies", file=sys.stderr)
 
     result = []
-    if gene_bodies:
-        result.append(("ExpressedGeneBodies", gene_bodies))
-    if tss_regions:
-        result.append(("ExpressedTSS", tss_regions))
+    if exp_b: result.append(("ExpressedGeneBodies", exp_b))
+    if exp_t: result.append(("ExpressedTSS", exp_t))
+    if exp_t2k: result.append(("ExpressedTSS2kb", exp_t2k))
+    if nonexp_b: result.append(("NonExpressedGeneBodies", nonexp_b))
+    if nonexp_t: result.append(("NonExpressedTSS", nonexp_t))
+    if nonexp_t2k: result.append(("NonExpressedTSS2kb", nonexp_t2k))
     return result
 
 

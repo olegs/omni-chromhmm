@@ -322,7 +322,8 @@ def _plot_summary(df, datasets, y_col, std_col, ylabel,
     df_agg = _aggregate(df, methods, y_col, std_col)
     if df_agg.empty:
         return
-    n_ds = len(datasets)
+    # Number of unique datasets present in the data for the requested methods
+    n_ds = df[df["method"].isin(methods)]["dataset"].nunique()
     fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.9), 4.5))
     _grouped_bars(ax, methods, df_agg, y_col, std_col, points_col="points")
     _save_fig(fig, ax,

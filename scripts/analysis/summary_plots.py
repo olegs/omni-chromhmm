@@ -289,7 +289,10 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     ax.grid(axis="y", alpha=0.3)
 
     yrange = ax.get_ylim()[1] - ax.get_ylim()[0]
-    n_ds = data.shape[1]
+    # Count only datasets that have at least one non-NaN value for the methods we are plotting.
+    # This ensures that for RNA-seq or ATAC-seq validation plots, we only count datasets
+    # where that information was actually available.
+    n_ds = data.loc[methods].notna().any(axis=0).sum()
     for i, (m, se, c) in enumerate(zip(means, ses, counts)):
         if np.isnan(m) or c == 0:
             continue
@@ -330,6 +333,70 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     ax.set_xlabel(n_note, fontsize=7, color="grey")
 
     fig.tight_layout()
+    fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved {outpath}")
+
+
+def _plot_2way_scatter(x_data, y_data, title, xlabel, ylabel, outpath, order=None):
+    """Scatter plot: X vs Y (mean ± SE) across datasets.
+
+    x_data, y_data: DataFrames with index=method, columns=dataset.
+    """
+    method_order = order if order is not None else METHODS_POOLED
+    methods = [m for m in method_order if m in x_data.index and m in y_data.index]
+    if not methods:
+        print(f"  skipping {outpath}: no data")
+        return
+
+    # Drop methods that have no data at all
+    methods = [m for m in methods
+               if not x_data.loc[m].isna().all() and not y_data.loc[m].isna().all()]
+
+    if not methods:
+        print(f"  skipping {outpath}: no data")
+        return
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    for m in methods:
+        color = BIN_COLORS.get(METHOD_INFO[m][0], "#888888")
+        label = DISPLAY_NAMES.get(m, m)
+
+        # Get matching datasets
+        ds_common = x_data.columns.intersection(y_data.columns)
+        x_vals = x_data.loc[m, ds_common].astype(float)
+        y_vals = y_data.loc[m, ds_common].astype(float)
+
+        mask = x_vals.notna() & y_vals.notna()
+        x_vals = x_vals[mask]
+        y_vals = y_vals[mask]
+
+        if len(x_vals) == 0:
+            continue
+
+        x_mean = x_vals.mean()
+        y_mean = y_vals.mean()
+        count = len(x_vals)
+        x_se = x_vals.std() / np.sqrt(count) if count > 1 else 0
+        y_se = y_vals.std() / np.sqrt(count) if count > 1 else 0
+
+        # Plot individual points with small alpha
+        ax.scatter(x_vals, y_vals, color=color, alpha=0.2, s=20, edgecolors='none')
+
+        # Plot mean with error bars
+        ax.errorbar(x_mean, y_mean, xerr=x_se, yerr=y_se, fmt='o',
+                    color=color, label=label, markersize=7, markeredgecolor='white', markeredgewidth=1)
+
+    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.set_xlabel(xlabel, fontsize=9)
+    ax.set_ylabel(ylabel, fontsize=9)
+    ax.grid(alpha=0.3)
+
+    # Move legend outside
+    ax.legend(fontsize=7, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
+
+    os.makedirs(os.path.dirname(os.path.abspath(outpath)), exist_ok=True)
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {outpath}")
@@ -496,8 +563,8 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
         data = _collect_table_col(datasets, methods_dirs, col)
         for method in data.index:
             label = _SAMPLE_TO_INFO.get(method, (method,))[0]
-            for val in data.loc[method].dropna():
-                rows.append({"Method": label, "Metric": metric, "value": float(val)})
+            for ds_name, val in data.loc[method].dropna().items():
+                rows.append({"Method": label, "Metric": metric, "value": float(val), "dataset": ds_name})
 
     if not rows:
         print(f"  skipping {outfile}: no data", file=sys.stderr)
@@ -527,7 +594,7 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     mode = "NOQH (excl. Quies/Het)" if noqh else "Full"
-    n_ds = len(datasets)
+    n_ds = plot_df["dataset"].nunique()
     ax.set_title(
         f"Replicate consistency by method — {mode}\n"
         f"({n_methods} methods, {n_ds} datasets with replicates)",
@@ -624,7 +691,7 @@ def _plot_peak_count(datasets, workdir, outpath):
     if data is None:
         print(f"  skipping {outpath}: no data")
         return
-    n = len(datasets)
+    n = data["dataset"].nunique()
     _peak_bar(data, "n_peaks", "Number of peaks",
               f"Peak count per mark and method  (mean ± std, n={n} datasets)", outpath)
 
@@ -635,7 +702,7 @@ def _plot_peak_length(datasets, workdir, outpath):
     if data is None:
         print(f"  skipping {outpath}: no data")
         return
-    n = len(datasets)
+    n = data["dataset"].nunique()
     _peak_bar(data, "mean_length", "Mean peak length (bp)",
               f"Mean peak length per mark and method  (mean ± std, n={n} datasets)", outpath)
 
@@ -967,7 +1034,8 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
                         if not ((ds_i in group_a and ds_j in group_b) or
                                 (ds_i in group_b and ds_j in group_a)):
                             continue
-                    rows.append({"Method": label, "Metric": metric, "value": float(mat.iloc[i, j])})
+                    rows.append({"Method": label, "Metric": metric, "value": float(mat.iloc[i, j]),
+                                 "ds_i": ds_i, "ds_j": ds_j})
 
     if not rows:
         print(f"  skipping {outfile}: no data", file=sys.stderr)
@@ -997,11 +1065,12 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     mode = "NOQH (excl. Quies/Het)" if noqh else "Full"
+    n_ds = pd.concat([plot_df["ds_i"], plot_df["ds_j"]]).nunique()
     n_pairs = plot_df[plot_df["Metric"] == "Composition"]["Method"].count() // max(n_methods, 1)
     pair_desc = " — ChIP↔Mint-ChIP pairs only" if (group_a and group_b) else ""
     ax.set_title(
         f"Inter-dataset similarity by method — {mode}{pair_desc}\n"
-        f"({n_methods} methods, {n_pairs} dataset pairs each)",
+        f"({n_methods} methods, n={n_ds} datasets, {n_pairs} pairs each)",
         fontsize=10, fontweight="bold",
     )
     ax.tick_params(axis="x", rotation=30, labelsize=8)
@@ -1230,16 +1299,159 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       os.path.join(args.outdir, "summary_entropy_noqh.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        data = _collect_table_col(ds, mdirs, "jaccard_Tx_ExpressedGeneBodies")
+        # --- RNA-seq validation (expressed genes) ---------------------------
+        data = _collect_table_col(ds, mdirs, "jaccard_Tx_ExpressedGeneBodies", include_ref=True)
         _plot_summary(data, "Jaccard: Tx state vs expressed gene bodies", "Jaccard",
                       os.path.join(args.outdir, "summary_jaccard_tx.png"),
-                      partial_note=True)
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        data = _collect_table_col(ds, mdirs, "enrich_Tx_ExpressedGeneBodies")
+        data = _collect_table_col(ds, mdirs, "enrich_Tx_ExpressedGeneBodies", include_ref=True)
         _plot_summary(data, "Tx enrichment at expressed gene bodies", "Fold enrichment",
                       os.path.join(args.outdir, "summary_enrich_tx.png"),
-                      partial_note=True)
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
+        data = _collect_table_col(ds, mdirs, "sensitivity_Tx_ExpressedGeneBodies", include_ref=True) * 100.0
+        _plot_summary(data, "Fraction of expressed gene bodies covered by Tx states", "% overlap",
+                      os.path.join(args.outdir, "summary_sensitivity_tx.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "coverage_Tx_ExpressedGeneBodies", include_ref=True) * 100.0
+        _plot_summary(data, "Fraction of Tx states covered by expressed genes", "% overlap",
+                      os.path.join(args.outdir, "summary_coverage_tx.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        tx_sens = _collect_table_col(ds, mdirs, "sensitivity_Tx_ExpressedGeneBodies", include_ref=True) * 100.0
+        tx_cov = _collect_table_col(ds, mdirs, "coverage_Tx_ExpressedGeneBodies", include_ref=True) * 100.0
+        _plot_2way_scatter(tx_sens, tx_cov,
+                           "Tx state validation (Expressed Gene Bodies)",
+                           "Fraction of expressed gene bodies covered by Tx states (%)",
+                           "Fraction of Tx states covered by expressed genes (%)",
+                           os.path.join(args.outdir, "summary_2way_tx.png"),
+                           order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "jaccard_Tss_RefSeqTSS2kb", include_ref=True)
+        _plot_summary(data, "Jaccard: Tss state vs RefSeq TSS ±2 kb", "Jaccard",
+                      os.path.join(args.outdir, "summary_jaccard_tss.png"),
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "enrich_Tss_RefSeqTSS2kb", include_ref=True)
+        _plot_summary(data, "Tss enrichment at RefSeq TSS ±2 kb", "Fold enrichment",
+                      os.path.join(args.outdir, "summary_enrich_tss.png"),
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "sensitivity_Tss_RefSeqTSS2kb", include_ref=True) * 100.0
+        _plot_summary(data, "Fraction of RefSeq TSS ±2 kb covered by Tss states", "% overlap",
+                      os.path.join(args.outdir, "summary_sensitivity_tss.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "coverage_Tss_RefSeqTSS2kb", include_ref=True) * 100.0
+        _plot_summary(data, "Fraction of Tss states covered by RefSeq TSS ±2 kb", "% overlap",
+                      os.path.join(args.outdir, "summary_coverage_tss.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        tss_sens = _collect_table_col(ds, mdirs, "sensitivity_Tss_RefSeqTSS2kb", include_ref=True) * 100.0
+        tss_cov = _collect_table_col(ds, mdirs, "coverage_Tss_RefSeqTSS2kb", include_ref=True) * 100.0
+        _plot_2way_scatter(tss_sens, tss_cov,
+                           "Tss state validation (RefSeq TSS ±2 kb)",
+                           "Fraction of RefSeq TSS ±2 kb covered by Tss states (%)",
+                           "Fraction of Tss states covered by RefSeq TSS ±2 kb (%)",
+                           os.path.join(args.outdir, "summary_2way_tss.png"),
+                           order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "jaccard_Tss_ExpressedTSS", include_ref=True)
+        _plot_summary(data, "Jaccard: Tss state vs Expressed TSS", "Jaccard",
+                      os.path.join(args.outdir, "summary_jaccard_tss_exptss.png"),
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "jaccard_Tss_ExpressedTSS2kb", include_ref=True)
+        _plot_summary(data, "Jaccard: Tss state vs Expressed TSS ±2 kb", "Jaccard",
+                      os.path.join(args.outdir, "summary_jaccard_tss_exptss2kb.png"),
+                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "sensitivity_Tss_ExpressedTSS", include_ref=True) * 100.0
+        _plot_summary(data, "Fraction of Expressed TSS covered by Tss states", "% overlap",
+                      os.path.join(args.outdir, "summary_sensitivity_tss_exptss.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "coverage_Tss_ExpressedTSS", include_ref=True) * 100.0
+        _plot_summary(data, "Fraction of Tss states covered by Expressed TSS", "% overlap",
+                      os.path.join(args.outdir, "summary_coverage_tss_exptss.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        exptss_sens = _collect_table_col(ds, mdirs, "sensitivity_Tss_ExpressedTSS", include_ref=True) * 100.0
+        exptss_cov = _collect_table_col(ds, mdirs, "coverage_Tss_ExpressedTSS", include_ref=True) * 100.0
+        _plot_2way_scatter(exptss_sens, exptss_cov,
+                           "Tss state validation (Expressed TSS)",
+                           "Fraction of Expressed TSS covered by Tss states (%)",
+                           "Fraction of Tss states covered by Expressed TSS (%)",
+                           os.path.join(args.outdir, "summary_2way_tss_exptss.png"),
+                           order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        exptss2kb_sens = _collect_table_col(ds, mdirs, "sensitivity_Tss_ExpressedTSS2kb", include_ref=True) * 100.0
+        exptss2kb_cov = _collect_table_col(ds, mdirs, "coverage_Tss_ExpressedTSS2kb", include_ref=True) * 100.0
+        _plot_2way_scatter(exptss2kb_sens, exptss2kb_cov,
+                           "Tss state validation (Expressed TSS ±2 kb)",
+                           "Fraction of Expressed TSS ±2 kb covered by Tss states (%)",
+                           "Fraction of Tss states covered by Expressed TSS ±2 kb (%)",
+                           os.path.join(args.outdir, "summary_2way_tss_exptss2kb.png"),
+                           order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "enrich_Active_NonExpGeneBodies", include_ref=True)
+        _plot_summary(data, "Active states enrichment at Non-expressed Gene Bodies", "Fold enrichment",
+                      os.path.join(args.outdir, "summary_enrich_active_nonexp.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "enrich_Quies_NonExpGeneBodies", include_ref=True)
+        _plot_summary(data, "Quiescent states enrichment at Non-expressed Gene Bodies", "Fold enrichment",
+                      os.path.join(args.outdir, "summary_enrich_quies_nonexp.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        # --- ATAC-seq validation --------------------------------------------
+        data = _collect_table_col(ds, mdirs, "jaccard_Active_ATAC", include_ref=True)
+        _plot_summary(data, "Jaccard: Active states vs ATAC-seq", "Jaccard",
+                      os.path.join(args.outdir, "summary_jaccard_active_atac.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "enrich_Active_ATAC", include_ref=True)
+        _plot_summary(data, "Active chromatin enrichment at ATAC-seq peaks", "Fold enrichment",
+                      os.path.join(args.outdir, "summary_enrich_active_atac.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "sensitivity_Active_ATAC", include_ref=True) * 100.0
+        _plot_summary(data, "Fraction of ATAC-seq peaks covered by Active states", "% overlap",
+                      os.path.join(args.outdir, "summary_sensitivity_active_atac.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "coverage_Active_ATAC", include_ref=True) * 100.0
+        _plot_summary(data, "Fraction of Active states covered by ATAC-seq peaks", "% overlap",
+                      os.path.join(args.outdir, "summary_coverage_active_atac.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        atac_sens = _collect_table_col(ds, mdirs, "sensitivity_Active_ATAC", include_ref=True) * 100.0
+        atac_cov = _collect_table_col(ds, mdirs, "coverage_Active_ATAC", include_ref=True) * 100.0
+        _plot_2way_scatter(atac_sens, atac_cov,
+                           "Active chromatin validation (ATAC-seq)",
+                           "Fraction of ATAC-seq peaks covered by Active states (%)",
+                           "Fraction of Active states covered by ATAC-seq peaks (%)",
+                           os.path.join(args.outdir, "summary_2way_active_atac.png"),
+                           order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "sensitivity_Tss_ATAC", include_ref=True) * 100.0
+        _plot_summary(data, "Fraction of ATAC-seq peaks covered by Tss states", "% overlap",
+                      os.path.join(args.outdir, "summary_sensitivity_tss_atac.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "sensitivity_Enh_ATAC", include_ref=True) * 100.0
+        _plot_summary(data, "Fraction of ATAC-seq peaks covered by Enh states", "% overlap",
+                      os.path.join(args.outdir, "summary_sensitivity_enh_atac.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        data = _collect_table_col(ds, mdirs, "enrich_Quies_ATAC", include_ref=True)
+        _plot_summary(data, "Quiescent states enrichment at ATAC-seq peaks", "Fold enrichment",
+                      os.path.join(args.outdir, "summary_enrich_quies_atac.png"),
+                      partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
+
+        # --- Tx segment lengths --------------------------------------------
         data = _collect_table_col(ds, mdirs, "median_Tx_length", include_ref=True)
         _plot_summary(data, "Median Tx (transcription) segment length", "bp",
                       os.path.join(args.outdir, "summary_median_tx_length.png"),
@@ -1249,25 +1461,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_summary(data, "Mean Tx (transcription) segment length", "bp",
                       os.path.join(args.outdir, "summary_mean_tx_length.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
-
-        data = _collect_jaccard(ds, adirs, "Tss", "RefSeqTSS2kb.hg38")
-        _plot_summary(data, "Jaccard: Tss state vs RefSeq TSS ±2 kb", "Jaccard",
-                      os.path.join(args.outdir, "summary_jaccard_tss.png"))
-
-        data = _collect_table_col(ds, mdirs, "enrich_Tss_RefSeqTSS2kb")
-        _plot_summary(data, "Tss enrichment at RefSeq TSS ±2 kb", "Fold enrichment",
-                      os.path.join(args.outdir, "summary_enrich_tss.png"))
-
-        # Reconsidered ATAC-seq comparison: focus on Active chromatin (Tss + Enh)
-        data = _collect_table_col(ds, mdirs, "sensitivity_Active_ATAC") * 100.0
-        _plot_summary(data, "Fraction of ATAC-seq peaks covered by Active states", "% covered",
-                      os.path.join(args.outdir, "summary_sensitivity_active_atac.png"),
-                      partial_note=True)
-
-        data = _collect_table_col(ds, mdirs, "enrich_Active_ATAC")
-        _plot_summary(data, "Active chromatin enrichment at ATAC-seq peaks", "Fold enrichment",
-                      os.path.join(args.outdir, "summary_enrich_active_atac.png"),
-                      partial_note=True)
 
         # Total number of segments, including the ENCODE reference.
         data = _collect_table_col(ds, mdirs, "n_segments", include_ref=True) / 1000.0
