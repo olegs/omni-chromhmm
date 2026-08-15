@@ -58,7 +58,7 @@ done
 
 # Omnipeak processing
 wget https://hgdownload.cse.ucsc.edu/goldenpath/hg19/bigZips/hg19.chrom.sizes
-wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.4.6808.jar
+wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.5.6815.jar
 
 for E in $(cat names.txt); do echo $E; mkdir -p $E/omni;
  for m in H3K4me1 H3K4me3 H3K9me3 H3K27ac H3K27me3 H3K36me3; do
