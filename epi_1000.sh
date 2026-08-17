@@ -138,6 +138,11 @@ for E in $(cat names.txt); do echo $E;
  java -mx4000M -jar ChromHMM/ChromHMM.jar LearnModel $E/chromhmm_binary $E/${E}_chromhmm 15 hg19; 
 done;
 
+# Peaks from binarized files for ChromHMM
+for E in $(cat names.txt); do echo $E;
+ python ~/work/omni-chromhmm/scripts/rules/binarized_to_bed.py --bin 200 --outdir $E/${E}_chromhmm  $E/chromhmm_binary/*_binary.txt;
+done;
+
 
 ########## Matching ###################
 

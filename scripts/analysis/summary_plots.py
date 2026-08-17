@@ -629,10 +629,11 @@ _SAMPLE_TO_INFO = {
 _PEAK_METHOD_COLORS = {
     "OmniPeak": BIN_COLORS["omnipeak"],
     "Default":  BIN_COLORS["default"],
+    "ChromHMM": BIN_COLORS["default"],
     "HOMER":    BIN_COLORS["homer"],
     "MACS2":    BIN_COLORS["macs2"],
 }
-_PEAK_METHOD_ORDER = ["Default", "HOMER", "MACS2", "OmniPeak"]
+_PEAK_METHOD_ORDER = ["Default", "ChromHMM", "HOMER", "MACS2", "OmniPeak"]
 _MARK_ORDER = ["H3K4me3", "H3K27ac", "H3K4me1", "H3K36me3", "H3K9me3", "H3K27me3"]
 
 
@@ -649,7 +650,7 @@ def _load_peak_frames(datasets, workdir):
     return pd.concat(frames, ignore_index=True) if frames else None
 
 
-def _peak_bar(data, col, ylabel, title, outpath):
+def _peak_bar(data, col, ylabel, title, outpath, p_low=None, p_high=None):
     marks   = [m for m in _MARK_ORDER if m in data["mark"].unique()]
     methods = [m for m in _PEAK_METHOD_ORDER if m in data["method"].unique()]
     x = np.arange(len(marks))
@@ -659,7 +660,10 @@ def _peak_bar(data, col, ylabel, title, outpath):
     for offset, method in zip(offsets, methods):
         means, stds, per_mark = [], [], []
         for mark in marks:
-            vals = data.loc[(data["method"] == method) & (data["mark"] == mark), col].values
+            vals = data.loc[(data["method"] == method) & (data["mark"] == mark), col].dropna().values
+            if p_low is not None and p_high is not None and len(vals) > 0:
+                q_low, q_high = np.percentile(vals, [p_low, p_high])
+                vals = vals[(vals >= q_low) & (vals <= q_high)]
             per_mark.append(vals)
             means.append(np.mean(vals) if len(vals) else np.nan)
             stds.append(np.std(vals) if len(vals) > 1 else 0.0)
@@ -685,26 +689,71 @@ def _peak_bar(data, col, ylabel, title, outpath):
     print(f"  saved {outpath}")
 
 
-def _plot_peak_count(datasets, workdir, outpath):
+def log_peak_outliers(df, p_low=5, p_high=95):
+    """Log outliers (< p_low% or > p_high%) for peak counts and mean lengths across methods and marks."""
+    methods = [m for m in _PEAK_METHOD_ORDER if m in df["method"].unique()]
+    marks = [m for m in _MARK_ORDER if m in df["mark"].unique()]
+
+    for col, col_name, unit in [("n_peaks", "Peak counts (n_peaks)", ""),
+                                ("mean_length", "Mean peak length (bp)", " bp")]:
+        print(f"=== Outliers for {col_name} (< {p_low}% or > {p_high}%) ===")
+        total_count = 0
+        for method in methods:
+            for mark in marks:
+                sub = df[(df["method"] == method) & (df["mark"] == mark)]
+                if sub.empty:
+                    continue
+                vals = sub[col].dropna().values
+                if len(vals) == 0:
+                    continue
+                q_low, q_high = np.percentile(vals, [p_low, p_high])
+                lows = sub[sub[col] < q_low]
+                highs = sub[sub[col] > q_high]
+                outliers_count = len(lows) + len(highs)
+                if outliers_count > 0:
+                    total_count += outliers_count
+                    print(f"  [{method}] {mark} (5th%: {q_low:.1f}, 95th%: {q_high:.1f}, total={len(vals)}):")
+                    if not lows.empty:
+                        low_strs = [f"{r['dataset']} ({r[col]:.1f}{unit})" if isinstance(r[col], float)
+                                    else f"{r['dataset']} ({r[col]}{unit})"
+                                    for _, r in lows.iterrows()]
+                        print(f"    - Low outliers (< {p_low}%): {', '.join(low_strs)}")
+                    if not highs.empty:
+                        high_strs = [f"{r['dataset']} ({r[col]:.1f}{unit})" if isinstance(r[col], float)
+                                     else f"{r['dataset']} ({r[col]}{unit})"
+                                     for _, r in highs.iterrows()]
+                        print(f"    - High outliers (> {p_high}%): {', '.join(high_strs)}")
+        print(f"Total {col_name} outliers excluded: {total_count}\n")
+
+
+def _plot_peak_count(datasets, workdir, outpath, p_low=None, p_high=None):
     """Grouped bar chart: n_peaks per mark per method, mean ± std across datasets."""
-    data = _load_peak_frames(datasets, workdir)
-    if data is None:
+    if isinstance(datasets, pd.DataFrame):
+        data = datasets
+    else:
+        data = _load_peak_frames(datasets, workdir)
+    if data is None or data.empty:
         print(f"  skipping {outpath}: no data")
         return
     n = data["dataset"].nunique()
     _peak_bar(data, "n_peaks", "Number of peaks",
-              f"Peak count per mark and method  (mean ± std, n={n} datasets)", outpath)
+              f"Peak count per mark and method  (mean ± std, n={n} datasets)", outpath,
+              p_low=p_low, p_high=p_high)
 
 
-def _plot_peak_length(datasets, workdir, outpath):
+def _plot_peak_length(datasets, workdir, outpath, p_low=None, p_high=None):
     """Grouped bar chart: mean peak length per mark per method, mean ± std across datasets."""
-    data = _load_peak_frames(datasets, workdir)
-    if data is None:
+    if isinstance(datasets, pd.DataFrame):
+        data = datasets
+    else:
+        data = _load_peak_frames(datasets, workdir)
+    if data is None or data.empty:
         print(f"  skipping {outpath}: no data")
         return
     n = data["dataset"].nunique()
     _peak_bar(data, "mean_length", "Mean peak length (bp)",
-              f"Mean peak length per mark and method  (mean ± std, n={n} datasets)", outpath)
+              f"Mean peak length per mark and method  (mean ± std, n={n} datasets)", outpath,
+              p_low=p_low, p_high=p_high)
 
 
 # ---------------------------------------------------------------------------

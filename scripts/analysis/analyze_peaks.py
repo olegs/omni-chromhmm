@@ -247,6 +247,15 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
         # OmniPeak
         for mark in marks:
             path = os.path.join(folder_path, "omni", f"{mark}_{args.omni_bin}.peak")
+            if not os.path.exists(path):
+                p_cand = os.path.join(folder_path, "omni", f"{args.cell}-{mark}.peak")
+                if os.path.exists(p_cand):
+                    path = p_cand
+                else:
+                    cand = [f for f in glob.glob(os.path.join(folder_path, "omni", f"*{mark}*.peak"))
+                            if not f.endswith(".txt") and not f.endswith(".idx")]
+                    if cand:
+                        path = cand[0]
             if os.path.exists(path):
                 regions["OmniPeak"][mark][folder_key] = load_bed_regions(path)
             else:
@@ -255,6 +264,14 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
         # HOMER
         for mark in marks:
             path = os.path.join(folder_path, "homer", f"{mark}.bed")
+            if not os.path.exists(path):
+                p_cand = os.path.join(folder_path, "homer", f"{args.cell}-{mark}_homer.bed")
+                if os.path.exists(p_cand):
+                    path = p_cand
+                else:
+                    cand = glob.glob(os.path.join(folder_path, "homer", f"*{mark}*_homer.bed"))
+                    if cand:
+                        path = cand[0]
             if os.path.exists(path):
                 regions["HOMER"][mark][folder_key] = load_bed_regions(path)
             else:
@@ -263,18 +280,21 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
         # MACS2
         for mark in marks:
             path = os.path.join(folder_path, "macs2", f"{mark}.bed")
+            if not os.path.exists(path):
+                cand = glob.glob(os.path.join(folder_path, "macs2", f"*{mark}*Peak"))
+                if cand:
+                    path = cand[0]
             if os.path.exists(path):
                 regions["MACS2"][mark][folder_key] = load_bed_regions(path)
             else:
                 print(f"  missing: {path}", file=sys.stderr)
 
         # ChromHMM default — parse binary files, falling back to the per-mark
-        # result BEDs (chromhmm_default_result/{mark}.bed) when the binary files
-        # are absent. The binary files are pipeline temp() outputs and may have
-        # been cleaned up (e.g. the Mint datasets), but the merged per-mark BEDs
-        # carry the same default-binarization peak regions.
+        # result BEDs (chromhmm_default_result/{mark}.bed or {cell}_chromhmm/{mark}.bed)
+        # when the binary files are absent.
         binary_dir = os.path.join(folder_path, "chromhmm_default")
         result_dir = os.path.join(folder_path, "chromhmm_default_result")
+        cell_chromhmm_dir = os.path.join(folder_path, f"{args.cell}_chromhmm")
         chrom_peaks = {}
         if os.path.isdir(binary_dir):
             chrom_peaks = load_chromhmm_binary_peaks(binary_dir, args.cell,
@@ -284,6 +304,12 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
                 regions["Default"][mark][folder_key] = chrom_peaks[mark]
                 continue
             bed = os.path.join(result_dir, f"{mark}.bed")
+            if not os.path.exists(bed):
+                bed = os.path.join(cell_chromhmm_dir, f"{mark}.bed")
+            if not os.path.exists(bed):
+                cand = glob.glob(os.path.join(folder_path, "*_chromhmm", f"{mark}.bed"))
+                if cand:
+                    bed = cand[0]
             if os.path.exists(bed):
                 regions["Default"][mark][folder_key] = load_bed_regions(bed)
             else:
