@@ -17,7 +17,7 @@ rule download_markups:
     """Download ENCODE reference ChromHMM BED files into markups/."""
     output: directory(_MARKUPS_DIR)
     shell:
-        "bash {SCRIPTS_DIR}/download_chromhmm.sh {_MARKUPS_DIR}"
+        "bash download_chromhmm.sh {_MARKUPS_DIR}"
 
 # --- Default ChromHMM binarization ---------------------------------------
 
