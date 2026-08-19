@@ -33,7 +33,7 @@ Binarize and Bigwig emissions per state are pre-computed and remapped to the mat
 ```bash
 mkdir -p ~/data/2026_omni_chromhmm && cd ~/data/2026_omni_chromhmm
 wget https://compbio.mit.edu/ChromHMM/ChromHMM.zip && unzip -q ChromHMM.zip
-wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.5.6815.jar -O omnipeak.jar
+wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.5.6815.jar
 ```
 
 ## Run
@@ -43,9 +43,10 @@ wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.5.6815.jar -O om
 ```bash
 # Dry run
 for ds in imr90 monocytes monocytes_mint gm12878_mint spleen; do
-  snakemake -p imr90/.done --use-conda --cores all --directory $(pwd) \
+  snakemake -p $ds/.done --use-conda --cores all --directory $(pwd) \
   --snakefile ~/work/omni-chromhmm/Snakefile \
   --configfile ~/work/omni-chromhmm/config.yaml \
+  --config homer=True macs2=True omnipeak=True \
   --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
   --rerun-incomplete --rerun-trigger mtime -n;
 done
@@ -62,15 +63,38 @@ Useful flags: `-p` (echo commands), `-r` (reasons), `--dag | dot -Tpng > dag.png
 
 
 ### 1000 epigenomes analysis
+ 
+[Universal annotation of the human genome through integration of over a thousand epigenomic datasets](https://link.springer.com/article/10.1186/s13059-021-02572-z)
 
 ```bash
-bash epi_1000.sh
+bash process_epi_1000.sh
+```
+
+### SAGAconf dataset analysis
+
+[Robust chromatin state annotation](https://genome.cshlp.org/content/34/3/469)
+
+```bash
+# Dry run
+for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
+  snakemake -p $ds/.done --use-conda --cores all --directory $(pwd) \
+  --snakefile ~/work/omni-chromhmm/Snakefile \
+  --configfile ~/work/omni-chromhmm/config_sagaconf.yaml \
+  --config homer=True macs2=True omnipeak=True \
+  --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
+  --rerun-incomplete --rerun-trigger mtime -n;
+done
+```
+
+```bash
+bash process_sagaconf.sh
 ```
 
 ## Analysis
 
 1. Launch `analysis.ipynb` for ENCODE analysis, cross-segmentation comparison and inter-dataset summary plots.
 2. Launch `analysis_epi_1000.ipynb` for analysis of the 1000 epigenomes dataset.
+3. Launch `analysis_sagaconf.ipynb` for analysis of the SAGAconf dataset.
 
 ## Questions?
 Contact Oleg Shpynov (oleg.shpynov@jetbrains.com).

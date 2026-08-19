@@ -26,9 +26,16 @@ rule install_homer:
     shell:
         r"""
         mkdir -p {params.dir}
-        cd {params.dir}
+        # Use absolute path for installation to ensure HOMER internal paths are correct.
+        ABS_DIR=$(cd {params.dir} && pwd)
+        cd $ABS_DIR
         test -f configureHomer.pl || curl -sSL -o configureHomer.pl {params.url}
-        perl configureHomer.pl -install &> $(basename {log})
+        perl configureHomer.pl -install &> $ABS_DIR/$(basename {log})
+        # Force re-compilation on macOS or if binaries are missing/incompatible.
+        # This ensures SeqTag.cpp is updated with the correct absolute homeDirectory.
+        if [ "$(uname)" == "Darwin" ] && [ -d cpp ]; then
+            cd cpp && make clean && make &>> $ABS_DIR/$(basename {log})
+        fi
         """
 
 

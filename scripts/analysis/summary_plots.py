@@ -271,16 +271,20 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     x = np.arange(len(methods))
     fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.8), 4.2))
 
-    ax.bar(x, np.nan_to_num(means), color=colors,
-           edgecolor="lightgrey", linewidth=1)
+    # Prepare data for Seaborn to match analysis_epi_1000 look and feel
+    df_melted = data.loc[methods].reset_index().melt(id_vars='index', var_name='dataset', value_name='value')
+    df_melted = df_melted.rename(columns={'index': 'method'})
+    df_melted['display_name'] = df_melted['method'].map(lambda m: DISPLAY_NAMES.get(m, m))
+    palette = {DISPLAY_NAMES.get(m, m): BIN_COLORS.get(METHOD_INFO[m][0], "#888888") for m in methods}
+    display_order = [DISPLAY_NAMES.get(m, m) for m in methods]
 
-    for i, (m, se, c) in enumerate(zip(means, ses, counts)):
-        if np.isnan(m) or c == 0:
-            continue
-        if not np.isnan(se) and c > 1:
-            ax.errorbar(x[i], m, yerr=se, fmt="none", color="black",
-                        capsize=3, linewidth=1.2)
-        scatter_points(ax, x[i], data.loc[methods[i]].values)
+    sns.barplot(data=df_melted, x="display_name", y="value", order=display_order,
+                palette=palette, hue="display_name", dodge=False,
+                capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
+                ax=ax, edgecolor="lightgrey", linewidth=1)
+
+    strip_points(ax, data=df_melted, x="display_name", y="value",
+                 order=display_order, dodge=False, size=2)
 
     ax.set_xticks(x)
     ax.set_xticklabels(display, rotation=45, ha="right", fontsize=8)
@@ -650,49 +654,51 @@ def _load_peak_frames(datasets, workdir):
     return pd.concat(frames, ignore_index=True) if frames else None
 
 
-def _peak_bar(data, col, ylabel, title, outpath, p_low=None, p_high=None):
-    marks   = [m for m in _MARK_ORDER if m in data["mark"].unique()]
+def _peak_bar(data, col, ylabel, title, outpath, p_low=None, p_high=None, marks=None):
+    if marks is None:
+        # Use _MARK_ORDER for known marks, then append others found in data
+        present = data["mark"].unique()
+        marks = [m for m in _MARK_ORDER if m in present]
+        marks += sorted([m for m in present if m not in _MARK_ORDER])
+    else:
+        marks = [m for m in marks if m in data["mark"].unique()]
     methods = [m for m in _PEAK_METHOD_ORDER if m in data["method"].unique()]
     x = np.arange(len(marks))
     width = 0.8 / len(methods)
     offsets = np.linspace(-(len(methods)-1)/2, (len(methods)-1)/2, len(methods)) * width
     fig, ax = plt.subplots(figsize=(max(6, len(marks) * len(methods) * 0.22 + 2), 4.5))
-    for offset, method in zip(offsets, methods):
-        means, stds, per_mark = [], [], []
-        for mark in marks:
-            vals = data.loc[(data["method"] == method) & (data["mark"] == mark), col].dropna().values
-            if p_low is not None and p_high is not None and len(vals) > 0:
-                q_low, q_high = np.percentile(vals, [p_low, p_high])
-                vals = vals[(vals >= q_low) & (vals <= q_high)]
-            per_mark.append(vals)
-            means.append(np.mean(vals) if len(vals) else np.nan)
-            stds.append(np.std(vals) if len(vals) > 1 else 0.0)
-        means, stds = np.array(means), np.array(stds)
-        ax.bar(x + offset, np.nan_to_num(means), width=width * 0.9,
-               color=_PEAK_METHOD_COLORS[method], label=method,
-               edgecolor="lightgrey", linewidth=1)
-        valid = ~np.isnan(means)
-        ax.errorbar(x[valid] + offset, means[valid], yerr=stds[valid],
-                    fmt="none", color="black", capsize=2, linewidth=0.8)
-        for xi, vals in zip(x, per_mark):
-            scatter_points(ax, xi + offset, vals,
-                           jitter=width * 0.25, size=6)
+
+    # Use Seaborn for peak bars to match analysis_epi_1000 style
+    sns.barplot(data=data, x="mark", y=col, hue="method",
+                order=marks, hue_order=methods, palette=_PEAK_METHOD_COLORS,
+                capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
+                ax=ax, edgecolor="lightgrey", linewidth=1)
+
+    strip_points(ax, data=data, x="mark", y=col, hue="method",
+                 order=marks, hue_order=methods, dodge=True, size=2)
+
     ax.set_xticks(x)
     ax.set_xticklabels(marks, fontsize=9)
     ax.set_ylabel(ylabel, fontsize=9)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.legend(fontsize=7, bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
-    ax.set_title(title, fontsize=10, fontweight="bold")
+    ax.legend(title="Method", fontsize=7, title_fontsize=8,
+              bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
+    ax.set_title(title, fontsize=11, fontweight="bold")
     fig.tight_layout()
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {outpath}")
 
 
-def log_peak_outliers(df, p_low=5, p_high=95):
+def log_peak_outliers(df, p_low=5, p_high=95, marks=None):
     """Log outliers (< p_low% or > p_high%) for peak counts and mean lengths across methods and marks."""
     methods = [m for m in _PEAK_METHOD_ORDER if m in df["method"].unique()]
-    marks = [m for m in _MARK_ORDER if m in df["mark"].unique()]
+    if marks is None:
+        present = df["mark"].unique()
+        marks = [m for m in _MARK_ORDER if m in present]
+        marks += sorted([m for m in present if m not in _MARK_ORDER])
+    else:
+        marks = [m for m in marks if m in df["mark"].unique()]
 
     for col, col_name, unit in [("n_peaks", "Peak counts (n_peaks)", ""),
                                 ("mean_length", "Mean peak length (bp)", " bp")]:
@@ -726,7 +732,7 @@ def log_peak_outliers(df, p_low=5, p_high=95):
         print(f"Total {col_name} outliers excluded: {total_count}\n")
 
 
-def _plot_peak_count(datasets, workdir, outpath, p_low=None, p_high=None):
+def _plot_peak_count(datasets, workdir, outpath, p_low=None, p_high=None, marks=None):
     """Grouped bar chart: n_peaks per mark per method, mean ± std across datasets."""
     if isinstance(datasets, pd.DataFrame):
         data = datasets
@@ -738,10 +744,10 @@ def _plot_peak_count(datasets, workdir, outpath, p_low=None, p_high=None):
     n = data["dataset"].nunique()
     _peak_bar(data, "n_peaks", "Number of peaks",
               f"Peak count per mark and method  (mean ± std, n={n} datasets)", outpath,
-              p_low=p_low, p_high=p_high)
+              p_low=p_low, p_high=p_high, marks=marks)
 
 
-def _plot_peak_length(datasets, workdir, outpath, p_low=None, p_high=None):
+def _plot_peak_length(datasets, workdir, outpath, p_low=None, p_high=None, marks=None):
     """Grouped bar chart: mean peak length per mark per method, mean ± std across datasets."""
     if isinstance(datasets, pd.DataFrame):
         data = datasets
@@ -753,7 +759,9 @@ def _plot_peak_length(datasets, workdir, outpath, p_low=None, p_high=None):
     n = data["dataset"].nunique()
     _peak_bar(data, "mean_length", "Mean peak length (bp)",
               f"Mean peak length per mark and method  (mean ± std, n={n} datasets)", outpath,
-              p_low=p_low, p_high=p_high)
+              p_low=p_low, p_high=p_high, marks=marks)
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -1255,9 +1263,10 @@ def _plot_per_dataset_all_methods_composition(datasets, cells, workdir, nstates,
 
 def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       outdir=None, workdir=None, markups_dir=None, cells=None,
-                      methods=None, nstates=15, match_method='jaccard',
+                      methods=None, marks=None, nstates=15, match_method='jaccard',
                       state_coverage_outfile=None,
                       peak_count_outfile=None, peak_length_outfile=None,
+                      peak_stats_outfile=None,
                       ref_composition_outfile=None,
                       ref_comp_matrix=None,
                       ref_kappa_matrix=None, ref_jaccard_matrix=None,
@@ -1285,9 +1294,10 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         datasets=datasets or [], methods_dirs=methods_dirs or [],
         analysis_dirs=analysis_dirs or [], outdir=outdir, workdir=workdir,
         markups_dir=markups_dir, cells=cells or [], methods=methods or [],
-        nstates=nstates, match_method=match_method,
+        nstates=nstates, marks=marks, match_method=match_method,
         state_coverage_outfile=state_coverage_outfile,
         peak_count_outfile=peak_count_outfile, peak_length_outfile=peak_length_outfile,
+        peak_stats_outfile=peak_stats_outfile,
         ref_composition_outfile=ref_composition_outfile,
         ref_comp_matrix=ref_comp_matrix,
         ref_kappa_matrix=ref_kappa_matrix, ref_jaccard_matrix=ref_jaccard_matrix,
@@ -1551,14 +1561,26 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         if not args.workdir:
             raise ValueError("--workdir is required for --peak-count-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.peak_count_outfile)), exist_ok=True)
-        _plot_peak_count(args.datasets, args.workdir, args.peak_count_outfile)
+        _plot_peak_count(args.datasets, args.workdir, args.peak_count_outfile, marks=args.marks)
 
     # --- mean peak length bar chart ----------------------------------------
     if args.peak_length_outfile:
         if not args.workdir:
             raise ValueError("--workdir is required for --peak-length-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.peak_length_outfile)), exist_ok=True)
-        _plot_peak_length(args.datasets, args.workdir, args.peak_length_outfile)
+        _plot_peak_length(args.datasets, args.workdir, args.peak_length_outfile, marks=args.marks)
+
+    # --- peak count and length bar chart (joined, DEPRECATED) ---------------
+    if args.peak_stats_outfile:
+        print("  WARNING: --peak-stats-outfile is deprecated, splitting into n_peaks and peak_length", 
+              file=sys.stderr)
+        if not args.workdir:
+            raise ValueError("--workdir is required for --peak-stats-outfile")
+        
+        outdir = os.path.dirname(os.path.abspath(args.peak_stats_outfile))
+        os.makedirs(outdir, exist_ok=True)
+        _plot_peak_count(args.datasets, args.workdir, os.path.join(outdir, "n_peaks.png"), marks=args.marks)
+        _plot_peak_length(args.datasets, args.workdir, os.path.join(outdir, "peak_length.png"), marks=args.marks)
 
     # --- inter-reference state composition ----------------------------------
     if args.ref_composition_outfile:

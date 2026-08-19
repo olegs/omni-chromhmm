@@ -1,0 +1,181 @@
+workdir: "~/data/2026_sagaconf"
+
+tools:
+  chromhmm_jar: "ChromHMM/ChromHMM.jar"
+  omnipeak_jar: "omnipeak-1.5.6815.jar"
+  homer_dir: "homer"
+  chromsizes: "ChromHMM/CHROMSIZES/hg38.txt"
+  coords_dir: "ChromHMM/COORDS/hg38"
+  java_opts: "-mx4000M"
+  gencode_gtf: "gencode.v46.basic.annotation.gtf.gz"
+  gene_info: "Homo_sapiens.gene_info.gz"
+
+params:
+  chromhmm_bin: 200
+  omni_bin: 100
+  homer_bin: 200
+  macs2_bin: 100
+  n_states: 15
+  genome: "hg38"
+  replicates: true      # process per-replicate folders (rep1/rep2) for datasets that have them
+  replicates_only: true # process replicates only
+  homer: false          # run HOMER-based binarization and segmentation
+  macs2: false          # run MACS2-based binarization and segmentation
+  omnipeak: false       # run OmniPeak-based binarization and segmentation
+  match_method: jaccard # possible options: overlap | jaccard
+
+datasets:
+
+  mcf7:
+    cell: "MCF7"
+    ref_chromhmm: null
+    rnaseq: null
+    atac: null
+    replicates: true
+    bams:
+      ENCFF413QYQ: {mark: H3K27me3, rep: rep1}
+      ENCFF744JQU: {mark: H3K27me3, rep: rep2}
+      ENCFF249TCH: {mark: H3K9me2, rep: rep1}
+      ENCFF418SFP: {mark: H3K9me2, rep: rep2}
+      ENCFF134YPW: {mark: H3K4me2, rep: rep1}
+      ENCFF680ERD: {mark: H3K4me2, rep: rep2}
+      ENCFF101TRI: {mark: H3K4me3, rep: rep1}
+      ENCFF374GQR: {mark: H3K4me3, rep: rep2}
+      ENCFF626ORM: {mark: H3F3A, rep: rep1}
+      ENCFF183HME: {mark: H3F3A, rep: rep2}
+      ENCFF312WJY: {mark: H3K79me2, rep: rep1}
+      ENCFF654NDM: {mark: H3K79me2, rep: rep2}
+      ENCFF592EVS: {mark: H3K4me1, rep: rep1}
+      ENCFF748ISL: {mark: H3K4me1, rep: rep2}
+      ENCFF571MVG: {mark: H3K9ac, rep: rep1}
+      ENCFF403SOH: {mark: H3K9ac, rep: rep2}
+      ENCFF491EQT: {mark: H4K20me1, rep: rep1}
+      ENCFF741HOA: {mark: H4K20me1, rep: rep2}
+      ENCFF909MGB: {mark: H3K9me3, rep: rep1}
+      ENCFF923NDP: {mark: H3K9me3, rep: rep2}
+      ENCFF785NUK: {mark: H3K27ac, rep: rep1}
+      ENCFF391BOB: {mark: H3K27ac, rep: rep2}
+      ENCFF597OEX: {mark: H2AFZ, rep: rep1}
+      ENCFF687JRM: {mark: H2AFZ, rep: rep2}
+      ENCFF747AWB: {mark: H3K36me3, rep: rep1}
+      ENCFF551PNK: {mark: H3K36me3, rep: rep2}
+
+  gm12878:
+    cell: "GM12878"
+    ref_chromhmm: null
+    rnaseq: null
+    atac: null
+    replicates: true
+    bams:
+      ENCFF633BHN: {mark: H3K27me3, rep: rep1}
+      ENCFF565DCK: {mark: H3K27me3, rep: rep2}
+      ENCFF008LEY: {mark: H3K4me2, rep: rep1}
+      ENCFF081ODV: {mark: H3K4me2, rep: rep2}
+      ENCFF843BWY: {mark: H3K4me3, rep: rep1}
+      ENCFF126HII: {mark: H3K4me3, rep: rep2}
+      ENCFF465NXQ: {mark: H3K79me2, rep: rep1}
+      ENCFF967CHL: {mark: H3K79me2, rep: rep2}
+      ENCFF047NLO: {mark: H3K4me1, rep: rep1}
+      ENCFF385FLM: {mark: H3K4me1, rep: rep2}
+      ENCFF729HQN: {mark: H3K9ac, rep: rep1}
+      ENCFF405REQ: {mark: H3K9ac, rep: rep2}
+      ENCFF132EDT: {mark: H4K20me1, rep: rep1}
+      ENCFF334NVA: {mark: H4K20me1, rep: rep2}
+      ENCFF306ENK: {mark: H3K9me3, rep: rep1}
+      ENCFF889UPU: {mark: H3K9me3, rep: rep2}
+      ENCFF269GKF: {mark: H3K27ac, rep: rep1}
+      ENCFF201OHW: {mark: H3K27ac, rep: rep2}
+      ENCFF703AIM: {mark: H2AFZ, rep: rep1}
+      ENCFF256UUQ: {mark: H2AFZ, rep: rep2}
+      ENCFF353YPB: {mark: H3K36me3, rep: rep1}
+      ENCFF677MAG: {mark: H3K36me3, rep: rep2}
+
+  k562:
+    cell: "K562"
+    ref_chromhmm: null
+    rnaseq: null
+    atac: null
+    replicates: true
+    bams:
+      ENCFF392ZKG: {mark: H3K27me3, rep: rep1}
+      ENCFF905CZD: {mark: H3K27me3, rep: rep2}
+      ENCFF446FUS: {mark: H3K4me2, rep: rep1}
+      ENCFF583GSH: {mark: H3K4me2, rep: rep2}
+      ENCFF564SVK: {mark: H3K4me3, rep: rep1}
+      ENCFF685PPQ: {mark: H3K4me3, rep: rep2}
+      ENCFF465UWC: {mark: H3K79me2, rep: rep1}
+      ENCFF863HNL: {mark: H3K79me2, rep: rep2}
+      ENCFF352HXD: {mark: H3K4me1, rep: rep1}
+      ENCFF415GHS: {mark: H3K4me1, rep: rep2}
+      ENCFF149MXA: {mark: H3K9ac, rep: rep1}
+      ENCFF505NMT: {mark: H3K9ac, rep: rep2}
+      ENCFF255QRL: {mark: H4K20me1, rep: rep1}
+      ENCFF923YUN: {mark: H4K20me1, rep: rep2}
+      ENCFF104THG: {mark: H3K9me3, rep: rep1}
+      ENCFF155UQU: {mark: H3K9me3, rep: rep2}
+      ENCFF121RHF: {mark: H3K27ac, rep: rep1}
+      ENCFF907MNY: {mark: H3K27ac, rep: rep2}
+      ENCFF874SMO: {mark: H2AFZ, rep: rep1}
+      ENCFF007YZT: {mark: H2AFZ, rep: rep2}
+      ENCFF880HKV: {mark: H3K36me3, rep: rep1}
+      ENCFF272JVI: {mark: H3K36me3, rep: rep2}
+
+  cd14_monocyte:
+    cell: "CD14Monocyte"
+    ref_chromhmm: null
+    rnaseq: null
+    atac: null
+    replicates: true
+    bams:
+      ENCFF630ANH: {mark: H3K27me3, rep: rep1}
+      ENCFF785GAD: {mark: H3K27me3, rep: rep2}
+      ENCFF591CTO: {mark: H3K4me2, rep: rep1}
+      ENCFF384IVB: {mark: H3K4me2, rep: rep2}
+      ENCFF640GCK: {mark: H3K4me3, rep: rep1}
+      ENCFF144PKE: {mark: H3K4me3, rep: rep2}
+      ENCFF463WUU: {mark: H3K79me2, rep: rep1}
+      ENCFF159LCH: {mark: H3K79me2, rep: rep2}
+      ENCFF573MNS: {mark: H3K4me1, rep: rep1}
+      ENCFF141KHX: {mark: H3K4me1, rep: rep2}
+      ENCFF775XVG: {mark: H3K9ac, rep: rep1}
+      ENCFF326KCT: {mark: H3K9ac, rep: rep2}
+      ENCFF238ZAC: {mark: H4K20me1, rep: rep2}
+      ENCFF899MAF: {mark: H4K20me1, rep: rep1}
+      ENCFF537BKE: {mark: H3K9me3, rep: rep1}
+      ENCFF168UCU: {mark: H3K9me3, rep: rep2}
+      ENCFF014BCD: {mark: H3K27ac, rep: rep1}
+      ENCFF872QFO: {mark: H3K27ac, rep: rep2}
+      ENCFF891JRY: {mark: H2AFZ, rep: rep1}
+      ENCFF992JKA: {mark: H2AFZ, rep: rep2}
+      ENCFF629ODR: {mark: H3K36me3, rep: rep1}
+      ENCFF150SGV: {mark: H3K36me3, rep: rep2}
+
+  hela_s3:
+    cell: "HeLaS3"
+    ref_chromhmm: null
+    rnaseq: null
+    atac: null
+    replicates: true
+    bams:
+      ENCFF299WXR: {mark: H3K27me3, rep: rep1}
+      ENCFF620CCL: {mark: H3K27me3, rep: rep2}
+      ENCFF622IIB: {mark: H3K4me2, rep: rep1}
+      ENCFF706FSX: {mark: H3K4me2, rep: rep2}
+      ENCFF300IWJ: {mark: H3K4me3, rep: rep1}
+      ENCFF766LEF: {mark: H3K4me3, rep: rep2}
+      ENCFF616FAT: {mark: H3K79me2, rep: rep1}
+      ENCFF656YCM: {mark: H3K79me2, rep: rep2}
+      ENCFF826OLG: {mark: H3K4me1, rep: rep1}
+      ENCFF712AAP: {mark: H3K4me1, rep: rep2}
+      ENCFF113FCH: {mark: H3K9ac, rep: rep1}
+      ENCFF596XSW: {mark: H3K9ac, rep: rep2}
+      ENCFF278FTJ: {mark: H4K20me1, rep: rep1}
+      ENCFF310NWI: {mark: H4K20me1, rep: rep2}
+      ENCFF183EDU: {mark: H3K9me3, rep: rep1}
+      ENCFF520XFF: {mark: H3K9me3, rep: rep2}
+      ENCFF609ZAE: {mark: H3K27ac, rep: rep1}
+      ENCFF711QAI: {mark: H3K27ac, rep: rep2}
+      ENCFF650RBB: {mark: H2AFZ, rep: rep1}
+      ENCFF822OCY: {mark: H2AFZ, rep: rep2}
+      ENCFF317FFS: {mark: H3K36me3, rep: rep1}
+      ENCFF008RRT: {mark: H3K36me3, rep: rep2}

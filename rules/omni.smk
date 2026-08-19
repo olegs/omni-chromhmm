@@ -5,7 +5,7 @@ rule omnipeak:
     input:
         lambda w: [peak_file(folder, "omni", mark)
                    for folder in _folders(w.ds)
-                   for mark in MARKS]
+                   for mark in get_marks(w.ds)]
     output:
         touch("{ds}/omni/.done")
 

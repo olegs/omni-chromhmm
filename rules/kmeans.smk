@@ -12,7 +12,7 @@
 rule kmeans_states:
     """Binarize peaks and run KMeans clustering in one step using peaks_segmentation.py."""
     input:
-        peaks=lambda w: [ancient(peak_file(w.folder, w.caller, m)) for m in MARKS],
+        peaks=lambda w: [ancient(peak_file(w.folder, w.caller, m)) for m in get_marks_for_folder(w.folder)],
         cs=ancient(TOOLS["chromsizes"])
     output:
         kmeans="{folder}/{caller}/{caller}_kmeans_states.bed",
@@ -22,7 +22,7 @@ rule kmeans_states:
     params:
         bin=lambda w: CALLER_BIN[w.caller],
         n=NSTATES,
-        marks=",".join(MARKS),
+        marks=lambda w: ",".join(get_marks_for_folder(w.folder)),
         cell=lambda w: DATASETS[ds_of(w.folder)]["cell"],
         outdir="{folder}/{caller}/chromhmm_peaks"
     shell:

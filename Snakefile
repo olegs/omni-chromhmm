@@ -8,7 +8,6 @@ workdir: os.path.expanduser(config.get("workdir","."))
 
 TOOLS = config["tools"]
 P = config["params"]
-MARKS = P["marks"]
 CHROMHMM_BIN = P["chromhmm_bin"]
 OMNI_BIN = P["omni_bin"]
 HOMER_BIN = P["homer_bin"]
@@ -16,6 +15,16 @@ MACS2_BIN = P["macs2_bin"]
 NSTATES = P["n_states"]
 GENOME = P["genome"]
 MATCH_METHOD = P.get("match_method", "overlap")
+
+DATASETS = config["datasets"]
+
+def get_marks(ds):
+    """List of all histone marks present in a dataset."""
+    return sorted(list(set(meta["mark"] for meta in DATASETS[ds]["bams"].values())))
+
+def get_marks_for_folder(folder):
+    """List of all histone marks present in a folder's dataset."""
+    return get_marks(ds_of(folder))
 
 # Per-caller binarization bin sizes.
 CALLER_BIN = {"omni": OMNI_BIN, "homer": HOMER_BIN, "macs2": MACS2_BIN}
@@ -41,6 +50,7 @@ def _flag(key, default=True):
 
 
 DO_REPLICATES = _flag("replicates")
+DO_REPLICATES_ONLY = _flag("replicates_only", default=False)
 DO_OMNIPEAK = _flag("omnipeak")
 DO_HOMER = _flag("homer")
 DO_MACS2 = _flag("macs2")
@@ -55,8 +65,6 @@ CALLERS = (
 CHROMHMM = f"java {TOOLS['java_opts']} -jar {TOOLS['chromhmm_jar']}"
 OMNIPEAK = f"java -Xmx8G --add-modules=jdk.incubator.vector -jar {TOOLS['omnipeak_jar']}"
 
-DATASETS = config["datasets"]
-
 SCRIPTS_DIR = os.path.join(workflow.basedir,"scripts", "rules")
 
 # Global wildcard constraints.
@@ -66,7 +74,7 @@ SCRIPTS_DIR = os.path.join(workflow.basedir,"scripts", "rules")
 wildcard_constraints:
     ds=r"[A-Za-z0-9_]+",
     acc=r"ENCFF[A-Z0-9]+",
-    mark=r"H3K[0-9]+(me[0-9]|ac)",
+    mark=r"[A-Za-z0-9]+",
     caller=r"omni|homer|macs2",
     rep=r"rep[12]",
     folder=r"[A-Za-z0-9_]+(/rep[12])?",
@@ -176,8 +184,11 @@ def _ref_bed(ds):
 
 def _folders(ds):
     """All processing folders for a dataset: pooled root + per-replicate subdirs."""
+    has_reps = DO_REPLICATES and DATASETS[ds].get("replicates")
+    if DO_REPLICATES_ONLY and has_reps:
+        return [f"{ds}/rep1", f"{ds}/rep2"]
     folders = [ds]
-    if DO_REPLICATES and DATASETS[ds].get("replicates"):
+    if has_reps:
         folders += [f"{ds}/rep1", f"{ds}/rep2"]
     return folders
 
@@ -207,8 +218,11 @@ def _default_binary_files(w):
 def all_results(ds):
     cfg = DATASETS[ds]
     cell = cfg["cell"]
-    t = [f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bed",
-         f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bw_emissions.npz"]
+    t = []
+    marks = get_marks(ds)
+    if cfg.get("ref_chromhmm"):
+        t.extend([f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bed",
+                  f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bw_emissions.npz"])
 
     if cfg.get("rnaseq"):
         t.append(f"{ds}/rnaseq_{cfg['rnaseq']}.tsv")
@@ -216,19 +230,25 @@ def all_results(ds):
         t.append(f"{ds}/atac_{cfg['atac']}.bed.gz")
 
     for folder in _folders(ds):
-        t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_matched.bed")
-        for mark in MARKS:
+        if cfg.get("ref_chromhmm"):
+            t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_matched.bed")
+        else:
+            t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense.bed")
+        for mark in marks:
             t.append(f"{folder}/chromhmm_default_result/{mark}.bed")
         for caller in CALLERS:
-            t.append(f"{folder}/{caller}/{caller}_kmeans_states_matched.bed")
+            if cfg.get("ref_chromhmm"):
+                t.append(f"{folder}/{caller}/{caller}_kmeans_states_matched.bed")
+            else:
+                t.append(f"{folder}/{caller}/{caller}_kmeans_states.bed")
 
     # Per-state matching matrix (heatmap) produced alongside every matched BED.
     t += [f.replace("_matched.bed", "_matched.match.png")
           for f in list(t) if f.endswith("_matched.bed")]
     t += [f.replace(".bed", ".bw_emissions.npz")
-          for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed")]
+          for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed") or f.endswith("_states.bed")]
     t += [f.replace(".bed", ".bin_emissions.npz")
-          for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed")]
+          for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed") or f.endswith("_states.bed")]
 
     return t
 

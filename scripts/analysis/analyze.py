@@ -427,12 +427,16 @@ def transition_entropy(states, counts, state_bp):
     return np.dot(pi, H), H, A, pi
 
 
-def save_transition_entropy(segs, bin_size, outdir):
+def save_transition_entropy(segs, bin_size, outdir, skip_noqh=False):
     """Compute and save transition entropy + matrix for a single segmentation."""
     edir = os.path.join(outdir, "entropy")
     os.makedirs(edir, exist_ok=True)
 
-    for suffix, excl in [("", None), ("_noqh", QUIESCENT_STATES)]:
+    variants = [("", None)]
+    if not skip_noqh:
+        variants.append(("_noqh", QUIESCENT_STATES))
+
+    for suffix, excl in variants:
         states, counts, state_bp = build_transition_matrix(segs, bin_size, excl)
         if not states:
             continue
@@ -482,7 +486,7 @@ def merge_intervals(intervals):
     return merged
 
 
-def _compute_state_consistency_chrom(chrom_data, bin_size, epsilon):
+def _compute_state_consistency_chrom(chrom_data, bin_size, window):
     """Worker function for per-chromosome consistency computation."""
     chrom_state_depth_counts = {}
     for state, segs_by_sample in chrom_data.items():
@@ -490,8 +494,8 @@ def _compute_state_consistency_chrom(chrom_data, bin_size, epsilon):
         for sample_segs in segs_by_sample:
             if not sample_segs:
                 continue
-            if epsilon > 0:
-                expanded = [(max(0, s[0] - epsilon), s[1] + epsilon) for s in sample_segs]
+            if window > 0:
+                expanded = [(max(0, s[0] - window), s[1] + window) for s in sample_segs]
                 merged = merge_intervals(expanded)
             else:
                 merged = sample_segs
@@ -513,10 +517,10 @@ def _compute_state_consistency_chrom(chrom_data, bin_size, epsilon):
     return chrom_state_depth_counts
 
 
-def compute_state_consistency(segs_list, bin_size=200, epsilon=0, show_progress=False):
+def compute_state_consistency(segs_list, bin_size=200, window=0, show_progress=False):
     """Compute depth of state coverage (cumulative <= N) across multiple segmentations.
 
-    For given epsilon, count that bin X is covered by state Y, if there is a state Y in <= epsilon distance to the bin.
+    For given window, count that bin X is covered by state Y, if there is a state Y in <= window distance to the bin.
 
     Returns: {state -> {depth -> cumulative_count_bins}} where depth is 1..len(segs_list)
     """
@@ -534,14 +538,14 @@ def compute_state_consistency(segs_list, bin_size=200, epsilon=0, show_progress=
     with ProcessPoolExecutor() as executor:
         futures = [executor.submit(_compute_state_consistency_chrom,
                                    {state: list(v) for state, v in data[chrom].items()},
-                                   bin_size, epsilon)
+                                   bin_size, window)
                    for chrom in all_chroms]
 
         if show_progress:
             try:
                 from tqdm.auto import tqdm
                 for f in tqdm(as_completed(futures), total=len(futures),
-                              desc=f"Consistency (eps={epsilon})", leave=False):
+                              desc=f"Consistency (w={window})", leave=False):
                     results.append(f.result())
             except ImportError:
                 results = [f.result() for f in futures]
@@ -634,16 +638,22 @@ def plot_segment_lengths(segs, outdir):
         lengths[name].append(e - s)
     states = sorted(lengths, key=_natural_sort_key)
     means = [np.mean(lengths[s]) for s in states]
+    
+    df = pd.DataFrame({"state": states, "mean_length": means})
 
-    fig, ax = plt.subplots(figsize=(max(4, 0.3 * len(states)), 3))
-    ax.bar(states, means, edgecolor="lightgrey", linewidth=1)
+    fig, ax = plt.subplots(figsize=(max(4, 0.3 * len(states)), 4.2))
+    sns.barplot(data=df, x="state", y="mean_length", ax=ax, color="skyblue",
+                edgecolor="lightgrey", linewidth=1)
+    
     ax.set_xticks(range(len(states)))
-    ax.set_xticklabels(states, rotation=90)
-    ax.set_title("Average segment length per state")
-    ax.set_xlabel("state")
-    ax.set_ylabel("bp")
+    ax.set_xticklabels(states, rotation=90, fontsize=8)
+    ax.set_title("Average segment length per state", fontsize=11, fontweight="bold")
+    ax.set_xlabel("State", fontsize=9)
+    ax.set_ylabel("Length (bp)", fontsize=9)
+    ax.grid(axis="y", alpha=0.3)
+    
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "segment_length.png"), dpi=300)
+    fig.savefig(os.path.join(outdir, "segment_length.png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -704,15 +714,20 @@ def plot_emissions(states, marks, mat, outdir, subdir="bin_emissions"):
     """Plot {subdir}/state_emissions.png heatmap."""
     edir = os.path.join(outdir, subdir)
     os.makedirs(edir, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(max(3, 0.4 * len(marks)),
-                                    max(4, 0.35 * len(states))))
-    im = ax.imshow(mat, cmap="Blues", vmin=0, vmax=1, aspect="auto")
-    ax.set_xticks(range(len(marks))); ax.set_xticklabels(marks, rotation=90)
-    ax.set_yticks(range(len(states))); ax.set_yticklabels(states)
-    ax.set_title("State emissions")
-    fig.colorbar(im, ax=ax)
+    
+    fig, ax = plt.subplots(figsize=(max(4, 0.5 * len(marks)),
+                                    max(5, 0.4 * len(states))))
+    
+    sns.heatmap(mat, annot=True, fmt=".2f", cmap="Blues", 
+                xticklabels=marks, yticklabels=states, 
+                vmin=0, vmax=1, ax=ax, cbar_kws={"label": "Emission probability"})
+    
+    ax.set_title("State emissions", fontsize=11, fontweight="bold")
+    plt.xticks(rotation=90, fontsize=9)
+    plt.yticks(rotation=0, fontsize=9)
+    
     fig.tight_layout()
-    fig.savefig(os.path.join(edir, "state_emissions.png"), dpi=300)
+    fig.savefig(os.path.join(edir, "state_emissions.png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -867,23 +882,26 @@ def plot_enrichment(enrich_df, segs, outdir):
 
     scaled = _column_minmax_scale(fold_mat)
 
-    fig, ax = plt.subplots(figsize=(max(3, 0.4 * len(scaled.columns)),
-                                    max(4, 0.35 * len(scaled))))
-    ax.imshow(scaled.values, cmap="Blues", aspect="auto", vmin=0, vmax=1)
-    ax.set_xticks(range(len(scaled.columns)))
-    ax.set_xticklabels(scaled.columns, rotation=90)
-    ax.set_yticks(range(len(scaled.index)))
-    ax.set_yticklabels(scaled.index)
-    ax.set_title("Functional enrichment")
+    fig, ax = plt.subplots(figsize=(max(4, 0.6 * len(scaled.columns)),
+                                    max(5, 0.4 * len(scaled))))
+    
+    sns.heatmap(scaled, annot=True, fmt=".2f", cmap="Blues", 
+                vmin=0, vmax=1, ax=ax, cbar_kws={"label": "Min-max scaled enrichment"})
+    
+    ax.set_title("Functional enrichment", fontsize=11, fontweight="bold")
+    plt.xticks(rotation=90, fontsize=9)
+    plt.yticks(rotation=0, fontsize=9)
+    
     fig.tight_layout()
-    fig.savefig(os.path.join(edir, "enrichment.png"), dpi=300)
+    fig.savefig(os.path.join(edir, "enrichment.png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
 # --- direct-call entry point ---------------------------------------------
 
 def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
-                rnaseq=None, gtf=None, bw_emissions=None, emissions_only=False):
+                rnaseq=None, gtf=None, bw_emissions=None, emissions_only=False,
+                skip_noqh=False):
     """Per-segmentation analysis: report, emissions, enrichment.
 
     Direct-call entry point (the former CLI). Writes report / emission /
@@ -895,7 +913,7 @@ def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
     if not emissions_only:
         save_report(segs, outdir)
         plot_segment_lengths(segs, outdir)
-        save_transition_entropy(segs, bin_size, outdir)
+        save_transition_entropy(segs, bin_size, outdir, skip_noqh=skip_noqh)
 
     inputs = expand_globs(inputs or [])
     if inputs:

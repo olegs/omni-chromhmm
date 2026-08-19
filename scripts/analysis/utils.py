@@ -44,6 +44,10 @@ METHOD_ORDER = [
     "kmeans_homer",
     "kmeans_macs2",
     "kmeans_omni",
+    "joint_chromhmm",
+    "joint_kmeans_homer",
+    "joint_kmeans_macs2",
+    "joint_kmeans_omni",
     "chromhmm_default_rep1",
     "kmeans_homer_rep1",
     "kmeans_macs2_rep1",
@@ -64,6 +68,10 @@ DISPLAY_NAMES = {
     "kmeans_omni":           "OmniPeak KMeans",
     "kmeans_homer":          "Homer KMeans",
     "kmeans_macs2":          "MACS2 KMeans",
+    "joint_chromhmm":        "Joint ChromHMM",
+    "joint_kmeans_omni":     "Joint OmniPeak KMeans",
+    "joint_kmeans_homer":    "Joint Homer KMeans",
+    "joint_kmeans_macs2":    "Joint MACS2 KMeans",
     "chromhmm_default_rep1": "Default ChromHMM (rep1)",
     "kmeans_omni_rep1":      "OmniPeak KMeans (rep1)",
     "kmeans_homer_rep1":     "Homer KMeans (rep1)",
@@ -94,14 +102,24 @@ def parse_method(name):
     Method key format: {state_model}_{binarization}[_{rep}]
       state_model  : chromhmm | kmeans
       binarization : default | omni → omnipeak | homer
-      rep          : rep1 | rep2 | None
+      rep          : rep1 | rep2 | replicate1 | replicate2 | None
     Special case: "ref" → ("reference", "chromhmm", None)
     """
     if name == "ref":
         return "reference", "chromhmm", None
     parts = name.split("_")
-    rep = parts[-1] if parts[-1] in ("rep1", "rep2") else None
+    rep = parts[-1] if parts[-1] in ("rep1", "rep2", "replicate1", "replicate2") else None
+    if rep and rep.startswith("replicate"):
+        rep = "rep" + rep[len("replicate"):]
     core = parts[:-1] if rep else parts
+
+    if name.startswith("joint_chromhmm"):
+        return "default", "joint_chromhmm", rep
+    if name.startswith("joint_kmeans"):
+        binarization = core[2] if len(core) > 2 else "default"
+        if binarization == "omni": binarization = "omnipeak"
+        return binarization, "joint_kmeans", rep
+
     state_model = core[0]
     binarization_key = core[1] if len(core) > 1 else ""
     if binarization_key == "default":
@@ -148,10 +166,16 @@ def seg_label(path):
         return basename.replace(".bed", "")
 
     caller = next((p for p in parts if p in ("omni", "homer", "macs2")), None)
-    rep    = next((p for p in parts if p in ("rep1", "rep2")), None)
+    rep    = next((p for p in parts if p in ("rep1", "rep2", "replicate1", "replicate2")), None)
+    if rep and rep.startswith("replicate"):
+        rep = "rep" + rep[len("replicate"):]
 
     if "kmeans_states" in basename:
         model = f"kmeans_{caller}" if caller else "kmeans"
+    elif "joint_kmeans" in parts or "joint_kmeans" in basename:
+        model = f"joint_kmeans_{caller}" if caller else "joint_kmeans"
+    elif "joint_chromhmm" in parts or "joint_chromhmm" in basename:
+        model = "joint_chromhmm"
     elif "chromhmm_default_result" in parts:
         model = "chromhmm_default"
     else:
@@ -197,7 +221,7 @@ def should_compare(label_i, label_j):
 POINT_STYLE = dict(color="#333333", alpha=0.75, linewidth=0.3, edgecolor="white",
                    zorder=5)
 POINT_SIZE = 12   # matplotlib scatter marker area
-STRIP_SIZE = 3    # seaborn stripplot marker diameter
+STRIP_SIZE = 2    # seaborn stripplot marker diameter
 _STYLE_KEYS = ("color", "alpha", "linewidth", "edgecolor", "zorder")
 
 

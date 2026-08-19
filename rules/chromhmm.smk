@@ -23,16 +23,18 @@ rule download_markups:
 
 rule make_cellmark_table:
     input:
-        bams=lambda w: [ancient(f"{w.folder}/bams/{m}.bam") for m in MARKS],
-        controls=lambda w: ([ancient(f"{w.folder}/controls/{m}.bam") for m in MARKS]
+        bams=lambda w: [ancient(f"{w.folder}/bams/{m}.bam") for m in get_marks_for_folder(w.folder)],
+        controls=lambda w: ([ancient(f"{w.folder}/controls/{m}.bam") for m in get_marks_for_folder(w.folder)]
                             if folder_has_controls(w.folder) else []),
     output: temp("{folder}/chromhmm_default/cellmarkfiletable.tsv")
-    params: cell=lambda w: DATASETS[ds_of(w.folder)]["cell"]
+    params:
+        cell=lambda w: DATASETS[ds_of(w.folder)]["cell"],
+        marks=lambda w: get_marks_for_folder(w.folder)
     run:
         os.makedirs(os.path.dirname(output[0]),exist_ok=True)
         _has_ctrl = folder_has_controls(wildcards.folder)
         with open(output[0],"w") as f:
-            for m in MARKS:
+            for m in params.marks:
                 if _has_ctrl:
                     f.write(f"{params.cell}\t{m}\t{m}.bam\t{m}.bam\n")
                 else:
@@ -42,8 +44,8 @@ rule make_cellmark_table:
 rule chromhmm_binarize_bam:
     input:
         table=ancient("{folder}/chromhmm_default/cellmarkfiletable.tsv"),
-        bams=lambda w: [ancient(f"{w.folder}/bams/{m}.bam") for m in MARKS],
-        controls=lambda w: ([ancient(f"{w.folder}/controls/{m}.bam") for m in MARKS]
+        bams=lambda w: [ancient(f"{w.folder}/bams/{m}.bam") for m in get_marks_for_folder(w.folder)],
+        controls=lambda w: ([ancient(f"{w.folder}/controls/{m}.bam") for m in get_marks_for_folder(w.folder)]
                             if folder_has_controls(w.folder) else []),
     output:
         # Kept (not temp) so binarized-emission information remains available for
@@ -99,14 +101,25 @@ rule chromhmm_learn_default:
 rule chromhmm_default_mark_beds:
     """Extract per-mark BED files from default binarized per-chromosome files."""
     input: ancient(_default_binary_files)
-    output: expand("{{folder}}/chromhmm_default_result/{mark}.bed",mark=MARKS)
+    output:
+        directory("{folder}/chromhmm_default_result_files")
     params:
         bin=CHROMHMM_BIN,
         indir="{folder}/chromhmm_default",
-        outdir="{folder}/chromhmm_default_result",
+        outdir="{folder}/chromhmm_default_result_files",
     conda: "../envs/python.yaml"
     shell:
         "python {SCRIPTS_DIR}/binarized_to_bed.py --bin {params.bin} "
         "--outdir {params.outdir} {input}"
+
+
+rule chromhmm_default_mark_bed:
+    """Individual mark BED file, linked from the bulk extraction directory."""
+    input: "{folder}/chromhmm_default_result_files"
+    output: "{folder}/chromhmm_default_result/{mark}.bed"
+    shell:
+        "mkdir -p $(dirname {output}) && ln -f {input}/{wildcards.mark}.bed {output}"
+
+
 
 

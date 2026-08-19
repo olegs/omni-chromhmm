@@ -22,7 +22,7 @@ def _binarized_files(bedpath):
 
 def _folder_bigwigs(folder):
     """All per-mark bigwig paths for a folder."""
-    return [f"{folder}/bams/{mark}.bw" for mark in MARKS]
+    return [f"{folder}/bams/{mark}.bw" for mark in get_marks_for_folder(folder)]
 
 
 def _emissions_folder(bedpath):
@@ -88,7 +88,7 @@ rule compute_bw_emissions:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/python.yaml"
     params:
-        marks=" ".join(MARKS),
+        marks=lambda w: " ".join(get_marks_for_folder(_emissions_folder(w.bedpath))),
         bigwigs=lambda w: " ".join(_folder_bigwigs(_emissions_folder(w.bedpath))),
         bin=CHROMHMM_BIN,
     shell:

@@ -37,7 +37,8 @@ if _rules_dir not in sys.path:
 import match
 _EXCLUDE_STATES = {"Quies", "Het"}
 from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
-                   should_compare as _should_compare
+                   should_compare as _should_compare, BIN_COLORS, parse_method, \
+                   DISPLAY_NAMES
 
 
 def _build_seg_to_analysis_map(seg_paths, analysis_dir):
@@ -65,7 +66,7 @@ def _build_seg_to_analysis_map(seg_paths, analysis_dir):
             # Replicate seg: analysis lives in {ds}/repN/analysis/{variant}/{method_base}/
             parts = seg_path.replace("\\", "/").split("/")
             ds = parts[0]
-            rep = next((p for p in parts if p in ("rep1", "rep2")), None)
+            rep = next((p for p in parts if p in ("rep1", "rep2", "replicate1", "replicate2")), None)
             method_base = label.rsplit("_", 1)[0]  # strip _rep1 / _rep2
             if rep:
                 rep_dir = os.path.join(ds, rep, "analysis", variant, method_base)
@@ -106,6 +107,14 @@ def _compute_entropy(seg_paths, bin_sizes, exclude_states=None, mappings=None):
 
 
 
+def _get_method_style(label):
+    """Helper to get (display_name, color) for a segmentation label."""
+    binarization, _, _ = parse_method(label)
+    color = BIN_COLORS.get(binarization, "#888888")
+    display = DISPLAY_NAMES.get(label, label)
+    return display, color
+
+
 def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
     """Save entropy summary TSV and bar chart."""
     if not results:
@@ -116,18 +125,31 @@ def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
     df.to_csv(summary_path, sep="\t", index=False, float_format="%.4f")
     print(f"  saved {summary_path}")
 
-    fig, ax = plt.subplots(figsize=(max(5, len(df) * 0.8), 3.5))
-    ax.bar(range(len(df)), df["total_entropy"])
+    fig, ax = plt.subplots(figsize=(max(6, len(df) * 0.8), 4.2))
+    
+    # Map labels to styles
+    styles = [_get_method_style(l) for l in df["segmentation"]]
+    display_names = [s[0] for s in styles]
+    colors = [s[1] for s in styles]
+    
+    sns.barplot(data=df, x="segmentation", y="total_entropy", ax=ax,
+                palette={l: c for l, c in zip(df["segmentation"], colors)},
+                hue="segmentation", dodge=False,
+                edgecolor="lightgrey", linewidth=1)
+    
     ax.set_xticks(range(len(df)))
-    ax.set_xticklabels(df["segmentation"], rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Total transition matrix entropy (bits)")
-    ax.set_title(f"Transition matrix entropy comparison{title_extra}")
+    ax.set_xticklabels(display_names, rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Total transition matrix entropy (bits)", fontsize=9)
+    ax.set_title(f"Transition matrix entropy comparison{title_extra}", fontsize=11, fontweight="bold")
     ax.grid(axis="y", alpha=0.3)
+    
+    yrange = ax.get_ylim()[1] - ax.get_ylim()[0]
     for i, v in enumerate(df["total_entropy"]):
-        ax.text(i, v + 0.02, f"{v:.3f}", ha="center", va="bottom", fontsize=7)
+        ax.text(i, v + yrange * 0.01, f"{v:.3f}", ha="center", va="bottom", fontsize=6)
+    
     fig.tight_layout()
     fig_path = os.path.join(outdir, f"entropy_summary{suffix}.png")
-    fig.savefig(fig_path)
+    fig.savefig(fig_path, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {fig_path}")
 
@@ -139,23 +161,29 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
     df_full = pd.DataFrame(results_full)
     df_active = pd.DataFrame(results_active) if results_active else pd.DataFrame()
 
-    x = np.arange(len(df_full))
-    width = 0.35
-    fig, ax = plt.subplots(figsize=(max(5, len(df_full) * 0.8), 3.5))
-    ax.bar(x - width / 2, df_full["total_entropy"], width,
-           label="Full", color="#4878CF")
+    df_full["Type"] = "Full"
     if not df_active.empty:
-        ax.bar(x + width / 2, df_active["total_entropy"], width,
-               label="Excl. Quies/Het", color="#E8833A")
-    ax.set_xticks(x)
-    ax.set_xticklabels(df_full["segmentation"], rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Total transition matrix entropy (bits)")
-    ax.set_title("Transition matrix entropy comparison")
-    ax.legend(fontsize=9)
+        df_active["Type"] = "Excl. Quies/Het"
+    
+    df_combined = pd.concat([df_full, df_active])
+    
+    fig, ax = plt.subplots(figsize=(max(6, len(df_full) * 0.8), 4.2))
+    
+    sns.barplot(data=df_combined, x="segmentation", y="total_entropy", hue="Type",
+                ax=ax, palette={"Full": "#4878CF", "Excl. Quies/Het": "#E8833A"},
+                capsize=0.05, edgecolor="lightgrey", linewidth=1)
+    
+    display_names = [_get_method_style(l)[0] for l in df_full["segmentation"]]
+    ax.set_xticks(range(len(df_full)))
+    ax.set_xticklabels(display_names, rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Total transition matrix entropy (bits)", fontsize=9)
+    ax.set_title("Transition matrix entropy comparison", fontsize=11, fontweight="bold")
+    ax.legend(fontsize=8, title_fontsize=9)
     ax.grid(axis="y", alpha=0.3)
+    
     fig.tight_layout()
     fig_path = os.path.join(outdir, "entropy_summary_combined.png")
-    fig.savefig(fig_path)
+    fig.savefig(fig_path, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {fig_path}")
 
@@ -292,7 +320,7 @@ def compute_composition_similarity(segs1, segs2, exclude_states=None):
 def _compare_pair(i, j, path_i, path_j, label_i, label_j,
                   bin_emission_path_i, bin_emission_path_j,
                   bw_emission_path_i, bw_emission_path_j,
-                  bin_size_i, bin_size_j, outdir):
+                  bin_size_i, bin_size_j, outdir, skip_noqh=False):
     """Compare one pair of segmentations (runs in a worker process).
 
     Uses the finer of the two bin sizes for kappa so that 200bp segments
@@ -321,7 +349,8 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
 
     # Composition similarity: compute for all compared pairs.
     row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j)
-    row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES)
+    if not skip_noqh:
+        row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES)
 
     overlap = match_pair_overlap(segs_full_i, segs_full_j)
     work_states = sorted({x[3] for x in segs_full_j}, key=_natural_sort_key)
@@ -366,12 +395,13 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
         row["bw_emission_similarity"] = avg_bw_sim
 
     # No-Quies/Het variants.
-    bins_i_noqh = _filter_bins(bins_i, _EXCLUDE_STATES)
-    bins_j_noqh = _filter_bins(eff_bins_j, _EXCLUDE_STATES)
-    kappa_noqh, po_noqh, _, _, _ = compute_kappa(bins_i_noqh, bins_j_noqh)
-    row["kappa_noqh"]   = kappa_noqh
-    row["overlap_noqh"] = po_noqh
-    row["jaccard_noqh"] = compute_jaccard(bins_i_noqh, bins_j_noqh)
+    if not skip_noqh:
+        bins_i_noqh = _filter_bins(bins_i, _EXCLUDE_STATES)
+        bins_j_noqh = _filter_bins(eff_bins_j, _EXCLUDE_STATES)
+        kappa_noqh, po_noqh, _, _, _ = compute_kappa(bins_i_noqh, bins_j_noqh)
+        row["kappa_noqh"]   = kappa_noqh
+        row["overlap_noqh"] = po_noqh
+        row["jaccard_noqh"] = compute_jaccard(bins_i_noqh, bins_j_noqh)
 
     print(f"  {label_i} vs {label_j}: "
           f"comp_sim={row['composition_similarity']:.4f}, "
@@ -383,7 +413,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
 
 
 def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
-                label_override=None, all_pairs=False):
+                label_override=None, all_pairs=False, skip_noqh=False):
     """Selective segmentation comparison; saves metric matrices as TSV.
 
     bin_sizes: list of bin sizes parallel to seg_paths.
@@ -435,36 +465,42 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     ]
     pair_desc = "all pairs" if all_pairs else "vs ref + same-method rep1/rep2"
     n_workers = min(len(pair_order), threads or os.cpu_count() or 4)
-    print(f"  Comparing {len(pair_order)} pairs ({pair_desc}) "
-          f"with {n_workers} processes ...", file=sys.stderr)
+    if len(pair_order) > 0:
+        print(f"  Comparing {len(pair_order)} pairs ({pair_desc}) "
+              f"with {n_workers} processes ...", file=sys.stderr)
 
     comparison_rows = []
 
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
-        futures = {
-            executor.submit(_compare_pair, i, j,
-                            seg_paths[i], seg_paths[j], labels[i], labels[j],
-                            bin_emission_paths.get(i), bin_emission_paths.get(j),
-                            bw_emission_paths.get(i), bw_emission_paths.get(j),
-                            bin_sizes[i], bin_sizes[j], outdir): (i, j)
-            for i, j in pair_order
-        }
-        for fut in as_completed(futures):
-            row = fut.result()
-            i, j = row.pop("_i"), row.pop("_j")
-            comp_sim_mat[i, j] = comp_sim_mat[j, i] = row["composition_similarity"]
-            comp_sim_noqh_mat[i, j] = comp_sim_noqh_mat[j, i] = row["composition_noqh_similarity"]
-            kappa_mat[i, j] = kappa_mat[j, i] = row["kappa"]
-            jaccard_mat[i, j] = jaccard_mat[j, i] = row["jaccard_similarity"]
-            overlap_mat[i, j] = overlap_mat[j, i] = row["overlap_fraction"]
-            if "emission_similarity" in row:
-                em_sim_mat[i, j] = em_sim_mat[j, i] = row["emission_similarity"]
-            if "bw_emission_similarity" in row:
-                bw_sim_mat[i, j] = bw_sim_mat[j, i] = row["bw_emission_similarity"]
-            kappa_noqh_mat[i, j]   = kappa_noqh_mat[j, i]   = row["kappa_noqh"]
-            overlap_noqh_mat[i, j] = overlap_noqh_mat[j, i] = row["overlap_noqh"]
-            jaccard_noqh_mat[i, j] = jaccard_noqh_mat[j, i] = row["jaccard_noqh"]
-            comparison_rows.append(row)
+    if len(pair_order) > 0:
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            futures = {
+                executor.submit(_compare_pair, i, j,
+                                seg_paths[i], seg_paths[j], labels[i], labels[j],
+                                bin_emission_paths.get(i), bin_emission_paths.get(j),
+                                bw_emission_paths.get(i), bw_emission_paths.get(j),
+                                bin_sizes[i], bin_sizes[j], outdir, skip_noqh=skip_noqh): (i, j)
+                for i, j in pair_order
+            }
+            for fut in as_completed(futures):
+                row = fut.result()
+                i, j = row.pop("_i"), row.pop("_j")
+                comp_sim_mat[i, j] = comp_sim_mat[j, i] = row["composition_similarity"]
+                kappa_mat[i, j] = kappa_mat[j, i] = row["kappa"]
+                jaccard_mat[i, j] = jaccard_mat[j, i] = row["jaccard_similarity"]
+                overlap_mat[i, j] = overlap_mat[j, i] = row["overlap_fraction"]
+                if "emission_similarity" in row:
+                    em_sim_mat[i, j] = em_sim_mat[j, i] = row["emission_similarity"]
+                if "bw_emission_similarity" in row:
+                    bw_sim_mat[i, j] = bw_sim_mat[j, i] = row["bw_emission_similarity"]
+                
+                if not skip_noqh:
+                    comp_sim_noqh_mat[i, j] = comp_sim_noqh_mat[j, i] = row["composition_noqh_similarity"]
+                    kappa_noqh_mat[i, j]   = kappa_noqh_mat[j, i]   = row["kappa_noqh"]
+                    overlap_noqh_mat[i, j] = overlap_noqh_mat[j, i] = row["overlap_noqh"]
+                    jaccard_noqh_mat[i, j] = jaccard_noqh_mat[j, i] = row["jaccard_noqh"]
+                comparison_rows.append(row)
+    else:
+        print(f"  No pairs to compare ({pair_desc}).", file=sys.stderr)
 
     # Per-state kappa vs reference
     ps_rows = []
@@ -515,14 +551,15 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
 
     kappa_df   = _save_matrix(kappa_mat, "kappa")
     _save_matrix(comp_sim_mat, "composition_similarity")
-    _save_matrix(comp_sim_noqh_mat, "composition_noqh_similarity")
     jaccard_df = _save_matrix(jaccard_mat, "jaccard_similarity")
     _save_matrix(overlap_mat, "overlap")
     em_df = _save_matrix(em_sim_mat, "emission_similarity")
     _save_matrix(bw_sim_mat, "bw_emission_similarity")
-    _save_matrix(kappa_noqh_mat,   "kappa_noqh")
-    _save_matrix(overlap_noqh_mat, "overlap_noqh")
-    _save_matrix(jaccard_noqh_mat, "jaccard_noqh")
+    if not skip_noqh:
+        _save_matrix(comp_sim_noqh_mat, "composition_noqh_similarity")
+        _save_matrix(kappa_noqh_mat,   "kappa_noqh")
+        _save_matrix(overlap_noqh_mat, "overlap_noqh")
+        _save_matrix(jaccard_noqh_mat, "jaccard_noqh")
 
     # Per-seg comparison rows in analysis dirs
     for i, p in enumerate(seg_paths):
@@ -604,7 +641,7 @@ def _plot_segment_stats(df, outdir, suffix=""):
         print(f"  saved {path}")
 
 
-def run_segment_stats(seg_paths, outdir, analysis_dir=None):
+def run_segment_stats(seg_paths, outdir, analysis_dir=None, skip_noqh=False):
     """Compute and save segment length statistics for each segmentation.
 
     Two variants are produced, mirroring the entropy summaries: Full
@@ -628,7 +665,11 @@ def run_segment_stats(seg_paths, outdir, analysis_dir=None):
         label = _seg_label(seg_path)
         seg_dir = seg_outdirs.get(seg_path)
 
-        for suffix, excl in [("", None), ("_noqh", _EXCLUDE_STATES)]:
+        variants = [("", None)]
+        if not skip_noqh:
+            variants.append(("_noqh", _EXCLUDE_STATES))
+
+        for suffix, excl in variants:
             stats = compute_segment_stats(segs, exclude_states=excl)
             if not stats:
                 print(f"  WARNING: no segments left for {label}{suffix}", file=sys.stderr)
@@ -662,7 +703,7 @@ def run_segment_stats(seg_paths, outdir, analysis_dir=None):
 # ---------------------------------------------------------------------------
 
 def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
-                labels=None, all_pairs=False):
+                labels=None, all_pairs=False, skip_noqh=False):
     """Cross-segmentation comparison: entropy, kappa, Jaccard, segment stats.
 
     Direct-call entry point (the former CLI); called from analysis.ipynb.
@@ -691,29 +732,30 @@ def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
     results_full = _compute_entropy(args.seg, bin_sizes)
     _save_entropy_summary(results_full, comparison_dir)
 
-    # Identify the reference (if any) to use for matched-to-reference NOQH entropy.
-    ref_idx = next((i for i, p in enumerate(args.seg)
-                    if _seg_label(p).startswith("ENCFF")), None)
-    mappings = None
-    if ref_idx is not None:
-        import match
-        ref_segs = _load_seg_full(args.seg[ref_idx])
-        ref_states = sorted({x[3] for x in ref_segs}, key=_natural_sort_key)
-        mappings = [None] * len(args.seg)
-        for i, p in enumerate(args.seg):
-            if i == ref_idx:
-                continue
-            work_segs = _load_seg_full(p)
-            work_states = sorted({x[3] for x in work_segs}, key=_natural_sort_key)
-            overlap = match.pair_overlap(ref_segs, work_segs)
-            mappings[i] = match.best_mapping(overlap, work_states, ref_states)
+    if not skip_noqh:
+        # Identify the reference (if any) to use for matched-to-reference NOQH entropy.
+        ref_idx = next((i for i, p in enumerate(args.seg)
+                        if _seg_label(p).startswith("ENCFF")), None)
+        mappings = None
+        if ref_idx is not None:
+            import match
+            ref_segs = _load_seg_full(args.seg[ref_idx])
+            ref_states = sorted({x[3] for x in ref_segs}, key=_natural_sort_key)
+            mappings = [None] * len(args.seg)
+            for i, p in enumerate(args.seg):
+                if i == ref_idx:
+                    continue
+                work_segs = _load_seg_full(p)
+                work_states = sorted({x[3] for x in work_segs}, key=_natural_sort_key)
+                overlap = match.pair_overlap(ref_segs, work_segs)
+                mappings[i] = match.best_mapping(overlap, work_states, ref_states)
 
-    results_active = _compute_entropy(args.seg, bin_sizes, exclude_states=_EXCLUDE_STATES,
-                                      mappings=mappings)
-    _save_entropy_summary(results_active, comparison_dir, suffix="_noqh",
-                          title_extra=f"\n(excluding {', '.join(sorted(_EXCLUDE_STATES))})")
-    _save_entropy_combined_plot(results_full, results_active, comparison_dir)
+        results_active = _compute_entropy(args.seg, bin_sizes, exclude_states=_EXCLUDE_STATES,
+                                          mappings=mappings)
+        _save_entropy_summary(results_active, comparison_dir, suffix="_noqh",
+                              title_extra=f"\n(excluding {', '.join(sorted(_EXCLUDE_STATES))})")
+        _save_entropy_combined_plot(results_full, results_active, comparison_dir)
 
-    run_segment_stats(args.seg, comparison_dir, analysis_dir)
+    run_segment_stats(args.seg, comparison_dir, analysis_dir, skip_noqh=skip_noqh)
     compare_all(args.seg, bin_sizes, comparison_dir, analysis_dir, args.threads,
-                label_override=label_override, all_pairs=args.all_pairs)
+                label_override=label_override, all_pairs=args.all_pairs, skip_noqh=skip_noqh)

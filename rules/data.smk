@@ -8,6 +8,9 @@
 # that accept a generic {folder}/bams/ layout.
 
 
+ruleorder: download_control_bam > download_bam
+ruleorder: merge_control_bams > download_control_bam
+
 rule download_bam:
     output: temp("{ds}/downloaded/{acc}_{mark}.bam")
     params:

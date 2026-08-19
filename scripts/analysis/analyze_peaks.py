@@ -36,6 +36,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from utils import BIN_COLORS
 
 
 # ---------------------------------------------------------------------------
@@ -184,33 +185,61 @@ def jaccard(a, b):
 # ---------------------------------------------------------------------------
 
 PALETTE = {
-    "OmniPeak": "#2196F3",
-    "HOMER":    "#FF9800",
-    "MACS2":    "#4CAF50",
-    "Default":  "#9E9E9E",
+    "OmniPeak": BIN_COLORS["omnipeak"],
+    "HOMER":    BIN_COLORS["homer"],
+    "MACS2":    BIN_COLORS["macs2"],
+    "Default":  BIN_COLORS["default"],
 }
-METHOD_ORDER = ["OmniPeak", "HOMER", "MACS2", "Default"]
+METHOD_ORDER = ["Default", "HOMER", "MACS2", "OmniPeak"]
 
 
 def _bar_plot(df, value_col, ylabel, title, outpath):
     marks = sorted(df["mark"].unique())
     methods = [m for m in METHOD_ORDER if m in df["method"].unique()]
-    x = np.arange(len(marks))
-    width = 0.25
-    fig, ax = plt.subplots(figsize=(max(5, len(marks) * 1.2), 4))
-    for i, method in enumerate(methods):
-        sub = df[df["method"] == method].set_index("mark")
-        vals = [sub.loc[m, value_col] if m in sub.index else 0 for m in marks]
-        ax.bar(x + i * width, vals, width, label=method,
-               color=PALETTE.get(method, "#555555"),
-               edgecolor="lightgrey", linewidth=1)
-    ax.set_xticks(x + width)
-    ax.set_xticklabels(marks, rotation=30, ha="right")
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.legend()
+    
+    fig, ax = plt.subplots(figsize=(max(5, len(marks) * 0.8), 4.2))
+    
+    sns.barplot(data=df, x="mark", y=value_col, hue="method",
+                order=marks, hue_order=methods, palette=PALETTE,
+                ax=ax, edgecolor="lightgrey", linewidth=1)
+
+    ax.set_xticks(range(len(marks)))
+    ax.set_xticklabels(marks, rotation=30, ha="right", fontsize=9)
+    ax.set_ylabel(ylabel, fontsize=9)
+    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend(title="Method", fontsize=8, title_fontsize=9)
+    
     fig.tight_layout()
-    fig.savefig(outpath)
+    fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _joint_bar_plot(df, metrics, labels, titles, outpath):
+    marks = sorted(df["mark"].unique())
+    methods = [m for m in METHOD_ORDER if m in df["method"].unique()]
+    
+    n = len(metrics)
+    fig, axes = plt.subplots(n, 1, figsize=(max(6, len(marks) * 0.8), 4 * n), sharex=True)
+    if n == 1: axes = [axes]
+    
+    for i, (metric, label, title) in enumerate(zip(metrics, labels, titles)):
+        sns.barplot(data=df, x="mark", y=metric, hue="method",
+                    order=marks, hue_order=methods, palette=PALETTE,
+                    ax=axes[i], edgecolor="lightgrey", linewidth=1)
+        axes[i].set_ylabel(label, fontsize=9)
+        axes[i].set_title(title, fontsize=11, fontweight="bold")
+        axes[i].grid(axis="y", alpha=0.3)
+        if i == 0:
+            axes[i].legend(title="Method", fontsize=8, title_fontsize=9,
+                          bbox_to_anchor=(1.01, 1), loc="upper left")
+        else:
+            if axes[i].get_legend():
+                axes[i].get_legend().remove()
+
+    plt.xticks(range(len(marks)), marks, rotation=30, ha="right", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -230,7 +259,7 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
     os.makedirs(args.outdir, exist_ok=True)
 
     marks = args.marks
-    has_replicates = os.path.isdir(os.path.join(args.ds, "rep1"))
+    has_replicates = os.path.isdir(os.path.join(args.ds, "rep1")) or os.path.isdir(os.path.join(args.ds, "replicate1"))
 
     # -----------------------------------------------------------------------
     # Collect regions per method / mark / replicate
@@ -240,8 +269,8 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
 
     folders = {"pooled": args.ds}
     if has_replicates:
-        folders["rep1"] = os.path.join(args.ds, "rep1")
-        folders["rep2"] = os.path.join(args.ds, "rep2")
+        folders["rep1"] = os.path.join(args.ds, "rep1") if os.path.isdir(os.path.join(args.ds, "rep1")) else os.path.join(args.ds, "replicate1")
+        folders["rep2"] = os.path.join(args.ds, "rep2") if os.path.isdir(os.path.join(args.ds, "rep2")) else os.path.join(args.ds, "replicate2")
 
     for folder_key, folder_path in folders.items():
         # OmniPeak
@@ -323,18 +352,35 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
     for method in ["OmniPeak", "HOMER", "MACS2", "Default"]:
         for mark in marks:
             row = {"method": method, "mark": mark}
-            # pooled stats
-            pooled = regions[method][mark].get("pooled", [])
-            s = peak_stats(pooled)
-            row["n_peaks"] = s["n_peaks"]
-            row["mean_length"] = s["mean_length"]
-            row["median_length"] = s["median_length"]
+
             # per-replicate stats
+            rep_stats = {}
             for rep in ["rep1", "rep2"]:
                 rep_r = regions[method][mark].get(rep, [])
                 rs = peak_stats(rep_r)
+                rep_stats[rep] = rs
                 row[f"n_peaks_{rep}"] = rs["n_peaks"]
                 row[f"mean_length_{rep}"] = rs["mean_length"]
+
+            # pooled stats (fallback to mean of replicates if missing)
+            pooled = regions[method][mark].get("pooled", [])
+            s = peak_stats(pooled)
+            if s["n_peaks"] == 0 and has_replicates:
+                s1, s2 = rep_stats["rep1"], rep_stats["rep2"]
+                if s1["n_peaks"] > 0 or s2["n_peaks"] > 0:
+                    active = [ss for ss in [s1, s2] if ss["n_peaks"] > 0]
+                    row["n_peaks"] = sum(ss["n_peaks"] for ss in active) / len(active)
+                    row["mean_length"] = sum(ss["mean_length"] for ss in active) / len(active)
+                    row["median_length"] = sum(ss["median_length"] for ss in active) / len(active)
+                else:
+                    row["n_peaks"] = 0
+                    row["mean_length"] = 0
+                    row["median_length"] = 0
+            else:
+                row["n_peaks"] = s["n_peaks"]
+                row["mean_length"] = s["mean_length"]
+                row["median_length"] = s["median_length"]
+
             # Jaccard between replicates
             if has_replicates:
                 r1 = regions[method][mark].get("rep1", [])
@@ -350,10 +396,10 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
     # -----------------------------------------------------------------------
     # Plots (pooled stats)
     # -----------------------------------------------------------------------
-    _bar_plot(df, "n_peaks", "Number of peaks", "Peaks per mark (pooled)",
+    _bar_plot(df, "n_peaks", "Number of peaks", "Peak count per mark (pooled)",
               os.path.join(args.outdir, "n_peaks.png"))
-    _bar_plot(df, "mean_length", "Mean length (bp)", "Mean peak length (pooled)",
-              os.path.join(args.outdir, "mean_length.png"))
+    _bar_plot(df, "mean_length", "Mean peak length (bp)", "Mean peak length per mark (pooled)",
+              os.path.join(args.outdir, "peak_length.png"))
     _bar_plot(df, "median_length", "Median length (bp)", "Median peak length (pooled)",
               os.path.join(args.outdir, "median_length.png"))
 
