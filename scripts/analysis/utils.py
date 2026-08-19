@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared segmentation method naming for the omni-chromhmm pipeline.
+"""Shared naming, plotting and caching helpers for the omni-chromhmm pipeline.
 
 Method keys follow the structured naming convention used throughout the pipeline
 (analyze.smk analysis dirs, compare.py labels, compare_methods.py registry):
@@ -25,9 +25,16 @@ should_compare(label_i, label_j) → bool
 scatter_points(ax, x, values) → overlay individual points on a matplotlib bar
 strip_points(ax, ...)         → overlay individual points on a sns.barplot
 bar_label_y(ax, *values)      → y for a value label, kept inside the axes
+cached_pickle(path, compute)  → compute() once, then reuse the pickle
+cached_csv(path, compute)     → same for a DataFrame, cached as CSV
+file_stamp(path)              → (mtime, size), the identity of an input file
+stamp_current(path, sig)      → have the inputs changed since the last run?
+save_stamp(path, sig)         → record the inputs a completed step ran on
 """
 
+import json
 import os
+import pickle
 
 import numpy as np
 import pandas as pd
@@ -284,3 +291,110 @@ def strip_points(ax, jitter=0.15, size=STRIP_SIZE, dodge=True, **kwargs):
         kwargs["palette"] = {lvl: color for lvl in levels}
     sns.stripplot(ax=ax, dodge=dodge, jitter=jitter, size=size, legend=False,
                   **style, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Caching of expensive analysis steps
+# ---------------------------------------------------------------------------
+
+# Analysis notebooks are re-run cell by cell, so every step that takes minutes
+# caches its result under the working directory. Two flavours: a step that
+# returns a value caches the value itself (cached_pickle / cached_csv), a step
+# that fills a directory records the identity of its inputs instead and reruns
+# once one of them changes (file_stamp / stamp_current / save_stamp).
+
+def cached_pickle(path, compute, label=None, valid=None):
+    """Result of compute(), cached as a pickle in *path*.
+
+    The cache is reused when it exists and *valid* - an optional predicate on
+    the loaded value, e.g. a size check against the current inputs - accepts it;
+    otherwise compute() runs and its result is written back. *label* names the
+    data in the progress messages ("peak statistics").
+    """
+    what = label or os.path.basename(path)
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            value = pickle.load(f)
+        if valid is None or valid(value):
+            print(f"Loaded cached {what} from {path}")
+            return value
+        print(f"Cached {what} in {path} no longer matches the inputs, recomputing...")
+    else:
+        print(f"Computing {what}...")
+    value = compute()
+    _save(path, lambda p: _dump_pickle(p, value))
+    print(f"Saved {what} to {path}")
+    return value
+
+
+def cached_csv(path, compute, label=None, index=False, valid=None, **read_kwargs):
+    """DataFrame returned by compute(), cached as CSV in *path*.
+
+    Same contract as cached_pickle(); CSV keeps the table readable outside the
+    notebook, at the cost of dtypes (*read_kwargs* go to pd.read_csv).
+    """
+    what = label or os.path.basename(path)
+    if os.path.exists(path):
+        df = pd.read_csv(path, **read_kwargs)
+        if valid is None or valid(df):
+            print(f"Loaded cached {what} from {path}")
+            return df
+        print(f"Cached {what} in {path} no longer matches the inputs, recomputing...")
+    print(f"Computing {what}...")
+    df = compute()
+    _save(path, lambda p: df.to_csv(p, index=index))
+    print(f"Saved {what} to {path}")
+    return df
+
+
+def file_stamp(path):
+    """(mtime, size) identifying the content of *path*, None when it is missing.
+
+    A list, not a tuple, so that a signature built from it survives a JSON round
+    trip unchanged and can be compared to a saved one.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return [st.st_mtime_ns, st.st_size]
+
+
+def stamp_current(stamp_path, signature, outputs=()):
+    """True when *stamp_path* records exactly *signature* and *outputs* exist.
+
+    For steps whose result is a set of files: the caller builds *signature* from
+    the file_stamp() of every input, and the step is skipped while the stamp
+    written by the previous run still matches. Any missing output invalidates
+    the stamp, so deleting a result is enough to force a rerun.
+    """
+    if any(not os.path.exists(o) for o in outputs):
+        return False
+    try:
+        with open(stamp_path) as f:
+            return json.load(f) == signature
+    except (OSError, ValueError):
+        return False
+
+
+def save_stamp(stamp_path, signature):
+    """Record *signature* as the inputs the step that just completed ran on."""
+    _save(stamp_path, lambda p: _dump_json(p, signature))
+
+
+def _save(path, write):
+    """Run write(path) with the parent directory of *path* in place."""
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    write(path)
+
+
+def _dump_pickle(path, value):
+    with open(path, "wb") as f:
+        pickle.dump(value, f)
+
+
+def _dump_json(path, value):
+    with open(path, "w") as f:
+        json.dump(value, f, indent=1)

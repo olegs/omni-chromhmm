@@ -106,8 +106,18 @@ METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
 
 
 def sort_states(states):
-    """Sort chromatin state names in canonical ENCODE order."""
-    return sorted(states, key=lambda s: (STATE_IDX.get(s, 999), s))
+    """Sort chromatin state names in canonical ENCODE order.
+
+    Numbered names ("1_TssA", "10_TssBiv") are not in STATE_IDX and so fall to
+    the end, where they are ordered by their state number - alphabetically
+    "10_TssBiv" would come before "1_TssA".
+    """
+    def key(s):
+        prefix = s.split("_")[0]
+        return (STATE_IDX.get(s, 999),
+                int(prefix) if prefix.isdigit() else 999,
+                s)
+    return sorted(states, key=key)
 
 
 def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method):
