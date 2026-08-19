@@ -427,6 +427,44 @@ def transition_entropy(states, counts, state_bp):
     return np.dot(pi, H), H, A, pi
 
 
+def segmentation_stats(segs, bin_size, background=()):
+    """Composition, transition entropy and state colors of one segmentation.
+
+    *segs* is a load_bed() result. Returns
+
+      {"n_segments": int,
+       "composition": [{State, Fraction, MeanLength, MedianLength}, ...],
+       "entropy":     {"full": bits, "noqh": bits},   # noqh drops *background*
+       "colors":      {state: "#RRGGBB"}}
+
+    the per-segmentation summary the analysis notebooks tabulate over hundreds of
+    segmentations, where run_analyze()'s on-disk report would be too heavy.
+    """
+    lengths_by_state = defaultdict(list)
+    for row in segs:
+        name = row[3]
+        if not name or name == ".":
+            continue
+        lengths_by_state[name].append(row[2] - row[1])
+    total = sum(sum(ls) for ls in lengths_by_state.values())
+
+    composition = [{"State": state,
+                    "Fraction": sum(ls) / total if total > 0 else 0,
+                    "MeanLength": np.mean(ls),
+                    "MedianLength": np.median(ls)}
+                   for state, ls in lengths_by_state.items()]
+
+    entropy = {}
+    segs4 = [(r[0], r[1], r[2], r[3]) for r in segs]
+    for mode, excl in (("full", set()), ("noqh", set(background))):
+        states, counts, state_bp = build_transition_matrix(segs4, bin_size, exclude_states=excl)
+        entropy[mode] = transition_entropy(states, counts, state_bp)[0] if states else 0
+
+    colors = {row[3]: rgb_str_to_hex(row[4] if len(row) > 4 else "0,0,0") for row in segs}
+    return {"n_segments": len(segs), "composition": composition,
+            "entropy": entropy, "colors": colors}
+
+
 def save_transition_entropy(segs, bin_size, outdir, skip_noqh=False):
     """Compute and save transition entropy + matrix for a single segmentation."""
     edir = os.path.join(outdir, "entropy")

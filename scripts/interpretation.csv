@@ -1,0 +1,15 @@
+﻿# Origin https://genome.cshlp.org/content/genome/suppl/2024/04/16/gr.278343.123.DC1/Supplemental_Document.pdf
+Chromatin State Type;Short Name;Description
+Promoter;Prom;"Presence of promoter-associated marks H3K4me3 and H3K9ac. Highly enriched at
+transcription start sites (TSSs)"
+PromoterFlanking;Prom fla;"Presence of promoter-associated marks H3K4me3 and H3K9ac, but at lower levels
+than Promoters. Tends to occur upstream or downstream of TSSs"
+Enhancer;Enha;Presence of the enhancer-associated marks H3K27ac and H3K4me1.
+EnhancerLow;Enha low;Same as Enhancer, but with lower signal values.
+Bivalent;Biva;Presence of both activating (H3K27ac) and repressive (H3K27me3) marks. Thought to mark regulatory elements “poised” for activation.
+CTCF;CTCF;Presence of the transcription factor CTCF, thought to play a role in chromatin conformation. In samples without measured CTCF, this label marks positions with CTCF-associated marks
+Transcribed;Tran;Characterized by the transcription-associated mark H3K36me3. Highly enriched in annotated gene bodies.
+K9K36;K9K36;Presence of the marks H3K9me3 and H3K36me3, a pattern associated with zinc finger genes.
+FacultativeHet;Facu;Facultative (Polycomb) Heterochromatin, characterized by the histone modification H3K27me3. Thought to carry out cell type-specific repression
+ConstitutiveHet;Cons;Constitutive Heterochromatin, characterized by the histone modification H3K9me3. Marks permanently silent regions such as centromeres and telomeres.
+Quiescent;Quie;Lack of any marks
