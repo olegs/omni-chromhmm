@@ -247,18 +247,23 @@ def compute_kappa(bins1, bins2):
 
 def compute_jaccard(bins1, bins2):
     """Mean per-state Jaccard index between two bin-level segmentations."""
+    return float(np.mean(list(compute_per_state_jaccard(bins1, bins2).values())))
+
+
+def compute_per_state_jaccard(bins1, bins2):
+    """Jaccard similarity for each state present in either segmentation."""
     labels1, labels2 = _aligned_label_arrays(bins1, bins2)
     if len(labels1) == 0:
-        return 0.0
+        return {}
     states = sorted(set(labels1) | set(labels2), key=_natural_sort_key)
-    jaccards = []
+    out = {}
     for s in states:
-        a = labels1 == s
-        b = labels2 == s
+        a = (labels1 == s)
+        b = (labels2 == s)
         tp = int((a & b).sum())
         denom = int((a | b).sum())
-        jaccards.append(tp / denom if denom > 0 else 1.0)
-    return float(np.mean(jaccards))
+        out[s] = tp / denom if denom > 0 else 1.0
+    return out
 
 
 def compute_per_state_kappa(bins1, bins2):
@@ -372,6 +377,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
 
     # Jaccard similarity: we use the mean per-state Jaccard.
     row["jaccard_similarity"] = compute_jaccard(bins_i, eff_bins_j)
+    row["_per_state_jaccard"] = compute_per_state_jaccard(bins_i, eff_bins_j)
 
     # Overlap fraction: fraction of genome bp with identical state labels.
     all_ref_states = {x[3] for x in segs_full_i}
@@ -502,40 +508,46 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     else:
         print(f"  No pairs to compare ({pair_desc}).", file=sys.stderr)
 
-    # Per-state kappa vs reference
+    # Per-state metrics vs reference
     ps_rows = []
     for row in comparison_rows:
-        for state, k in (row.pop("_per_state_kappa", None) or {}).items():
-            ps_rows.append({"seg1": row["seg1"], "seg2": row["seg2"],
-                            "state": state, "kappa": k})
+        pk = row.pop("_per_state_kappa", None) or {}
+        pj = row.pop("_per_state_jaccard", None) or {}
+        for state in sorted(set(pk.keys()) | set(pj.keys()), key=_natural_sort_key):
+            ps_rows.append({"seg1": row["seg1"], "seg2": row["seg2"], "state": state,
+                            "kappa": pk.get(state), "jaccard": pj.get(state)})
+
     if ps_rows:
         ps_df = pd.DataFrame(ps_rows)
-        ps_df.to_csv(os.path.join(outdir, "per_state_kappa.tsv"),
+        ps_df.to_csv(os.path.join(outdir, "per_state_metrics.tsv"),
                      sep="\t", index=False, float_format="%.4f")
         ref_label = labels[0]
-        wide_a = ps_df[ps_df["seg1"] == ref_label].pivot_table(
-            index="state", columns="seg2", values="kappa", aggfunc="mean")
-        wide_b = ps_df[ps_df["seg2"] == ref_label].pivot_table(
-            index="state", columns="seg1", values="kappa", aggfunc="mean")
-        wide = wide_a.combine_first(wide_b) if not wide_b.empty else wide_a
-        if not wide.empty:
-            wide = wide.reindex(sorted(wide.index, key=_natural_sort_key))
-            wide.to_csv(os.path.join(outdir, f"per_state_kappa_vs_{ref_label}.tsv"),
-                        sep="\t", float_format="%.4f")
-            vmax = max(float(np.nanmax(np.abs(wide.values))), 0.1)
-            fig, ax = plt.subplots(figsize=(max(6, wide.shape[1] * 0.8),
-                                            max(4, wide.shape[0] * 0.35)))
-            sns.heatmap(wide, cmap="RdYlGn", vmin=-vmax, vmax=vmax, center=0,
-                        linewidths=0.5, annot=True, fmt=".2f",
-                        annot_kws={"fontsize": 7},
-                        cbar_kws={"label": "Per-state Cohen's Kappa"},
-                        ax=ax, mask=wide.isna().values)
-            ax.set_title(f"Per-state Cohen's Kappa vs {ref_label}", fontsize=9)
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
-            ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=7)
-            fig.tight_layout()
-            fig.savefig(os.path.join(outdir, f"per_state_kappa_vs_{ref_label}.png"))
-            plt.close(fig)
+        for metric, label in [("kappa", "Cohen's Kappa"), ("jaccard", "Jaccard")]:
+            wide_a = ps_df[ps_df["seg1"] == ref_label].pivot_table(
+                index="state", columns="seg2", values=metric, aggfunc="mean")
+            wide_b = ps_df[ps_df["seg2"] == ref_label].pivot_table(
+                index="state", columns="seg1", values=metric, aggfunc="mean")
+            wide = wide_a.combine_first(wide_b) if not wide_b.empty else wide_a
+            if not wide.empty:
+                wide = wide.reindex(sorted(wide.index, key=_natural_sort_key))
+                wide.to_csv(os.path.join(outdir, f"per_state_{metric}_vs_{ref_label}.tsv"),
+                            sep="\t", float_format="%.4f")
+                vmax = max(float(np.nanmax(np.abs(wide.values))), 0.1) if not wide.isna().all().all() else 0.1
+                fig, ax = plt.subplots(figsize=(max(6, wide.shape[1] * 0.8),
+                                                max(4, wide.shape[0] * 0.35)))
+                sns.heatmap(wide, cmap="RdYlGn" if metric == "kappa" else "YlGnBu",
+                            vmin=-vmax if metric == "kappa" else 0, vmax=vmax,
+                            center=0 if metric == "kappa" else None,
+                            linewidths=0.5, annot=True, fmt=".2f",
+                            annot_kws={"fontsize": 7},
+                            cbar_kws={"label": f"Per-state {label}"},
+                            ax=ax, mask=wide.isna().values)
+                ax.set_title(f"Per-state {label} vs {ref_label}", fontsize=9)
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
+                ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=7)
+                fig.tight_layout()
+                fig.savefig(os.path.join(outdir, f"per_state_{metric}_vs_{ref_label}.png"))
+                plt.close(fig)
 
     pd.DataFrame(comparison_rows).to_csv(
         os.path.join(outdir, "comparison_all_pairs.tsv"),

@@ -416,18 +416,15 @@ def _plot_2way_scatter(x_data, y_data, title, xlabel, ylabel, outpath, order=Non
     print(f"  saved {outpath}")
 
 
-def _collect_per_state_kappa(datasets, analysis_dirs, match_method):
-    """Collect per-state kappa vs reference for all datasets."""
+def _collect_per_state_metrics(datasets, analysis_dirs, match_method):
+    """Collect per-state kappa and jaccard vs reference for all datasets."""
     all_stacked = []
     for ds, adir in zip(datasets, analysis_dirs):
-        # We look into potential locations for per-state kappa TSVs.
-        # 1. {ds}/comparison/{match_method} (standard notebook location)
-        # 2. {adir}/comparison/{match_method}
-        # 3. {adir}/comparison
         comp_dirs = [
             os.path.join(ds, "comparison", match_method),
             os.path.join(adir, "comparison", match_method),
-            os.path.join(adir, "comparison")
+            os.path.join(adir, "comparison"),
+            adir
         ]
         
         comp_dir = None
@@ -439,53 +436,60 @@ def _collect_per_state_kappa(datasets, analysis_dirs, match_method):
         if not comp_dir:
             continue
 
-        # Look for per_state_kappa_vs_*.tsv
-        try:
-            tsv_files = [f for f in os.listdir(comp_dir)
-                         if f.startswith("per_state_kappa_vs_") and f.endswith(".tsv")]
-        except OSError:
-            continue
+        # Try unified metrics file first
+        metrics_path = os.path.join(comp_dir, "per_state_metrics.tsv")
+        if os.path.exists(metrics_path):
+            try:
+                df = pd.read_csv(metrics_path, sep="\t")
+                if not df.empty:
+                    df["dataset"] = ds
+                    all_stacked.append(df)
+                    continue
+            except Exception as e:
+                print(f"  WARNING: could not load {metrics_path}: {e}", file=sys.stderr)
 
-        if not tsv_files:
-            continue
-
-        tsv_path = os.path.join(comp_dir, tsv_files[0])
-        try:
-            df = pd.read_csv(tsv_path, sep="\t", index_col=0)
-            if df.empty:
-                continue
-
-            # Stack to get (state, method, kappa)
-            stacked = df.stack().reset_index()
-            stacked.columns = ["state", "method", "kappa"]
-            # Exclude NaNs/Nones as per instructions
-            stacked = stacked.dropna(subset=["kappa"])
-            stacked["dataset"] = ds
-            all_stacked.append(stacked)
-        except Exception as e:
-            print(f"  WARNING: could not load {tsv_path}: {e}", file=sys.stderr)
+        # Fallback to per-state kappa/jaccard TSVs
+        for metric in ["kappa", "jaccard"]:
+            try:
+                tsv_files = [f for f in os.listdir(comp_dir)
+                             if f.startswith(f"per_state_{metric}_vs_") and f.endswith(".tsv")]
+                if tsv_files:
+                    tsv_path = os.path.join(comp_dir, tsv_files[0])
+                    df = pd.read_csv(tsv_path, sep="\t", index_col=0)
+                    if not df.empty:
+                        stacked = df.stack().reset_index()
+                        stacked.columns = ["state", "method", metric]
+                        stacked = stacked.dropna(subset=[metric])
+                        stacked["dataset"] = ds
+                        all_stacked.append(stacked)
+            except Exception as e:
+                print(f"  WARNING: could not load legacy {metric} TSV in {comp_dir}: {e}", file=sys.stderr)
 
     if not all_stacked:
         return pd.DataFrame()
-    return pd.concat(all_stacked, ignore_index=True)
+    
+    df = pd.concat(all_stacked, ignore_index=True)
+    # Ensure method names are consistent with display names if possible
+    return df
 
 
-def _save_kappa_heatmap(df, title, outfile):
-    """Save a per-state kappa heatmap, matching compare.py style."""
+def _save_metric_heatmap(df, title, outfile, metric_label):
+    """Save a per-state metric heatmap."""
     if df.empty:
         return
-    # Exclude all-NaN rows/cols to keep plot clean
     df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
     if df.empty:
         return
 
+    is_kappa = "kappa" in metric_label.lower()
     vmax = max(float(np.nanmax(np.abs(df.values))), 0.1) if not df.isna().all().all() else 0.1
     fig, ax = plt.subplots(figsize=(max(6, df.shape[1] * 0.8),
                                     max(4, df.shape[0] * 0.35)))
-    sns.heatmap(df, cmap="RdYlGn", vmin=-vmax, vmax=vmax, center=0,
+    sns.heatmap(df, cmap="RdYlGn" if is_kappa else "YlGnBu",
+                vmin=-vmax if is_kappa else 0, vmax=vmax, center=0 if is_kappa else None,
                 linewidths=0.5, annot=True, fmt=".2f",
                 annot_kws={"fontsize": 7},
-                cbar_kws={"label": "Per-state Cohen's Kappa"},
+                cbar_kws={"label": metric_label},
                 ax=ax, mask=df.isna().values)
     ax.set_title(title, fontsize=9)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
@@ -497,39 +501,63 @@ def _save_kappa_heatmap(df, title, outfile):
     print(f"  saved {outfile}")
 
 
-def _plot_per_state_kappa(datasets, analysis_dirs, outdir, match_method):
-    """Generate per-dataset and summary per-state kappa plots."""
-    df = _collect_per_state_kappa(datasets, analysis_dirs, match_method)
+def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
+    """Generate per-dataset and summary per-state metrics plots."""
+    df = _collect_per_state_metrics(datasets, analysis_dirs, match_method)
     if df.empty:
         return
 
-    # 1. Per-dataset plots
-    for ds in datasets:
-        subset = df[df["dataset"] == ds]
-        if subset.empty:
+    # Use DISPLAY_NAMES to map method keys to labels for plotting
+    df["Method"] = df["method"].apply(lambda m: DISPLAY_NAMES.get(m, m))
+
+    for metric, label in [("kappa", "Cohen's Kappa"), ("jaccard", "Jaccard")]:
+        if metric not in df.columns or df[metric].dropna().empty:
             continue
-        ds_df = subset.pivot(index="state", columns="method", values="kappa")
-        if ds_df.empty:
-            continue
-        ds_df = ds_df.reindex(sort_states(ds_df.index))
-        # Use METHODS_POOLED for canonical order (if present in df)
-        methods_in_plot = [m for m in METHODS_POOLED if m in ds_df.columns and m != "ref"]
-        # Also include any other methods that might be there but not in METHODS_POOLED
-        other_methods = [m for m in ds_df.columns if m not in METHODS_POOLED and m != "ref"]
-        ds_df = ds_df[methods_in_plot + other_methods]
 
-        out_path = os.path.join(outdir, f"per_state_kappa_{ds}.png")
-        _save_kappa_heatmap(ds_df, f"Per-state Cohen's Kappa: {ds} vs Reference", out_path)
+        # 1. Heatmaps
+        # Summary heatmap
+        summary_df = df.groupby(["state", "Method"])[metric].mean().unstack()
+        summary_df = summary_df[~summary_df.index.isin(["FULL", "NOQH"])]
+        summary_df = summary_df.reindex(sort_states(summary_df.index))
+        
+        # Match methods in plot using display names
+        pooled_labels = [DISPLAY_NAMES.get(m, m) for m in METHODS_POOLED if m != "ref"]
+        methods_in_plot = [m for m in pooled_labels if m in summary_df.columns]
+        other_methods = [m for m in summary_df.columns if m not in pooled_labels and m != DISPLAY_NAMES.get("ref", "ref")]
+        summary_df = summary_df[methods_in_plot + other_methods]
 
-    # 2. Summary plot
-    summary_df = df.groupby(["state", "method"])["kappa"].mean().unstack()
-    summary_df = summary_df.reindex(sort_states(summary_df.index))
-    methods_in_plot = [m for m in METHODS_POOLED if m in summary_df.columns and m != "ref"]
-    other_methods = [m for m in summary_df.columns if m not in METHODS_POOLED and m != "ref"]
-    summary_df = summary_df[methods_in_plot + other_methods]
+        out_path = os.path.join(outdir, f"per_state_{metric}_summary.png")
+        _save_metric_heatmap(summary_df, f"Mean Per-state {label} vs Reference (Summary)", out_path, f"Per-state {label}")
 
-    out_path = os.path.join(outdir, "per_state_kappa_summary.png")
-    _save_kappa_heatmap(summary_df, "Mean Per-state Cohen's Kappa vs Reference (Summary)", out_path)
+        # 2. Bar plots (Summary)
+        # We want a bar plot of average metric per state, combined across methods.
+        # Pseudo-states FULL/NOQH are omitted as they are not interpreted types.
+        plot_df = df.dropna(subset=[metric])
+        plot_df = plot_df[~plot_df["state"].isin(["FULL", "NOQH"])]
+        
+        states_order = sort_states(plot_df["state"].unique())
+        fig, ax = plt.subplots(figsize=(max(12, len(states_order) * 0.8), 5))
+        
+        sns.barplot(data=plot_df, x="state", y=metric, 
+                    order=states_order, color="#4878CF",
+                    capsize=0.1, errorbar="se", ax=ax, edgecolor="lightgrey", linewidth=1)
+        
+        strip_points(ax, data=plot_df, x="state", y=metric,
+                     order=states_order,
+                     size=1.5, alpha=0.4, jitter=0.2)
+        
+        ax.set_title(f"Average Per-state {label} vs Reference", fontsize=11, fontweight="bold")
+        ax.set_ylabel(label, fontsize=9)
+        ax.set_xlabel("State", fontsize=9)
+        ax.set_ylim(0 if metric == "jaccard" else None, 1.05)
+        ax.grid(axis='y', alpha=0.3)
+        ax.tick_params(axis='x', rotation=45)
+        
+        fig.tight_layout()
+        bar_path = os.path.join(outdir, f"per_state_{metric}_bar.png")
+        fig.savefig(bar_path, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  saved {bar_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -622,6 +650,97 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
     plt.close(fig)
     print(f"  saved {outfile}")
 
+
+def _plot_rep_consistency_per_state(datasets, methods_dirs, outdir):
+    """Bar plots of per-state replicate consistency (Jaccard and Kappa)."""
+    df = _collect_rep_per_state_metrics(datasets, methods_dirs)
+    if df.empty:
+        print("  no per-state replicate consistency data found", file=sys.stderr)
+        return
+
+    # Map method keys to display names
+    df["Method"] = df["method"].apply(lambda m: _SAMPLE_TO_INFO.get(m, (m,))[0])
+
+    # Identify unique states and sort them
+    states = sort_states(df["state"].unique())
+
+    # Filter methods to those in METHODS_POOLED
+    method_labels = [_SAMPLE_TO_INFO.get(m, (m,))[0] for m in METHODS_POOLED
+                     if _SAMPLE_TO_INFO.get(m, (m,))[0] in df["Method"].unique()]
+
+    for metric in ["jaccard", "kappa"]:
+        title = "Jaccard" if metric == "jaccard" else "Cohen's Kappa"
+        outpath = os.path.join(outdir, f"rep_consistency_per_state_{metric}.png")
+
+        # Plot
+        fig, ax = plt.subplots(figsize=(max(10, len(states) * 0.8), 5))
+
+        sns.barplot(
+            data=df, x="state", y=metric, hue="Method",
+            order=states, hue_order=method_labels,
+            palette=METHOD_PALETTE,
+            estimator="mean", errorbar="se",
+            ax=ax, capsize=0.05, err_kws={"linewidth": 1.0},
+            edgecolor="lightgrey", linewidth=0.5
+        )
+
+        # Add individual points
+        strip_points(ax, data=df, x="state", y=metric, hue="Method",
+                     order=states, hue_order=method_labels)
+
+        ax.set_xlabel("Chromatin State")
+        ax.set_ylabel(f"Replicate {title}")
+        ax.set_ylim(0, 1.05)
+        ax.grid(axis="y", alpha=0.3, linewidth=0.5)
+        ax.set_title(f"Replicate consistency by state: {title}", fontsize=10, fontweight="bold")
+        ax.tick_params(axis="x", rotation=45)
+        ax.legend(title="Method", fontsize=8, title_fontsize=9,
+                  bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
+
+        fig.tight_layout()
+        fig.savefig(outpath, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  saved {outpath}")
+
+
+def _collect_rep_per_state_metrics(datasets, methods_dirs):
+    """Collect per-state metrics from per_state_metrics.tsv across all datasets."""
+    rows = []
+    for ds, mdir in zip(datasets, methods_dirs):
+        path = os.path.join(mdir, "per_state_metrics.tsv")
+        if not os.path.exists(path):
+            print(f"  WARNING: {path} not found. Re-run comparison to generate it.", file=sys.stderr)
+            continue
+
+        try:
+            df = pd.read_csv(path, sep="\t")
+        except Exception as e:
+            print(f"  WARNING: could not read {path}: {e}", file=sys.stderr)
+            continue
+
+        def get_method(l):
+            # l can be "ds:method_rep1" or "method_rep1"
+            l = str(l).split(":")[-1]
+            if l.endswith("_rep1"): return l[:-5]
+            if l.endswith("_rep2"): return l[:-5]
+            return None
+
+        for _, row in df.iterrows():
+            s1, s2 = row["seg1"], row["seg2"]
+            m1 = get_method(s1)
+            m2 = get_method(s2)
+
+            # Check if it's a replicate pair for the same method
+            if m1 and m1 == m2 and ((str(s1).endswith("_rep1") and str(s2).endswith("_rep2")) or
+                                    (str(s1).endswith("_rep2") and str(s2).endswith("_rep1"))):
+                rows.append({
+                    "dataset": ds,
+                    "method": m1,
+                    "state": row["state"],
+                    "kappa": row["kappa"],
+                    "jaccard": row["jaccard"]
+                })
+    return pd.DataFrame(rows)
 
 
 # Map matched_stats sample key → (display label, binarization key)
@@ -1332,7 +1451,8 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
     if args.methods:
         # Update global method lists/palettes to the requested subset.
         global INTER_DS_METHODS, METHOD_PALETTE, METHODS_POOLED
-        methods_map = {m[0]: m for m in INTER_DS_METHODS}
+        methods_map = {m[0] if isinstance(m, (list, tuple)) else m: m
+                       for m in INTER_DS_METHODS}
         new_methods = []
         # Always keep the ENCODE reference on state-level plots (coverage,
         # composition) — their titles read "ENCODE reference vs de-novo
@@ -1342,7 +1462,11 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
             new_methods.append(methods_map["ref"])
         for k in args.methods:
             if k in methods_map:
-                new_methods.append(methods_map[k])
+                m = methods_map[k]
+                if isinstance(m, (list, tuple)):
+                    new_methods.append(m)
+                else:
+                    new_methods.append((m, m.replace("_", " ").title(), "#808080"))
             else:
                 new_methods.append((k, k.replace("_", " ").title(), "#808080"))
         INTER_DS_METHODS = new_methods
@@ -1554,7 +1678,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
 
-        _plot_per_state_kappa(ds, adirs, args.outdir, match_method=args.match_method)
+        _plot_per_state_metrics(ds, adirs, args.outdir, match_method=args.match_method)
 
     if args.state_coverage_outfile:
         if not (args.workdir and args.markups_dir and args.cells):
@@ -1680,6 +1804,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
             os.path.join(args.rep_consistency_outdir, "rep_consistency_distribution_noqh.png"),
             noqh=True,
         )
+        _plot_rep_consistency_per_state(args.datasets, args.methods_dirs, args.rep_consistency_outdir)
 
     # --- method state composition -------------------------------------------
     if args.method_composition_outfile:
