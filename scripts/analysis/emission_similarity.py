@@ -1,36 +1,18 @@
 #!/usr/bin/env python3
 """State emission discriminability: pairwise cosine similarity and Gini index.
 
-For each (dataset, method) pair, loads:
-  {analysis_dir}/{method}/bin_emissions/state_emissions.tsv
-  {analysis_dir}/{method}/bw_emissions/state_emissions.tsv
+Reads {analysis_dir}/{method}/{bin,bw}_emissions/state_emissions.tsv and
+computes, per method × emission type:
 
-Two complementary metrics are computed per method × emission type:
+  1. Mean pairwise cosine similarity between states — higher means states look
+     more alike, i.e. a less discriminative label space. Only plotted for the
+     inter-dataset binarized comparison (plot_out_binem).
+  2. Mean per-state Gini index — higher means signal concentrated in a few
+     marks, i.e. a sharper, more specific state signature.
 
-  1. Mean pairwise cosine similarity (between states)
-       Higher = states look more alike = less discriminative label space.
-
-  2. Mean Gini index (per state, averaged across states)
-       Gini measures how concentrated each state's signal is across marks.
-       Higher Gini = signal concentrated in a few marks = sharp, specific state
-       signature = more discriminative.
-       Lower Gini = signal spread uniformly across marks = state less distinctive.
-
-Expected result: bigwig (continuous) emissions show lower Gini than binarized
-emissions, confirming that signal averaging produces less specific state profiles
-and motivating overlap-based (rather than emission-based) label transfer.
-
-Outputs:
-  {outdir}/emission_cosine_sim_{dataset}.png   — per-dataset cosine similarity
-  {outdir}/emission_cosine_sim_summary.png     — cosine summary across datasets
-  {outdir}/emission_gini_{dataset}.png         — per-dataset Gini index
-  {outdir}/emission_gini_summary.png           — Gini summary across datasets
-
-Usage:
-    emission_similarity.py \\
-        --datasets      imr90 monocytes monocytes_mint gm12878_mint \\
-        --analysis-dirs imr90/analysis/ovlp monocytes/analysis/ovlp ... \\
-        --outdir        out/summary_plots
+Bigwig (continuous) emissions are expected to show lower Gini than binarized
+ones, which is what motivates overlap-based rather than emission-based label
+transfer.
 """
 
 import os
@@ -46,19 +28,16 @@ matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
-from utils import METHOD_ORDER, DISPLAY_NAMES, scatter_points, strip_points
+from utils import (METHOD_ORDER, DISPLAY_NAMES, scatter_points, strip_points,
+                   save_fig)
 
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 METHODS_POOLED = [m for m in METHOD_ORDER
                   if not m.endswith("_rep1") and not m.endswith("_rep2")]
 
 EMISSION_COLORS = {
-    "bin": "#5B8DB8",   # blue   — binarized
-    "bw":  "#E07B54",   # orange — bigwig (continuous)
+    "bin": "#5B8DB8",
+    "bw":  "#E07B54",
 }
 EMISSION_LABELS = {
     "bin": "Binarized",
@@ -71,12 +50,8 @@ EMISSION_SUBDIRS = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Emission loading
-# ---------------------------------------------------------------------------
-
 def _load_emissions_tsv(path):
-    """Load state_emissions.tsv; return (states, mat, marks) or None if missing."""
+    """Load state_emissions.tsv; return (states, mat, marks) or None."""
     if not os.path.exists(path):
         return None
     try:
@@ -89,22 +64,16 @@ def _load_emissions_tsv(path):
 
 
 def _analysis_base(analysis_dir, method):
-    """Return the analysis subdirectory for *method* inside *analysis_dir*.
-
-    'ref' lives one level above the variant dir (e.g. analysis/ref/ rather
-    than analysis/ovlp/ref/).
+    """Analysis subdirectory for *method*; 'ref' lives one level above the
+    variant dir (analysis/ref/ rather than analysis/ovlp/ref/).
     """
     if method == "ref":
         return os.path.join(os.path.dirname(analysis_dir), "ref")
     return os.path.join(analysis_dir, method)
 
 
-# ---------------------------------------------------------------------------
-# Metrics
-# ---------------------------------------------------------------------------
-
 def _pairwise_cosine_sim(mat):
-    """Mean, std and raw values of all N*(N-1)/2 pairwise cosine similarities.
+    """Mean, std and raw values of all pairwise cosine similarities.
 
     mat : (n_states, n_marks) — each row is a state emission vector.
     """
@@ -118,13 +87,8 @@ def _pairwise_cosine_sim(mat):
 
 
 def _gini_index(vec):
-    """Gini coefficient of a non-negative 1-D emission vector for one state.
-
-    G = 0  — signal equal across all marks (maximally uniform, least specific).
-    G = 1  — all signal in one mark (maximally concentrated, most specific).
-
-    Formula (sorted ascending):
-      G = (2 * sum((i+1) * x_i)) / (n * sum(x)) - (n+1)/n
+    """Gini coefficient of one state's emission vector: 0 = signal equal across
+    all marks, 1 = all signal in one mark.
     """
     vec = np.abs(np.asarray(vec, dtype=float))
     total = vec.sum()
@@ -136,10 +100,7 @@ def _gini_index(vec):
 
 
 def _mean_gini(mat):
-    """Mean, std and raw values of per-state Gini indices across all states.
-
-    mat : (n_states, n_marks)
-    """
+    """Mean, std and raw values of per-state Gini indices."""
     ginis = np.array([_gini_index(row) for row in mat])
     valid = ginis[~np.isnan(ginis)]
     if len(valid) == 0:
@@ -149,18 +110,12 @@ def _mean_gini(mat):
             valid)
 
 
-# ---------------------------------------------------------------------------
-# Data collection
-# ---------------------------------------------------------------------------
-
 def collect_records(datasets, analysis_dirs, methods):
-    """Return DataFrame with columns:
-      dataset, method, emission_type,
-      mean_sim, std_sim, mean_gini, std_gini,
-      sims, ginis (raw per-state-pair / per-state values, for point overlays).
+    """DataFrame of dataset, method, emission_type, mean/std sim and gini, plus
+    the raw sims/ginis for point overlays.
 
-    Rows are produced only when the TSV file exists. Missing bigwig emission
-    files are silently skipped so the plot degrades gracefully.
+    Only rows whose TSV exists are produced, so missing bigwig emission files
+    degrade the plots gracefully instead of raising.
     """
     records = []
     for ds, adir in zip(datasets, analysis_dirs):
@@ -189,15 +144,11 @@ def collect_records(datasets, analysis_dirs, methods):
     return pd.DataFrame(records)
 
 
-# ---------------------------------------------------------------------------
-# Generic grouped-bar plotting
-# ---------------------------------------------------------------------------
-
 def _grouped_bars(ax, methods, df_slice, y_col, err_col, points_col=None):
     """Grouped bars (bin/bw hue) for the methods list on *ax*.
 
-    points_col : column holding the raw observations behind each mean (an
-        array per row); they are scattered on top of the bars.
+    points_col : column holding the raw observations behind each mean, which
+        are scattered on top of the bars.
     """
     n = len(methods)
     width = 0.35
@@ -237,20 +188,12 @@ def _grouped_bars(ax, methods, df_slice, y_col, err_col, points_col=None):
               borderaxespad=0)
 
 
-def _save_fig(fig, ax, ylabel, title, xlabel, outpath):
+def _label_and_save(fig, ax, ylabel, title, xlabel, outpath):
     ax.set_ylabel(ylabel, fontsize=9)
     ax.set_title(title, fontsize=10, fontweight="bold")
     ax.set_xlabel(xlabel, fontsize=7, color="grey")
-    fig.tight_layout()
-    os.makedirs(os.path.dirname(os.path.abspath(outpath)), exist_ok=True)
-    fig.savefig(outpath, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outpath}")
+    save_fig(fig, outpath)
 
-
-# ---------------------------------------------------------------------------
-# Per-dataset plots
-# ---------------------------------------------------------------------------
 
 def _plot_per_dataset(df_ds, dataset, y_col, err_col, points_col, ylabel,
                       title_metric, title_note, xlabel_note, outpath):
@@ -260,23 +203,11 @@ def _plot_per_dataset(df_ds, dataset, y_col, err_col, points_col, ylabel,
         return
     fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.9), 4.5))
     _grouped_bars(ax, methods, df_ds, y_col, err_col, points_col=points_col)
-    _save_fig(fig, ax,
-              ylabel=ylabel,
-              title=f"{title_metric} — {dataset}\n({title_note})",
-              xlabel=xlabel_note,
-              outpath=outpath)
-
-
-def plot_cosine_per_dataset(df_ds, dataset, outpath):
-    _plot_per_dataset(
-        df_ds, dataset,
-        y_col="mean_sim", err_col="std_sim", points_col="sims",
-        ylabel="Mean pairwise cosine similarity",
-        title_metric="State emission pairwise cosine similarity",
-        title_note="higher = states more similar = less discriminative",
-        xlabel_note="mean ± std of all N×(N−1)/2 state-pair similarities (points: state pairs)",
-        outpath=outpath,
-    )
+    _label_and_save(fig, ax,
+                    ylabel=ylabel,
+                    title=f"{title_metric} — {dataset}\n({title_note})",
+                    xlabel=xlabel_note,
+                    outpath=outpath)
 
 
 def plot_gini_per_dataset(df_ds, dataset, outpath):
@@ -290,10 +221,6 @@ def plot_gini_per_dataset(df_ds, dataset, outpath):
         outpath=outpath,
     )
 
-
-# ---------------------------------------------------------------------------
-# Summary plots (across datasets)
-# ---------------------------------------------------------------------------
 
 def _aggregate(df, methods, y_col, std_col):
     rows = []
@@ -322,24 +249,14 @@ def _plot_summary(df, datasets, y_col, std_col, ylabel,
     df_agg = _aggregate(df, methods, y_col, std_col)
     if df_agg.empty:
         return
-    # Number of unique datasets present in the data for the requested methods
     n_ds = df[df["method"].isin(methods)]["dataset"].nunique()
     fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.9), 4.5))
     _grouped_bars(ax, methods, df_agg, y_col, std_col, points_col="points")
-    _save_fig(fig, ax,
-              ylabel=ylabel,
-              title=f"{title_metric} — all datasets\n({title_note}; n={n_ds})",
-              xlabel=f"mean ± std across {n_ds} datasets (points: individual datasets)",
-              outpath=outpath)
-
-
-def plot_cosine_summary(df, datasets, outpath):
-    _plot_summary(df, datasets,
-                  y_col="mean_sim", std_col="std_sim",
-                  ylabel="Mean pairwise cosine similarity",
-                  title_metric="State emission pairwise cosine similarity",
-                  title_note="higher = states more similar = less discriminative",
-                  outpath=outpath)
+    _label_and_save(fig, ax,
+                    ylabel=ylabel,
+                    title=f"{title_metric} — all datasets\n({title_note}; n={n_ds})",
+                    xlabel=f"mean ± std across {n_ds} datasets (points: individual datasets)",
+                    outpath=outpath)
 
 
 def plot_gini_summary(df, datasets, outpath):
@@ -351,12 +268,7 @@ def plot_gini_summary(df, datasets, outpath):
                   outpath=outpath)
 
 
-# ---------------------------------------------------------------------------
-# Inter-dataset binarized emission cosine similarity
-# ---------------------------------------------------------------------------
-
 def _cosine_sim(vec_a, vec_b):
-    """Cosine similarity between two emission vectors."""
     na, nb = np.linalg.norm(vec_a), np.linalg.norm(vec_b)
     if na == 0 or nb == 0:
         return np.nan
@@ -365,40 +277,32 @@ def _cosine_sim(vec_a, vec_b):
 
 def collect_out_binem_records(datasets, analysis_dirs, methods,
                                         group_a=None, group_b=None):
-    """For each method and dataset pair, compute mean cosine similarity between
-    same-named state binarized emission vectors (name-based matching on
-    comb-matched state labels — no additional Hungarian rematch).
+    """Mean cosine similarity between same-named states' binarized emission
+    vectors, per method and dataset pair; returns method, ds_a, ds_b, mean_sim.
 
-    group_a / group_b: when both are given, only pairs with one dataset from
-    each group are included (used for ChIP↔Mint-ChIP cross-assay filtering).
-
-    Returns DataFrame with columns: method, ds_a, ds_b, mean_sim.
+    States are matched by name on the comb-matched labels — no Hungarian
+    rematch. group_a / group_b, when both given, keep only pairs with one
+    dataset from each group (ChIP↔Mint-ChIP cross-assay filtering).
     """
     emissions = {}
     all_marks = set()
 
-    # First pass: collect emissions and identify common marks to align vectors
     for ds, adir in zip(datasets, analysis_dirs):
         for method in methods:
             base = _analysis_base(adir, method)
             path = os.path.join(base, EMISSION_SUBDIRS["bin"], "state_emissions.tsv")
             res = _load_emissions_tsv(path)
-            
-            # Robust fallback for chromhmm_default if analysis skipped
+
             if res is None and method == "chromhmm_default":
                 res = _fallback_chromhmm_default_emissions(ds, adir)
 
             if res is not None:
                 states, mat, marks = res
-                # Convert to dict of {state: {mark: value}} to allow alignment
                 state_ems = {}
                 for i, s in enumerate(states):
                     state_ems[s] = {m: mat[i, j] for j, m in enumerate(marks)}
                 emissions[(ds, method)] = state_ems
                 all_marks.update(marks)
-
-    # Sort marks for consistent vector ordering
-    sorted_marks = sorted(list(all_marks))
 
     records = []
     n = len(datasets)
@@ -417,8 +321,8 @@ def collect_out_binem_records(datasets, analysis_dirs, methods,
                 common_states = set(em_a) & set(em_b)
                 if not common_states:
                     continue
-                
-                # Identify common marks for this pair to avoid NaN in cosine
+
+                # Restrict to shared marks, else the cosine comes out NaN.
                 marks_a = set(next(iter(em_a.values())).keys())
                 marks_b = set(next(iter(em_b.values())).keys())
                 common_marks = sorted(list(marks_a & marks_b))
@@ -444,17 +348,17 @@ def collect_out_binem_records(datasets, analysis_dirs, methods,
 
 
 def _fallback_chromhmm_default_emissions(ds, adir):
-    """Fallback: reconstruct matched chromhmm_default emissions from original result."""
-    # ChromHMM result dir is sibling of analysis dir's parent usually
-    # e.g. ds/analysis/comb -> ds/chromhmm_default_result
+    """Reconstruct matched chromhmm_default emissions from the original result,
+    for datasets where the analysis step was skipped.
+    """
+    # ds/analysis/comb -> ds/chromhmm_default_result
     res_dir = os.path.join(os.path.dirname(os.path.dirname(adir)), "chromhmm_default_result")
     if not os.path.isdir(res_dir):
-        # Try one level up if adir was already ds/analysis
+        # adir may already be ds/analysis.
         res_dir = os.path.join(os.path.dirname(adir), "chromhmm_default_result")
         if not os.path.isdir(res_dir):
             return None
 
-    # Find cell name from directory
     cell = None
     try:
         for f in os.listdir(res_dir):
@@ -473,7 +377,7 @@ def _fallback_chromhmm_default_emissions(ds, adir):
     if not (os.path.exists(orig_bed) and os.path.exists(matched_bed) and os.path.exists(emissions_txt)):
         return None
 
-    # Infer mapping from first few segments
+    # Infer the state mapping from the first segments of both BEDs.
     mapping = {}
     try:
         with open(orig_bed) as f1, open(matched_bed) as f2:
@@ -493,7 +397,6 @@ def _fallback_chromhmm_default_emissions(ds, adir):
     if not mapping:
         return None
 
-    # Load original emissions
     try:
         df = pd.read_csv(emissions_txt, sep="\t")
         df.set_index(df.columns[0], inplace=True)
@@ -517,7 +420,7 @@ def _fallback_chromhmm_default_emissions(ds, adir):
 
 
 def plot_out_binem(df, methods, outfile, cross_assay=False):
-    """Bar plot: per-method distribution of inter-dataset binarized emission cosine similarity."""
+    """Bar plot: per-method inter-dataset binarized emission cosine similarity."""
     if df.empty:
         print(f"  skipping {outfile}: no data", file=sys.stderr)
         return
@@ -552,25 +455,14 @@ def plot_out_binem(df, methods, outfile, cross_assay=False):
         fontsize=10, fontweight="bold",
     )
     ax.tick_params(axis="x", rotation=30, labelsize=8)
-    fig.tight_layout()
-    os.makedirs(os.path.dirname(os.path.abspath(outfile)), exist_ok=True)
-    fig.savefig(outfile, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outfile}")
+    save_fig(fig, outfile)
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def run_emission_similarity(datasets, analysis_dirs, outdir, methods=None,
                             out_binem_outfile=None,
                             cross_assay_binem_outfile=None,
                             group_a=None, group_b=None):
-    """State emission discriminability: cosine similarity and Gini index plots.
-
-    Direct-call entry point (the former CLI); called from analysis.ipynb.
-    """
+    """State emission discriminability: cosine similarity and Gini index plots."""
     args = SimpleNamespace(
         datasets=datasets, analysis_dirs=analysis_dirs, outdir=outdir,
         methods=methods,
@@ -592,13 +484,9 @@ def run_emission_similarity(datasets, analysis_dirs, outdir, methods=None,
 
     for ds in args.datasets:
         df_ds = df[df["dataset"] == ds]
-        # plot_cosine_per_dataset(df_ds, ds,
-        #     os.path.join(args.outdir, f"emission_cosine_sim_{ds}.png"))
         plot_gini_per_dataset(df_ds, ds,
             os.path.join(args.outdir, f"emission_gini_{ds}.png"))
 
-    # plot_cosine_summary(df, args.datasets,
-    #     os.path.join(args.outdir, "emission_cosine_sim_summary.png"))
     plot_gini_summary(df, args.datasets,
         os.path.join(args.outdir, "emission_gini_summary.png"))
 

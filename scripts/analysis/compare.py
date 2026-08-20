@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
 # Cross-segmentation comparison: entropy, kappa, Jaccard, segment stats.
-#
-# Shared IO helpers are imported from analyze.py.
-#
-# Usage:
-#   compare.py --seg SEG1.bed SEG2.bed ... --bins BIN [BIN ...] --outdir OUT \
-#       [--analysis-dir OUT] [--threads N]
 
 import os
 import sys
@@ -21,7 +15,6 @@ matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Add scripts/analysis to sys.path so analyze.py can be imported.
 _analysis_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "analysis"))
 if _analysis_dir not in sys.path:
     sys.path.insert(0, _analysis_dir)
@@ -29,7 +22,6 @@ if _analysis_dir not in sys.path:
 from analyze import (load_bed, _natural_sort_key, _load_seg_full,
                      build_transition_matrix, transition_entropy)
 
-# Add scripts/rules to sys.path so match.py can be imported.
 _rules_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "rules"))
 if _rules_dir not in sys.path:
     sys.path.insert(0, _rules_dir)
@@ -37,18 +29,16 @@ if _rules_dir not in sys.path:
 import match
 _EXCLUDE_STATES = {"Quies", "Het"}
 from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
-                   should_compare as _should_compare, BIN_COLORS, parse_method, \
-                   DISPLAY_NAMES
+                   should_compare as _should_compare, display_name, \
+                   method_color, save_fig
 
 
 def _build_seg_to_analysis_map(seg_paths, analysis_dir):
-    """Map segmentation BED paths to their analysis subdirectories.
+    """Return {seg_path: analysis subdir}.
 
-    Pooled methods are looked up directly in analysis_dir.
-    Replicate methods (label ending in _rep1/_rep2) are looked up in their
-    per-replicate analysis dir: {ds}/repN/analysis/{variant}/{method_base}/.
-    The variant is inferred from the basename of analysis_dir (comb/bwem/ovlp).
-    Returns {seg_path: subdir_path}.
+    Pooled methods live directly in analysis_dir; replicates live in
+    {ds}/repN/analysis/{variant}/{method_base}/, where the variant is the
+    basename of analysis_dir (comb/bwem/ovlp).
     """
     if not analysis_dir or not os.path.isdir(analysis_dir):
         return {}
@@ -63,11 +53,10 @@ def _build_seg_to_analysis_map(seg_paths, analysis_dir):
         elif label in available:
             mapping[seg_path] = os.path.join(analysis_dir, label)
         elif _is_replicate(label):
-            # Replicate seg: analysis lives in {ds}/repN/analysis/{variant}/{method_base}/
             parts = seg_path.replace("\\", "/").split("/")
             ds = parts[0]
             rep = next((p for p in parts if p in ("rep1", "rep2", "replicate1", "replicate2")), None)
-            method_base = label.rsplit("_", 1)[0]  # strip _rep1 / _rep2
+            method_base = label.rsplit("_", 1)[0]
             if rep:
                 rep_dir = os.path.join(ds, rep, "analysis", variant, method_base)
                 if os.path.isdir(rep_dir):
@@ -75,15 +64,10 @@ def _build_seg_to_analysis_map(seg_paths, analysis_dir):
     return mapping
 
 
-# ---------------------------------------------------------------------------
-# Transition entropy
-# ---------------------------------------------------------------------------
-
 def _compute_entropy(seg_paths, bin_sizes, exclude_states=None, mappings=None):
-    """Compute transition entropy totals for each segmentation.
+    """Transition entropy totals: [{segmentation, total_entropy}, ...].
 
-    bin_sizes: list of bin sizes parallel to seg_paths (one per segmentation).
-    Returns list of {segmentation, total_entropy} dicts.
+    bin_sizes: one bin size per segmentation, parallel to seg_paths.
     """
     results = []
     exclude_label = (f" (excluding {', '.join(sorted(exclude_states))})"
@@ -105,18 +89,13 @@ def _compute_entropy(seg_paths, bin_sizes, exclude_states=None, mappings=None):
     return results
 
 
-
-
 def _get_method_style(label):
-    """Helper to get (display_name, color) for a segmentation label."""
-    binarization, _, _ = parse_method(label)
-    color = BIN_COLORS.get(binarization, "#888888")
-    display = DISPLAY_NAMES.get(label, label)
-    return display, color
+    """(display_name, color) for a segmentation label."""
+    return display_name(label), method_color(label)
 
 
 def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
-    """Save entropy summary TSV and bar chart."""
+    """Entropy summary TSV and bar chart."""
     if not results:
         return
     os.makedirs(outdir, exist_ok=True)
@@ -126,8 +105,7 @@ def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
     print(f"  saved {summary_path}")
 
     fig, ax = plt.subplots(figsize=(max(6, len(df) * 0.8), 4.2))
-    
-    # Map labels to styles
+
     styles = [_get_method_style(l) for l in df["segmentation"]]
     display_names = [s[0] for s in styles]
     colors = [s[1] for s in styles]
@@ -147,11 +125,7 @@ def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
     for i, v in enumerate(df["total_entropy"]):
         ax.text(i, v + yrange * 0.01, f"{v:.3f}", ha="center", va="bottom", fontsize=6)
     
-    fig.tight_layout()
-    fig_path = os.path.join(outdir, f"entropy_summary{suffix}.png")
-    fig.savefig(fig_path, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {fig_path}")
+    save_fig(fig, os.path.join(outdir, f"entropy_summary{suffix}.png"))
 
 
 def _save_entropy_combined_plot(results_full, results_active, outdir):
@@ -181,19 +155,11 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
     ax.legend(fontsize=8, title_fontsize=9)
     ax.grid(axis="y", alpha=0.3)
     
-    fig.tight_layout()
-    fig_path = os.path.join(outdir, "entropy_summary_combined.png")
-    fig.savefig(fig_path, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {fig_path}")
+    save_fig(fig, os.path.join(outdir, "entropy_summary_combined.png"))
 
-
-# ---------------------------------------------------------------------------
-# Cohen's Kappa
-# ---------------------------------------------------------------------------
 
 def segmentation_to_bins(segs, bin_size):
-    """Convert a segmentation to a dict: {chrom: {bin_index: state}}."""
+    """Convert a segmentation to {chrom: {bin_index: state}}."""
     bins = defaultdict(dict)
     for row in segs:
         chrom, s, e, state = row[:4]
@@ -203,7 +169,6 @@ def segmentation_to_bins(segs, bin_size):
 
 
 def _filter_bins(bins, exclude_states):
-    """Return bins with entries whose state is in exclude_states removed."""
     return {chrom: {b: s for b, s in bmap.items() if s not in exclude_states}
             for chrom, bmap in bins.items()}
 
@@ -220,9 +185,8 @@ def _aligned_label_arrays(bins1, bins2):
     return np.array(l1), np.array(l2)
 
 
-
 def compute_kappa(bins1, bins2):
-    """Compute Cohen's Kappa. Returns (kappa, po, pe, n_bins, confusion_df)."""
+    """Cohen's Kappa; returns (kappa, po, pe, n_bins, confusion_df)."""
     labels1, labels2 = _aligned_label_arrays(bins1, bins2)
     n = len(labels1)
     if n == 0:
@@ -283,11 +247,6 @@ def compute_per_state_kappa(bins1, bins2):
     return out
 
 
-# ---------------------------------------------------------------------------
-# Emission similarity
-# ---------------------------------------------------------------------------
-
-
 def _load_emissions_npz(path):
     """Load a .npz emissions file → (states, matrix) or None."""
     if not path or not os.path.exists(path):
@@ -297,12 +256,6 @@ def _load_emissions_npz(path):
     mat = data["mat"].astype(np.float64)
     return states, mat
 
-
-
-
-# ---------------------------------------------------------------------------
-# Pairwise comparison
-# ---------------------------------------------------------------------------
 
 def compute_composition_similarity(segs1, segs2, exclude_states=None):
     """Cosine similarity of state distributions (by total bp)."""
@@ -326,11 +279,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
                   bin_emission_path_i, bin_emission_path_j,
                   bw_emission_path_i, bw_emission_path_j,
                   bin_size_i, bin_size_j, outdir, skip_noqh=False):
-    """Compare one pair of segmentations (runs in a worker process).
-
-    Uses the finer of the two bin sizes for kappa so that 200bp segments
-    are compared at 100bp resolution when paired with a 100bp segmentation.
-    """
+    """Compare one pair of segmentations (runs in a worker process)."""
     import match
     match_pair_overlap = match.pair_overlap
     match_best_mapping = match.best_mapping
@@ -347,12 +296,6 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     segs_full_i = _load_seg_full(path_i)
     segs_full_j = _load_seg_full(path_j)
 
-    # Base-wise similarity: Kappa and Jaccard.
-    # For replicates of the same method, we use identity mapping.
-    # For all other pairs, we use the best mapping found by overlap.
-    is_rep_pair = _is_replicate(label_i) and _is_replicate(label_j) and (label_i[:-5] == label_j[:-5])
-
-    # Composition similarity: compute for all compared pairs.
     row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j)
     if not skip_noqh:
         row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES)
@@ -365,8 +308,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     bins_i = segmentation_to_bins(segs_i, bin_size)
     bins_j = segmentation_to_bins(segs_j, bin_size)
 
-    # Effective bins_j for base-wise metrics: no remapping is performed.
-    eff_bins_j = bins_j
+    eff_bins_j = bins_j   # base-wise metrics use bins_j as-is, no remapping
 
     kappa, po, pe, n_bins, _ = compute_kappa(bins_i, eff_bins_j)
     row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
@@ -375,11 +317,10 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     pair_dir = os.path.join(outdir, "pairs", f"{label_i}_vs_{label_j}")
     match_compare(segs_full_i, segs_full_j, overlap, mapping, pair_dir)
 
-    # Jaccard similarity: we use the mean per-state Jaccard.
     row["jaccard_similarity"] = compute_jaccard(bins_i, eff_bins_j)
     row["_per_state_jaccard"] = compute_per_state_jaccard(bins_i, eff_bins_j)
 
-    # Overlap fraction: fraction of genome bp with identical state labels.
+    # Overlap fraction: genome bp with identical state labels.
     all_ref_states = {x[3] for x in segs_full_i}
     total_same = sum(overlap.get((s, s), 0) for s in all_ref_states)
     
@@ -400,7 +341,6 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
         avg_bw_sim, _ = match_emission_cosine_mapping(bw_i[0], bw_i[1], bw_j[0], bw_j[1])
         row["bw_emission_similarity"] = avg_bw_sim
 
-    # No-Quies/Het variants.
     if not skip_noqh:
         bins_i_noqh = _filter_bins(bins_i, _EXCLUDE_STATES)
         bins_j_noqh = _filter_bins(eff_bins_j, _EXCLUDE_STATES)
@@ -417,22 +357,16 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     return row
 
 
-
 def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                 label_override=None, all_pairs=False, skip_noqh=False):
     """Selective segmentation comparison; saves metric matrices as TSV.
 
-    bin_sizes: list of bin sizes parallel to seg_paths.
-    For each pair the finer (smaller) of the two bin sizes is used for kappa,
-    so methods with different native resolutions are compared fairly.
+    bin_sizes: one per segmentation; each pair uses the finer of the two for
+    kappa, so methods with different native resolutions compare fairly.
 
-    Two classes of pairs are compared by default:
-      1. Each pooled segmentation vs the ENCODE reference.
-      2. Rep1 vs rep2 within the same method (replicate consistency).
-    All other cross-method or replicate-vs-reference pairs are skipped.
-
-    label_override: optional dict {seg_path: label} to override _seg_label().
-    all_pairs: if True, compare every pair regardless of _should_compare().
+    By default only pooled-vs-reference and same-method rep1-vs-rep2 pairs are
+    compared; all_pairs=True compares every pair. label_override is an optional
+    {seg_path: label} dict replacing _seg_label().
     """
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -508,7 +442,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     else:
         print(f"  No pairs to compare ({pair_desc}).", file=sys.stderr)
 
-    # Per-state metrics vs reference
     ps_rows = []
     for row in comparison_rows:
         pk = row.pop("_per_state_kappa", None) or {}
@@ -545,15 +478,13 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                 ax.set_title(f"Per-state {label} vs {ref_label}", fontsize=9)
                 ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
                 ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=7)
-                fig.tight_layout()
-                fig.savefig(os.path.join(outdir, f"per_state_{metric}_vs_{ref_label}.png"))
-                plt.close(fig)
+                save_fig(fig, os.path.join(outdir, f"per_state_{metric}_vs_{ref_label}.png"),
+                         bbox_inches=None)
 
     pd.DataFrame(comparison_rows).to_csv(
         os.path.join(outdir, "comparison_all_pairs.tsv"),
         sep="\t", index=False, float_format="%.4f")
 
-    # Save matrices (TSV only — no heatmaps)
     def _save_matrix(mat, name):
         df = pd.DataFrame(mat, index=labels, columns=labels)
         df.to_csv(os.path.join(outdir, f"{name}_matrix.tsv"),
@@ -573,7 +504,7 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
         _save_matrix(overlap_noqh_mat, "overlap_noqh")
         _save_matrix(jaccard_noqh_mat, "jaccard_noqh")
 
-    # Per-seg comparison rows in analysis dirs
+    # Per-seg comparison rows, written into each analysis dir.
     for i, p in enumerate(seg_paths):
         seg_dir = seg_outdirs.get(p)
         if not seg_dir:
@@ -590,15 +521,9 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                 sep="\t", float_format="%.4f")
 
 
-# ---------------------------------------------------------------------------
-# Segment length statistics
-# ---------------------------------------------------------------------------
-
 def compute_segment_stats(segs, exclude_states=None):
-    """Compute segment length statistics. Returns a dict.
-
-    When *exclude_states* is given, segments whose state is in it (e.g. the
-    Quiescent/Heterochromatin background) are dropped first (NOQH mode).
+    """Segment length statistics; *exclude_states* drops the Quies/Het
+    background first (NOQH mode).
     """
     if exclude_states:
         segs = [row for row in segs if row[3] not in exclude_states]
@@ -616,10 +541,8 @@ def compute_segment_stats(segs, exclude_states=None):
 
 
 def _plot_segment_stats(df, outdir, suffix=""):
-    """Bar charts for each segment stats metric.
-
-    *suffix* (e.g. "_noqh") is appended to output filenames and titles so the
-    all-states and NOQH variants coexist.
+    """Bar charts for each segment stats metric; *suffix* (e.g. "_noqh") is
+    appended to filenames and titles so both variants coexist.
     """
     title_extra = " (excl. Quies/Het)" if suffix else ""
     x = np.arange(len(df))
@@ -646,28 +569,19 @@ def _plot_segment_stats(df, outdir, suffix=""):
             fmt = f"{v:.0f}" if v == int(v) else f"{v:.1f}"
             ax.text(i, v + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.01,
                     fmt, ha="center", va="bottom", fontsize=6)
-        fig.tight_layout()
-        path = os.path.join(outdir, f"{col}{suffix}.png")
-        fig.savefig(path)
-        plt.close(fig)
-        print(f"  saved {path}")
+        save_fig(fig, os.path.join(outdir, f"{col}{suffix}.png"), bbox_inches=None)
 
 
 def run_segment_stats(seg_paths, outdir, analysis_dir=None, skip_noqh=False):
-    """Compute and save segment length statistics for each segmentation.
-
-    Two variants are produced, mirroring the entropy summaries: Full
-    (``segment_stats.tsv``) and NOQH (``segment_stats_noqh.tsv``, excluding the
-    Quies/Het background). Each yields its own per-metric plots (e.g.
-    ``max_length.png`` and ``max_length_noqh.png``).
+    """Segment length statistics per segmentation, in a full and a NOQH variant
+    (segment_stats.tsv / segment_stats_noqh.tsv), each with its own plots.
     """
     os.makedirs(outdir, exist_ok=True)
     seg_outdirs = _build_seg_to_analysis_map(seg_paths, analysis_dir)
     col_order = ["segmentation", "n_states", "n_segments",
                  "min_length", "max_length", "mean_length", "median_length"]
 
-    # suffix -> list of per-seg stats dicts
-    results = {"": [], "_noqh": []}
+    results = {"": [], "_noqh": []}   # suffix -> per-seg stats dicts
 
     for seg_path in seg_paths:
         segs = load_bed(seg_path)
@@ -710,16 +624,12 @@ def run_segment_stats(seg_paths, outdir, analysis_dir=None, skip_noqh=False):
         _plot_segment_stats(df, outdir, suffix=suffix)
 
 
-# ---------------------------------------------------------------------------
-# direct-call entry point
-# ---------------------------------------------------------------------------
-
 def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
                 labels=None, all_pairs=False, skip_noqh=False):
     """Cross-segmentation comparison: entropy, kappa, Jaccard, segment stats.
 
-    Direct-call entry point (the former CLI); called from analysis.ipynb.
     *bins* may be a single int (broadcast to all segs) or a list, one per seg.
+    Called from analysis.ipynb.
     """
     if isinstance(bins, int):
         bins = [bins]
@@ -727,7 +637,6 @@ def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
                            analysis_dir=analysis_dir, threads=threads,
                            labels=labels, all_pairs=all_pairs)
 
-    # Broadcast a single bin size to all segmentations if needed.
     bin_sizes = (args.bins * len(args.seg) if len(args.bins) == 1
                  else args.bins)
     if len(bin_sizes) != len(args.seg):
@@ -745,7 +654,7 @@ def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
     _save_entropy_summary(results_full, comparison_dir)
 
     if not skip_noqh:
-        # Identify the reference (if any) to use for matched-to-reference NOQH entropy.
+        # The reference, if any, is what NOQH entropy maps states onto.
         ref_idx = next((i for i, p in enumerate(args.seg)
                         if _seg_label(p).startswith("ENCFF")), None)
         mappings = None

@@ -1,35 +1,8 @@
 #!/usr/bin/env python3
 """Shared naming, plotting and caching helpers for the omni-chromhmm pipeline.
 
-Method keys follow the structured naming convention used throughout the pipeline
-(analyze.smk analysis dirs, compare.py labels, compare_methods.py registry):
-
-  {state_model}_{binarization}[_{rep}]
-  state_model   : chromhmm | kmeans
-  binarization  : default | omni | homer
-  rep           : rep1 | rep2  (optional)
-  special       : ref  (ENCODE reference segmentation)
-
-Public API
-----------
-METHOD_ORDER     : canonical ordered list of all known method keys
-METHOD_IDX       : {method: rank} for sorting
-DISPLAY_NAMES    : human-readable plot labels
-BIN_COLORS       : {binarization: hex color}
-METHOD_INFO      : {method: (binarization, state_model, rep)} — pre-built
-parse_method(name)            → (binarization, state_model, rep)
-display_name(method)          → str
-seg_label(path)               → method key derived from a BED file path
-is_replicate(label)           → bool
-should_compare(label_i, label_j) → bool
-scatter_points(ax, x, values) → overlay individual points on a matplotlib bar
-strip_points(ax, ...)         → overlay individual points on a sns.barplot
-bar_label_y(ax, *values)      → y for a value label, kept inside the axes
-cached_pickle(path, compute)  → compute() once, then reuse the pickle
-cached_csv(path, compute)     → same for a DataFrame, cached as CSV
-file_stamp(path)              → (mtime, size), the identity of an input file
-stamp_current(path, sig)      → have the inputs changed since the last run?
-save_stamp(path, sig)         → record the inputs a completed step ran on
+Method keys are {state_model}_{binarization}[_{rep}], plus "ref" for the
+ENCODE reference segmentation.
 """
 
 import json
@@ -38,13 +11,9 @@ import pickle
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import seaborn as sns
 
-# ---------------------------------------------------------------------------
-# Canonical method registry
-# ---------------------------------------------------------------------------
-
-# Ordered list of all known method keys.
 METHOD_ORDER = [
     "ref",
     "chromhmm_default",
@@ -65,10 +34,8 @@ METHOD_ORDER = [
     "kmeans_omni_rep2",
 ]
 
-# {method: rank} — for deterministic sorting.
 METHOD_IDX = {m: i for i, m in enumerate(METHOD_ORDER)}
 
-# Human-readable display labels (used on plot axes).
 DISPLAY_NAMES = {
     "ref":                   "ENCODE Ref",
     "chromhmm_default":      "Default ChromHMM",
@@ -89,7 +56,6 @@ DISPLAY_NAMES = {
     "kmeans_macs2_rep2":     "MACS2 KMeans (rep2)",
 }
 
-# Colors keyed by binarization type.
 BIN_COLORS = {
     "default":   "#4878CF",
     "omnipeak":  "#E8833A",
@@ -99,19 +65,8 @@ BIN_COLORS = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Method parsing
-# ---------------------------------------------------------------------------
-
 def parse_method(name):
-    """Parse a structured method key into (binarization, state_model, rep).
-
-    Method key format: {state_model}_{binarization}[_{rep}]
-      state_model  : chromhmm | kmeans
-      binarization : default | omni → omnipeak | homer
-      rep          : rep1 | rep2 | replicate1 | replicate2 | None
-    Special case: "ref" → ("reference", "chromhmm", None)
-    """
+    """Parse a method key into (binarization, state_model, rep)."""
     if name == "ref":
         return "reference", "chromhmm", None
     parts = name.split("_")
@@ -142,30 +97,24 @@ def parse_method(name):
     return binarization, state_model, rep
 
 
-# Pre-built info for all known methods: method → (binarization, state_model, rep).
 METHOD_INFO = {m: parse_method(m) for m in METHOD_ORDER}
 
 
 def display_name(method):
-    """Return the human-readable display label for a method key."""
     return DISPLAY_NAMES.get(method, method)
 
 
-# ---------------------------------------------------------------------------
-# BED path → method key
-# ---------------------------------------------------------------------------
+def bin_color(binarization):
+    """Plot color for a binarization type; the neutral grey when unknown."""
+    return BIN_COLORS.get(binarization, BIN_COLORS["reference"])
+
+
+def method_color(method):
+    return bin_color(parse_method(method)[0])
+
 
 def seg_label(path):
-    """Derive structured method key from a segmentation BED file path.
-
-    Maps known path patterns to analysis-dir-compatible labels:
-      chromhmm_default[_rep]  — default ChromHMM binarization
-      chromhmm_omni[_rep]     — OmniPeak ChromHMM
-      chromhmm_homer[_rep]    — Homer ChromHMM
-      kmeans_omni[_rep]       — OmniPeak KMeans
-      kmeans_homer[_rep]      — Homer KMeans
-      ENCFF...                — reference (kept as-is)
-    """
+    """Derive a method key from a segmentation BED file path."""
     parts = path.replace("\\", "/").split("/")
     basename = os.path.basename(path)
 
@@ -193,22 +142,12 @@ def seg_label(path):
     return model
 
 
-# ---------------------------------------------------------------------------
-# Pair filtering helpers
-# ---------------------------------------------------------------------------
-
 def is_replicate(label):
-    """True if the label belongs to a replicate segmentation (_rep1 or _rep2)."""
     return label.endswith("_rep1") or label.endswith("_rep2")
 
 
 def should_compare(label_i, label_j):
-    """True if this pair of segmentations should be compared.
-
-    Two classes of valid comparisons:
-      1. Pooled segmentation vs ENCODE reference (replicates excluded from ref comparison).
-      2. Rep1 vs rep2 of the *same* method.
-    """
+    """True for pooled-vs-reference pairs and rep1-vs-rep2 of the same method."""
     ref_i = label_i.startswith("ENCFF")
     ref_j = label_j.startswith("ENCFF")
     if ref_i or ref_j:
@@ -216,15 +155,10 @@ def should_compare(label_i, label_j):
         return not is_replicate(other)
     if not (is_replicate(label_i) and is_replicate(label_j)):
         return False
-    return label_i[:-5] == label_j[:-5]  # strip "_rep1" / "_rep2" (5 chars)
+    return label_i[:-5] == label_j[:-5]
 
 
-# ---------------------------------------------------------------------------
-# Individual data points on top of bars with error bars
-# ---------------------------------------------------------------------------
-
-# Every bar chart that shows an error bar also shows the underlying observations,
-# so the spread behind the mean stays visible.
+# Every bar chart with an error bar also shows the underlying observations.
 POINT_STYLE = dict(color="#333333", alpha=0.75, linewidth=0.3, edgecolor="white",
                    zorder=5)
 POINT_SIZE = 12   # matplotlib scatter marker area
@@ -244,11 +178,9 @@ def _point_style(size, small, kwargs):
 
 
 def scatter_points(ax, xpos, values, jitter=0.08, size=POINT_SIZE, **kwargs):
-    """Scatter individual observations on top of a matplotlib bar centred at *xpos*.
+    """Scatter observations on top of a matplotlib bar centred at *xpos*.
 
-    Jitter comes from an RNG seeded by *xpos*, so each bar gets its own pattern
-    and re-running reproduces the same figure. Style keys (color, alpha, ...)
-    may be overridden per call.
+    Jitter is seeded by *xpos*, so re-running reproduces the same figure.
     """
     vals = np.asarray(np.ravel(values), dtype=float)
     vals = vals[~np.isnan(vals)]
@@ -260,23 +192,17 @@ def scatter_points(ax, xpos, values, jitter=0.08, size=POINT_SIZE, **kwargs):
 
 
 def bar_label_y(ax, *values):
-    """Y position for a value label: clear of *values* but inside the axes.
-
-    Keeps the number readable on crowded bars, where the label would otherwise
-    end up on top of the point cloud or off the figure.
-    """
+    """Y position for a value label: clear of *values* but inside the axes."""
     lo, hi = ax.get_ylim()
     top = max([v for v in values if v is not None and not pd.isna(v)], default=lo)
     return min(top + 0.01 * (hi - lo), hi - 0.05 * (hi - lo))
 
 
 def strip_points(ax, jitter=0.15, size=STRIP_SIZE, dodge=True, **kwargs):
-    """Overlay individual observations matching a sns.barplot on *ax*.
+    """Overlay observations matching a sns.barplot on *ax*.
 
     Pass the same data/x/y/hue/order/hue_order as the barplot; use dodge=False
-    when the barplot itself is not dodged (hue == x). Style keys (color, alpha,
-    ...) may be overridden per call — crowded bars (hundreds of observations)
-    stay readable with a smaller size and lower alpha.
+    when the barplot itself is not dodged (hue == x).
     """
     style = _point_style(size, 2.5, kwargs)
     hue = kwargs.get("hue")
@@ -293,23 +219,35 @@ def strip_points(ax, jitter=0.15, size=STRIP_SIZE, dodge=True, **kwargs):
                   **style, **kwargs)
 
 
-# ---------------------------------------------------------------------------
-# Caching of expensive analysis steps
-# ---------------------------------------------------------------------------
+def save_fig(fig, path, tight=True, note=None, **kwargs):
+    """Write *fig* to *path*, then close it and report the file.
 
-# Analysis notebooks are re-run cell by cell, so every step that takes minutes
-# caches its result under the working directory. Two flavours: a step that
-# returns a value caches the value itself (cached_pickle / cached_csv), a step
-# that fills a directory records the identity of its inputs instead and reruns
-# once one of them changes (file_stamp / stamp_current / save_stamp).
+    *tight* runs tight_layout() first — pass False for a figure that manages
+    its own layout. Extra keywords go to fig.savefig().
+    """
+    if tight:
+        fig.tight_layout()
+    kwargs.setdefault("bbox_inches", "tight")
+    _save(path, lambda p: fig.savefig(p, **kwargs))
+    plt.close(fig)
+    print(f"  saved {path}{' ' + note if note else ''}")
+
+
+def load_matrix(path):
+    """Read a seg × seg matrix TSV into a DataFrame; None when it is missing."""
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path, sep="\t", index_col=0)
+    df.index = df.index.astype(str).str.strip()
+    df.columns = df.columns.astype(str).str.strip()
+    return df
+
 
 def cached_pickle(path, compute, label=None, valid=None):
     """Result of compute(), cached as a pickle in *path*.
 
-    The cache is reused when it exists and *valid* - an optional predicate on
-    the loaded value, e.g. a size check against the current inputs - accepts it;
-    otherwise compute() runs and its result is written back. *label* names the
-    data in the progress messages ("peak statistics").
+    The cache is reused when it exists and *valid* — an optional predicate on
+    the loaded value — accepts it; otherwise compute() runs and is written back.
     """
     what = label or os.path.basename(path)
     if os.path.exists(path):
@@ -330,8 +268,8 @@ def cached_pickle(path, compute, label=None, valid=None):
 def cached_csv(path, compute, label=None, index=False, valid=None, **read_kwargs):
     """DataFrame returned by compute(), cached as CSV in *path*.
 
-    Same contract as cached_pickle(); CSV keeps the table readable outside the
-    notebook, at the cost of dtypes (*read_kwargs* go to pd.read_csv).
+    Same contract as cached_pickle(); *read_kwargs* go to pd.read_csv, and its
+    *sep* is written back too, so a tab-separated cache reads as it was written.
     """
     what = label or os.path.basename(path)
     if os.path.exists(path):
@@ -342,16 +280,16 @@ def cached_csv(path, compute, label=None, index=False, valid=None, **read_kwargs
         print(f"Cached {what} in {path} no longer matches the inputs, recomputing...")
     print(f"Computing {what}...")
     df = compute()
-    _save(path, lambda p: df.to_csv(p, index=index))
+    sep = read_kwargs.get("sep") or ","
+    _save(path, lambda p: df.to_csv(p, index=index, sep=sep))
     print(f"Saved {what} to {path}")
     return df
 
 
 def file_stamp(path):
-    """(mtime, size) identifying the content of *path*, None when it is missing.
+    """(mtime, size) identifying *path*, None when missing.
 
-    A list, not a tuple, so that a signature built from it survives a JSON round
-    trip unchanged and can be compared to a saved one.
+    A list, not a tuple, so a signature built from it survives a JSON round trip.
     """
     try:
         st = os.stat(path)
@@ -363,10 +301,8 @@ def file_stamp(path):
 def stamp_current(stamp_path, signature, outputs=()):
     """True when *stamp_path* records exactly *signature* and *outputs* exist.
 
-    For steps whose result is a set of files: the caller builds *signature* from
-    the file_stamp() of every input, and the step is skipped while the stamp
-    written by the previous run still matches. Any missing output invalidates
-    the stamp, so deleting a result is enough to force a rerun.
+    For steps whose result is a set of files; any missing output invalidates the
+    stamp, so deleting a result forces a rerun.
     """
     if any(not os.path.exists(o) for o in outputs):
         return False
@@ -378,7 +314,6 @@ def stamp_current(stamp_path, signature, outputs=()):
 
 
 def save_stamp(stamp_path, signature):
-    """Record *signature* as the inputs the step that just completed ran on."""
     _save(stamp_path, lambda p: _dump_json(p, signature))
 
 

@@ -1,25 +1,12 @@
 #!/usr/bin/env python3
-"""
-Peak-file analysis: number of peaks, mean/median length, and replicate Jaccard.
+"""Peak-file analysis: number of peaks, mean/median length, replicate Jaccard.
 
-Inputs:
-  --ds          dataset root directory (e.g. imr90/)
-  --marks       space-separated histone mark names
-  --omni-bin    OmniPeak binarization bin size (default: 100)
-  --outdir      output directory (e.g. imr90/peaks)
-
-Peak files expected:
-  OmniPeak   : {ds}/[rep{1,2}/]omni/{mark}_{omni_bin}.peak  (cols 1-3)
-  HOMER       : {ds}/[rep{1,2}/]homer/{mark}.bed              (cols 1-3)
-  ChromHMM    : {ds}/[rep{1,2}/]chromhmm_default/{cell}_{chrom}_binary.txt
-                  → consecutive 1-bins (200 bp each) per mark are merged
-
-Outputs (all under --outdir):
-  peak_stats.tsv          tab-sep table of all metrics
-  n_peaks.png             grouped bar chart: number of peaks per mark
-  mean_length.png         grouped bar chart: mean peak length per mark
-  median_length.png       grouped bar chart: median peak length per mark
-  jaccard_rep1_vs_rep2.png grouped bar chart: Jaccard between replicates per mark
+Peak files expected under {ds}/[rep{1,2}/]:
+  OmniPeak : omni/{mark}_{omni_bin}.peak
+  HOMER    : homer/{mark}.bed
+  MACS2    : macs2/{mark}.bed
+  ChromHMM : chromhmm_default/{cell}_{chrom}_binary.txt — consecutive 1-bins
+             per mark are merged into peaks
 """
 
 import glob
@@ -36,12 +23,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from utils import BIN_COLORS
+from utils import BIN_COLORS, save_fig
 
-
-# ---------------------------------------------------------------------------
-# Loaders
-# ---------------------------------------------------------------------------
 
 def load_bed_regions(path):
     """Return list of (chrom, start, end) from a BED/peak file (cols 0-2)."""
@@ -65,28 +48,22 @@ def load_bed_regions(path):
 
 
 def load_chromhmm_binary_peaks(binary_dir, cell, bin_size=200):
-    """
-    Convert ChromHMM binary text files to per-mark peak regions by merging
-    consecutive 1-bins.
-
-    Returns dict: mark -> list of (chrom, start, end)
+    """Convert ChromHMM binary text files to {mark: [(chrom, start, end), ...]}
+    by merging consecutive 1-bins.
     """
     mark_regions = defaultdict(list)
     pattern = os.path.join(binary_dir, f"{cell}_chr*_binary.txt")
     files = sorted(glob.glob(pattern))
     if not files:
-        # try without cell prefix
+        # Fall back to files without the cell prefix.
         pattern = os.path.join(binary_dir, "*_binary.txt")
         files = sorted(glob.glob(pattern))
 
     for path in files:
         with open(path) as fh:
-            # line 1: cell  chrom
-            header = fh.readline().rstrip("\n").split("\t")
+            header = fh.readline().rstrip("\n").split("\t")   # cell, chrom
             chrom = header[1] if len(header) > 1 else "chrUnk"
-            # line 2: mark names
             marks = fh.readline().rstrip("\n").split("\t")
-            # remaining lines: binary rows
             bin_idx = 0
             for line in fh:
                 vals = line.rstrip("\n").split("\t")
@@ -99,7 +76,6 @@ def load_chromhmm_binary_peaks(binary_dir, cell, bin_size=200):
                         )
                 bin_idx += 1
 
-    # merge consecutive / overlapping bins per mark
     result = {}
     for mark, raw in mark_regions.items():
         result[mark] = _merge_regions(raw)
@@ -107,7 +83,6 @@ def load_chromhmm_binary_peaks(binary_dir, cell, bin_size=200):
 
 
 def _merge_regions(regions):
-    """Merge overlapping/adjacent (chrom, start, end) regions."""
     if not regions:
         return []
     by_chrom = defaultdict(list)
@@ -127,12 +102,7 @@ def _merge_regions(regions):
     return merged
 
 
-# ---------------------------------------------------------------------------
-# Stats helpers
-# ---------------------------------------------------------------------------
-
 def peak_stats(regions):
-    """Return dict with n_peaks, mean_length, median_length."""
     if not regions:
         return {"n_peaks": 0, "mean_length": 0.0, "median_length": 0.0}
     lengths = [e - s for _, s, e in regions]
@@ -143,9 +113,8 @@ def peak_stats(regions):
     }
 
 
-
 def jaccard(a, b):
-    """Compute Jaccard similarity (intersection_bp / union_bp) between two region lists."""
+    """Jaccard similarity (intersection_bp / union_bp) of two region lists."""
     def to_dict(regions):
         d = defaultdict(list)
         for chrom, s, e in regions:
@@ -180,10 +149,6 @@ def jaccard(a, b):
     return inter / union if union > 0 else 0.0
 
 
-# ---------------------------------------------------------------------------
-# Plotting
-# ---------------------------------------------------------------------------
-
 PALETTE = {
     "OmniPeak": BIN_COLORS["omnipeak"],
     "HOMER":    BIN_COLORS["homer"],
@@ -209,49 +174,14 @@ def _bar_plot(df, value_col, ylabel, title, outpath):
     ax.set_title(title, fontsize=11, fontweight="bold")
     ax.grid(axis="y", alpha=0.3)
     ax.legend(title="Method", fontsize=8, title_fontsize=9)
-    
-    fig.tight_layout()
-    fig.savefig(outpath, bbox_inches="tight")
-    plt.close(fig)
 
+    save_fig(fig, outpath)
 
-def _joint_bar_plot(df, metrics, labels, titles, outpath):
-    marks = sorted(df["mark"].unique())
-    methods = [m for m in METHOD_ORDER if m in df["method"].unique()]
-    
-    n = len(metrics)
-    fig, axes = plt.subplots(n, 1, figsize=(max(6, len(marks) * 0.8), 4 * n), sharex=True)
-    if n == 1: axes = [axes]
-    
-    for i, (metric, label, title) in enumerate(zip(metrics, labels, titles)):
-        sns.barplot(data=df, x="mark", y=metric, hue="method",
-                    order=marks, hue_order=methods, palette=PALETTE,
-                    ax=axes[i], edgecolor="lightgrey", linewidth=1)
-        axes[i].set_ylabel(label, fontsize=9)
-        axes[i].set_title(title, fontsize=11, fontweight="bold")
-        axes[i].grid(axis="y", alpha=0.3)
-        if i == 0:
-            axes[i].legend(title="Method", fontsize=8, title_fontsize=9,
-                          bbox_to_anchor=(1.01, 1), loc="upper left")
-        else:
-            if axes[i].get_legend():
-                axes[i].get_legend().remove()
-
-    plt.xticks(range(len(marks)), marks, rotation=30, ha="right", fontsize=9)
-    fig.tight_layout()
-    fig.savefig(outpath, bbox_inches="tight")
-    plt.close(fig)
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
     """Per-mark peak statistics and replicate Jaccard for all callers.
 
-    Direct-call entry point (the former CLI). Writes peak_stats.tsv,
-    and bar plots under *outdir*; called from analysis.ipynb.
+    Writes peak_stats.tsv and bar plots under *outdir*; called from analysis.ipynb.
     """
     args = SimpleNamespace(ds=ds, cell=cell, marks=marks, outdir=outdir,
                            omni_bin=omni_bin, chromhmm_bin=chromhmm_bin)
@@ -261,10 +191,7 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
     marks = args.marks
     has_replicates = os.path.isdir(os.path.join(args.ds, "rep1")) or os.path.isdir(os.path.join(args.ds, "replicate1"))
 
-    # -----------------------------------------------------------------------
-    # Collect regions per method / mark / replicate
-    # -----------------------------------------------------------------------
-    # Structure: regions[method][mark][folder_key] = list of (chrom, s, e)
+    # regions[method][mark][folder_key] = [(chrom, s, e), ...]
     regions = {m: {mk: {} for mk in marks} for m in ["OmniPeak", "HOMER", "MACS2", "Default"]}
 
     folders = {"pooled": args.ds}
@@ -318,9 +245,7 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
             else:
                 print(f"  missing: {path}", file=sys.stderr)
 
-        # ChromHMM default — parse binary files, falling back to the per-mark
-        # result BEDs (chromhmm_default_result/{mark}.bed or {cell}_chromhmm/{mark}.bed)
-        # when the binary files are absent.
+        # ChromHMM default — binary files, or the per-mark result BEDs when absent.
         binary_dir = os.path.join(folder_path, "chromhmm_default")
         result_dir = os.path.join(folder_path, "chromhmm_default_result")
         cell_chromhmm_dir = os.path.join(folder_path, f"{args.cell}_chromhmm")
@@ -345,15 +270,11 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
                 print(f"  missing chromhmm default peaks for {mark} in {folder_path}",
                       file=sys.stderr)
 
-    # -----------------------------------------------------------------------
-    # Build stats table
-    # -----------------------------------------------------------------------
     rows = []
     for method in ["OmniPeak", "HOMER", "MACS2", "Default"]:
         for mark in marks:
             row = {"method": method, "mark": mark}
 
-            # per-replicate stats
             rep_stats = {}
             for rep in ["rep1", "rep2"]:
                 rep_r = regions[method][mark].get(rep, [])
@@ -362,7 +283,7 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
                 row[f"n_peaks_{rep}"] = rs["n_peaks"]
                 row[f"mean_length_{rep}"] = rs["mean_length"]
 
-            # pooled stats (fallback to mean of replicates if missing)
+            # Pooled stats fall back to the mean of the replicates.
             pooled = regions[method][mark].get("pooled", [])
             s = peak_stats(pooled)
             if s["n_peaks"] == 0 and has_replicates:
@@ -381,7 +302,6 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
                 row["mean_length"] = s["mean_length"]
                 row["median_length"] = s["median_length"]
 
-            # Jaccard between replicates
             if has_replicates:
                 r1 = regions[method][mark].get("rep1", [])
                 r2 = regions[method][mark].get("rep2", [])
@@ -393,9 +313,6 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
     df.to_csv(stats_path, sep="\t", index=False, float_format="%.4f")
     print(f"Saved {stats_path}", file=sys.stderr)
 
-    # -----------------------------------------------------------------------
-    # Plots (pooled stats)
-    # -----------------------------------------------------------------------
     _bar_plot(df, "n_peaks", "Number of peaks", "Peak count per mark (pooled)",
               os.path.join(args.outdir, "n_peaks.png"))
     _bar_plot(df, "mean_length", "Mean peak length (bp)", "Mean peak length per mark (pooled)",

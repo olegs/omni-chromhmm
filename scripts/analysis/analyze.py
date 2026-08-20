@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 # Per-segmentation analysis: report, segment lengths, emissions, enrichment.
-#
 # Also provides shared IO and plotting helpers imported by other scripts.
-#
-# Importable module (no CLI). Drive it from analysis.ipynb:
-#   from analyze import run_analyze
-#   run_analyze(seg="SEG.bed", bin_size=200, outdir="OUT",
-#               inputs=["chromhmm/*.txt"], annotations=["COORDS/*.bed.gz"],
-#               rnaseq="rnaseq.tsv", gtf="annotation.gtf.gz", emissions_only=False)
 
 import csv
 import glob
@@ -27,8 +20,9 @@ matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+sys.path.insert(0, os.path.dirname(__file__))
+from utils import save_fig
 
-# --- IO helpers ----------------------------------------------------------
 
 def expand_globs(paths):
     out = []
@@ -71,27 +65,22 @@ def load_bed(path):
         on_bad_lines="skip",
         low_memory=False
     )
-    # Drop rows where chrom, start, or end are NaN
     subset = [c for c in [0, 1, 2] if c in df.columns]
     if subset:
         df = df.dropna(subset=subset)
-    # Take first 4 columns at most
     df = df.iloc[:, :4]
-    # Ensure we have all 4 columns for return
     for col in range(4):
         if col not in df.columns:
             df[col] = "." if col == 3 else 0
-    # Ensure correct types
     df[0] = df[0].astype(str)
     df[1] = pd.to_numeric(df[1], errors="coerce").fillna(0).astype(int)
     df[2] = pd.to_numeric(df[2], errors="coerce").fillna(0).astype(int)
     df[3] = df[3].fillna(".").astype(str)
-    # Convert to a list of tuples
     return df[[0, 1, 2, 3]].to_records(index=False).tolist()
 
 
 def _load_seg_full(path):
-    """Load a BED file (plain or gzipped) as a list of (chrom, start, end, name, color) 5-tuples."""
+    """Load a BED file as (chrom, start, end, name, color) 5-tuples."""
     df = pd.read_csv(
         path,
         sep="\t",
@@ -102,11 +91,10 @@ def _load_seg_full(path):
         on_bad_lines="skip",
         low_memory=False
     )
-    # Drop rows where chrom, start, or end are NaN
     subset = [c for c in [0, 1, 2] if c in df.columns]
     if subset:
         df = df.dropna(subset=subset)
-    # Ensure we have enough columns. ChromHMM dense bed has at least 9.
+    # ChromHMM dense bed has at least 9 columns.
     for col in [0, 1, 2, 3, 8]:
         if col not in df.columns:
             if col == 0: df[col] = "chrUnk"
@@ -122,11 +110,7 @@ def _load_seg_full(path):
 
 
 def load_bed_df(path, sample=None):
-    """Load a (possibly gzipped) ChromHMM BED file into a DataFrame.
-
-    Returns DataFrame with columns: chrom, start, end, state, length, rgb.
-    Optionally adds a 'sample' column.
-    """
+    """Load a ChromHMM BED file into a chrom/start/end/state/length/rgb DataFrame."""
     df = pd.read_csv(
         path,
         sep="\t",
@@ -137,7 +121,6 @@ def load_bed_df(path, sample=None):
         on_bad_lines="skip",
         low_memory=False
     )
-    # Drop rows where chrom, start, end or state are NaN
     for col in [0, 1, 2, 3]:
         if col not in df.columns:
             df[col] = "." if col in (0, 3) else 0
@@ -187,8 +170,6 @@ def load_binary(path):
     return chrom, marks, np.array([], dtype=np.int8)
 
 
-# --- DataFrame helpers ---------------------------------------------------
-
 def rgb_str_to_hex(rgb):
     """Convert BED itemRgb '255,128,0' to matplotlib hex '#FF8000'."""
     try:
@@ -198,76 +179,13 @@ def rgb_str_to_hex(rgb):
         return "#888888"
 
 
-def state_color_map(df):
-    """Return {state: hex_color} using the first observed itemRgb per state."""
-    return (
-        df.groupby("state")["rgb"]
-        .first()
-        .apply(rgb_str_to_hex)
-        .to_dict()
-    )
-
-
 def _natural_sort_key(s):
     """Sort key for natural ordering: 'E1' < 'E2' < 'E10', 'Tss' < 'Tx'."""
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s)]
 
 
-def sorted_states(df):
-    """Sort states in natural order from a DataFrame."""
-    return sorted(df["state"].unique(), key=_natural_sort_key)
-
-
-# --- multi-sample plots (shared) ----------------------------------------
-
-
-def plot_state_heatmap(df, out_path, title=None, short_names=False):
-    """Heatmap of median segment length (log10) per sample x state."""
-    pivot = (df.groupby(["sample", "state"])["length"]
-               .median()
-               .unstack("state"))
-    cols = sorted_states(df)
-    cols = [c for c in cols if c in pivot.columns]
-    pivot = pivot[cols]
-
-    if short_names:
-        pivot.index = ["/".join(s.split("/")[-2:]) if "/" in s else s for s in pivot.index]
-
-    fig, ax = plt.subplots(figsize=(max(5, len(cols) * 0.35),
-                                    max(3, len(pivot) * 0.3)))
-    sns.heatmap(np.log10(pivot + 1), ax=ax, cmap="YlOrRd",
-                linewidths=0.3, annot=True, fmt=".1f",
-                annot_kws={"fontsize": 5},
-                cbar_kws={"label": "log10(median length + 1)"})
-    if title is None:
-        title = "Median segment length [log10 bp]"
-    ax.set_title(title, fontsize=9)
-    ax.set_xlabel("Chromatin state")
-    ax.set_ylabel("Sample")
-    fig.tight_layout()
-    fig.savefig(out_path)
-    plt.close(fig)
-    print(f"  saved {out_path}")
-
-
-def save_stats(df, out_path, extra_groupby=None):
-    """Save per-sample x per-state summary statistics."""
-    group_cols = list(extra_groupby or []) + ["sample", "state"]
-    stats = (df.groupby(group_cols)["length"]
-               .agg(count="count", mean="mean", median="median",
-                    std="std",
-                    p5=lambda x: np.percentile(x, 5),
-                    p95=lambda x: np.percentile(x, 95),
-                    total_bp="sum")
-               .reset_index())
-    stats.to_csv(out_path, sep="\t", index=False, float_format="%.1f")
-    print(f"  saved {out_path}")
-
-
-# --- RNA-seq expressed gene annotations ----------------------------------
-
 def load_gene_tpms(rnaseq_path):
-    """Parse ENCODE RNA-seq quantification TSV; return dict of gene ID -> TPM."""
+    """Parse ENCODE RNA-seq quantification TSV; return {gene ID: TPM}."""
     tpms = {}
     with open(rnaseq_path) as f:
         reader = csv.DictReader(f, delimiter="\t")
@@ -281,12 +199,6 @@ def load_gene_tpms(rnaseq_path):
             except (ValueError, KeyError):
                 continue
     return tpms
-
-
-def load_expressed_gene_ids(rnaseq_path, tpm_threshold=1.0):
-    """Parse ENCODE RNA-seq quantification TSV; return set of expressed gene IDs."""
-    tpms = load_gene_tpms(rnaseq_path)
-    return {gid for gid, tpm in tpms.items() if tpm >= tpm_threshold}
 
 
 def load_gene_coords(gtf_path, gene_tpms, exp_thresh=1.0, nonexp_thresh=0.1):
@@ -337,21 +249,12 @@ def load_gene_coords(gtf_path, gene_tpms, exp_thresh=1.0, nonexp_thresh=0.1):
     return exp_bodies, exp_tss, nonexp_bodies, nonexp_tss
 
 
-def load_expressed_gene_coords(gtf_path, expressed_ids):
-    """Parse GENCODE GTF for expressed gene bodies and TSS regions."""
-    # Fallback/Backward compatibility wrapper
-    tpms = {gid: 100.0 for gid in expressed_ids}
-    exp_b, exp_t, _, _ = load_gene_coords(gtf_path, tpms, exp_thresh=1.0)
-    return exp_b, exp_t
-
-
 def make_expressed_annotations(rnaseq_path, gtf_path):
     """Build expressed and non-expressed gene body/TSS BED annotations."""
     gene_tpms = load_gene_tpms(rnaseq_path)
     exp_b, exp_t, nonexp_b, nonexp_t = load_gene_coords(gtf_path, gene_tpms)
 
-    # Windowed TSS versions (+/- 2kb)
-    def window(tss_list):
+    def window(tss_list):   # TSS ± 2 kb
         return [(chrom, max(0, s - 2000), e + 2000, label) for chrom, s, e, label in tss_list]
 
     exp_t2k = window(exp_t)
@@ -369,8 +272,6 @@ def make_expressed_annotations(rnaseq_path, gtf_path):
     if nonexp_t2k: result.append(("NonExpressedTSS2kb", nonexp_t2k))
     return result
 
-
-# --- Transition entropy (per-segmentation) --------------------------------
 
 QUIESCENT_STATES = {"Quies", "Quiescent", "8_ZNF/Rpts", "9_Het", "Quies_low"}
 
@@ -409,10 +310,7 @@ def build_transition_matrix(segs, bin_size, exclude_states=None, mapping=None):
 
 
 def transition_entropy(states, counts, state_bp):
-    """Compute total and per-state transition matrix entropy.
-
-    Returns (total_entropy, per_state_entropy, transition_prob_matrix, stationary_dist).
-    """
+    """Return (total_entropy, per_state_entropy, transition_probs, stationary_dist)."""
     n = len(states)
     row_sums = counts.sum(axis=1, keepdims=True)
     row_sums[row_sums == 0] = 1
@@ -437,8 +335,8 @@ def segmentation_stats(segs, bin_size, background=()):
        "entropy":     {"full": bits, "noqh": bits},   # noqh drops *background*
        "colors":      {state: "#RRGGBB"}}
 
-    the per-segmentation summary the analysis notebooks tabulate over hundreds of
-    segmentations, where run_analyze()'s on-disk report would be too heavy.
+    Lighter than run_analyze()'s on-disk report, which the notebooks tabulate
+    over hundreds of segmentations.
     """
     lengths_by_state = defaultdict(list)
     for row in segs:
@@ -502,15 +400,11 @@ def save_transition_entropy(segs, bin_size, outdir, skip_noqh=False):
                      f"(total entropy = {total_H:.4f})")
         ax.set_xlabel("To state")
         ax.set_ylabel("From state")
-        fig.tight_layout()
-        fig.savefig(os.path.join(edir, f"transition_matrix{suffix}.png"), dpi=300)
-        plt.close(fig)
+        save_fig(fig, os.path.join(edir, f"transition_matrix{suffix}.png"),
+                 bbox_inches=None)
 
-
-# --- consistency analysis ------------------------------------------------
 
 def merge_intervals(intervals):
-    """Merge overlapping intervals."""
     if not intervals:
         return []
     intervals.sort()
@@ -525,7 +419,6 @@ def merge_intervals(intervals):
 
 
 def _compute_state_consistency_chrom(chrom_data, bin_size, window):
-    """Worker function for per-chromosome consistency computation."""
     chrom_state_depth_counts = {}
     for state, segs_by_sample in chrom_data.items():
         events = []
@@ -558,11 +451,9 @@ def _compute_state_consistency_chrom(chrom_data, bin_size, window):
 def compute_state_consistency(segs_list, bin_size=200, window=0, show_progress=False):
     """Compute depth of state coverage (cumulative <= N) across multiple segmentations.
 
-    For given window, count that bin X is covered by state Y, if there is a state Y in <= window distance to the bin.
-
-    Returns: {state -> {depth -> cumulative_count_bins}} where depth is 1..len(segs_list)
+    A bin counts as covered by state Y when some state Y lies within *window*
+    distance of it. Returns {state: {depth: cumulative bins}}, depth 1..len(segs_list).
     """
-    # 1. Pre-group data by chrom and state to optimize performance
     # data[chrom][state][sample_idx] = [(start, end), ...]
     data = defaultdict(lambda: defaultdict(lambda: [[] for _ in range(len(segs_list))]))
     for i, segs in enumerate(segs_list):
@@ -571,7 +462,6 @@ def compute_state_consistency(segs_list, bin_size=200, window=0, show_progress=F
 
     all_chroms = sorted(data.keys())
 
-    # 2. Parallelize over chromosomes
     results = []
     with ProcessPoolExecutor() as executor:
         futures = [executor.submit(_compute_state_consistency_chrom,
@@ -590,14 +480,13 @@ def compute_state_consistency(segs_list, bin_size=200, window=0, show_progress=F
         else:
             results = [f.result() for f in futures]
 
-    # 3. Merge results
     state_depth_counts = defaultdict(lambda: defaultdict(int))
     for res in results:
         for state, depth_counts in res.items():
             for d, count in depth_counts.items():
                 state_depth_counts[state][d] += count
 
-    # Compute cumulative counts: supported by <= N segmentations
+    # Cumulative counts: supported by <= N segmentations
     M = len(segs_list)
     for state in state_depth_counts:
         depths = state_depth_counts[state]
@@ -606,19 +495,18 @@ def compute_state_consistency(segs_list, bin_size=200, window=0, show_progress=F
             cumulative += depths[d]
             depths[d] = cumulative
 
-    # Convert defaultdict to regular dict for return
     return {state: dict(depths) for state, depths in state_depth_counts.items()}
 
 
 def plot_state_consistency(state_depth_counts, title, out_path, colors=None):
-    """Build a cumulative plot of percentage of state coverage supported by <= N segmentations."""
+    """Cumulative plot: % of state coverage supported by <= N segmentations."""
     if not state_depth_counts:
         return
 
     M = max(max(d.keys()) for d in state_depth_counts.values())
     states = sorted(state_depth_counts.keys(), key=_natural_sort_key)
 
-    plt.figure(figsize=(8, 5))
+    fig = plt.figure(figsize=(8, 5))
     for state in states:
         depths = state_depth_counts[state]
         total_bins = depths[M]
@@ -632,7 +520,7 @@ def plot_state_consistency(state_depth_counts, title, out_path, colors=None):
         if isinstance(color, str) and "," in color:
             color = rgb_str_to_hex(color)
 
-        # Replace white or quiescent with black for visibility
+        # White or quiescent states would be invisible
         if isinstance(color, str):
             c_upper = color.upper()
             if c_upper in ["#FFFFFF", "#FFF", "WHITE"] or "QUIES" in state.upper():
@@ -645,12 +533,8 @@ def plot_state_consistency(state_depth_counts, title, out_path, colors=None):
     plt.ylabel("% of state coverage", fontsize=9)
     plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize='x-small')
     plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(out_path, bbox_inches="tight")
-    plt.close()
+    save_fig(fig, out_path)
 
-
-# --- single-segmentation analysis ----------------------------------------
 
 def save_report(segs, outdir):
     """Save report.tsv with state-level statistics."""
@@ -690,12 +574,9 @@ def plot_segment_lengths(segs, outdir):
     ax.set_ylabel("Length (bp)", fontsize=9)
     ax.grid(axis="y", alpha=0.3)
     
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "segment_length.png"), dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    save_fig(fig, os.path.join(outdir, "segment_length.png"))
 
 
-# Preferred display order for histone marks
 MARKS_ORDER = ["H3K4me3", "H3K27ac", "H3K4me1", "H3K36me3", "H3K9me3", "H3K27me3"]
 
 
@@ -709,7 +590,7 @@ def _reorder_marks(marks, mat):
 
 
 def compute_emissions(segs, inputs, bin_size):
-    """Compute state emission matrix (states x marks). Returns (states, marks, matrix)."""
+    """State emission matrix; returns (states, marks, matrix)."""
     by_chrom, marks = {}, None
     for p in sorted(inputs):
         chrom, m, data = load_binary(p)
@@ -764,12 +645,9 @@ def plot_emissions(states, marks, mat, outdir, subdir="bin_emissions"):
     plt.xticks(rotation=90, fontsize=9)
     plt.yticks(rotation=0, fontsize=9)
     
-    fig.tight_layout()
-    fig.savefig(os.path.join(edir, "state_emissions.png"), dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    save_fig(fig, os.path.join(edir, "state_emissions.png"))
 
 
-# Preferred display order for enrichment annotations (TSV only)
 ANNOTATIONS_ORDER = [
     "Genome %", "CpGIsland", "RefSeqExon", "RefSeqGene",
     "RefSeqTES", "RefSeqTSS", "RefSeqTSS2kb",
@@ -788,7 +666,6 @@ def _reorder_annotations(labels):
 
 
 def _rename_plot_label(label):
-    """Human-readable label for enrichment.png."""
     if label.startswith(_PLOT_ANNOTATION_PREFIX):
         return "OpenChromatin ATAC"
     return label
@@ -837,7 +714,7 @@ def compute_enrichment(segs, annotation_items):
         else:
             ann_segs = bed_data
 
-        # Merge overlapping annotation segments to avoid > 100% coverage
+        # Merge overlapping annotation segments to avoid > 100% coverage.
         ann_by_chrom = defaultdict(list)
         for row in ann_segs:
             ann_by_chrom[row[0]].append([row[1], row[2]])
@@ -872,7 +749,7 @@ def save_enrichment_table(enrich_df, outdir):
     os.makedirs(edir, exist_ok=True)
     enrich_df.to_csv(os.path.join(edir, "enrichment.tsv"),
                      sep="\t", index=False, float_format="%.4f")
-    # Save Jaccard-only table for quick loading by compare_methods.py
+    # Jaccard/coverage-only tables load faster in compare_methods.py.
     if "jaccard" in enrich_df.columns:
         (enrich_df[["state", "label", "jaccard"]]
          .to_csv(os.path.join(edir, "jaccard.tsv"),
@@ -930,20 +807,14 @@ def plot_enrichment(enrich_df, segs, outdir):
     plt.xticks(rotation=90, fontsize=9)
     plt.yticks(rotation=0, fontsize=9)
     
-    fig.tight_layout()
-    fig.savefig(os.path.join(edir, "enrichment.png"), dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    save_fig(fig, os.path.join(edir, "enrichment.png"))
 
-
-# --- direct-call entry point ---------------------------------------------
 
 def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
                 rnaseq=None, gtf=None, bw_emissions=None, emissions_only=False,
                 skip_noqh=False):
-    """Per-segmentation analysis: report, emissions, enrichment.
-
-    Direct-call entry point (the former CLI). Writes report / emission /
-    enrichment tables and plots under *outdir*; called from analysis.ipynb.
+    """Per-segmentation analysis: writes report, emission and enrichment
+    tables and plots under *outdir*; called from analysis.ipynb.
     """
     os.makedirs(outdir, exist_ok=True)
     segs = load_bed(seg)
@@ -958,7 +829,7 @@ def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
         states, marks, emission_mat = compute_emissions(segs, inputs, bin_size)
         save_emissions_table(states, marks, emission_mat, outdir)
         plot_emissions(states, marks, emission_mat, outdir)
-        # Save alongside BED for fast lookup by compare.py (same format as bw_emissions.npz).
+        # Alongside the BED for fast lookup by compare.py.
         npz_path = os.path.splitext(seg)[0] + ".bin_emissions.npz"
         np.savez_compressed(npz_path,
                             states=np.array(states),
@@ -970,8 +841,7 @@ def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
         bw_states = list(data["states"])
         bw_marks  = list(data["marks"])
         bw_mat    = data["mat"]
-        # Apply the same axis ordering as compute_emissions:
-        # states → natural sort, marks → MARKS_ORDER
+        # Same axis ordering as compute_emissions.
         state_order = sorted(range(len(bw_states)),
                              key=lambda i: _natural_sort_key(bw_states[i]))
         bw_states = [bw_states[i] for i in state_order]

@@ -1,24 +1,11 @@
 #!/usr/bin/env python3
 """Cross-dataset summary bar plots with mean ± std error bars and individual points.
 
-Reads per-dataset comparison_table.tsv and per-method jaccard.tsv files,
-then produces one grouped bar chart per metric showing performance across
-all datasets (mean ± std, with one point per dataset).
+Reads the per-dataset comparison_table.tsv and per-method jaccard.tsv files and
+produces one grouped bar chart per metric across all datasets.
 
-Plots are generated:
-  summary_entropy_noqh.png        — transition matrix entropy (NOQH)
-  summary_jaccard_tx.png          — Jaccard: Tx state vs expressed gene bodies
-  summary_enrich_tx.png           — Tx fold enrichment at expressed gene bodies
-  summary_mean_tx_length.png      — mean Tx segment length
-  summary_jaccard_tss.png         — Jaccard: Tss state vs RefSeqTSS ±2 kb
-  summary_coverage_tss_atac.png   — coverage: Tss state by ATAC-seq peaks
-  summary_n_segments.png          — total number of segments
-
-Importable module (no CLI). Drive it from analysis.ipynb:
-    from summary_plots import run_summary_plots
-    run_summary_plots(datasets=[...], methods_dirs=[...], analysis_dirs=[...],
-                      outdir="out/summary_plots")
-Each *_outfile / *_outdir argument that is set selects one plot group.
+Drive it from analysis.ipynb via run_summary_plots(); each *_outfile / *_outdir
+argument that is set selects one plot group.
 """
 
 import os
@@ -37,18 +24,14 @@ import seaborn as sns
 
 sys.path.insert(0, os.path.dirname(__file__))
 from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
-                   scatter_points, strip_points)
+                   strip_points, method_color, save_fig)
 from analyze import load_bed_df
 
 METHODS_POOLED = [m for m in METHOD_ORDER
                   if not m.endswith("_rep1") and not m.endswith("_rep2")]
 
 
-# ---------------------------------------------------------------------------
-# Inter-dataset similarity: state/method constants and helpers
-# ---------------------------------------------------------------------------
-
-# Canonical chromatin state order (ENCODE 15-state naming convention)
+# Canonical ENCODE 15-state order.
 STATE_ORDER = [
     "TssA", "Tss", "TssAFlnk", "TssFlnk", "TssFlnkU", "TssFlnkD", "TxFlnk",
     "Tx", "TxWk",
@@ -61,7 +44,7 @@ STATE_ORDER = [
 ]
 STATE_IDX = {s: i for i, s in enumerate(STATE_ORDER)}
 
-# ENCODE 15-state canonical RGB colors (from BED column 9, consistent across all references)
+# Canonical state colors, from BED column 9 of the ENCODE references.
 _RGB = lambda r, g, b: (r / 255, g / 255, b / 255)
 STATE_COLORS = {
     "TssA":     _RGB(255,   0,   0),
@@ -91,7 +74,7 @@ STATE_COLORS = {
     "Quies":    _RGB(220, 220, 220),
 }
 
-# (key, display label, hex color) — key matches METHOD_ORDER keys
+# (METHOD_ORDER key, display label, hex color)
 INTER_DS_METHODS = [
     ("ref",              "ENCODE Ref",      BIN_COLORS["reference"]),
     ("chromhmm_default", "Default ChromHMM", BIN_COLORS["default"]),
@@ -108,9 +91,8 @@ METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
 def sort_states(states):
     """Sort chromatin state names in canonical ENCODE order.
 
-    Numbered names ("1_TssA", "10_TssBiv") are not in STATE_IDX and so fall to
-    the end, where they are ordered by their state number - alphabetically
-    "10_TssBiv" would come before "1_TssA".
+    Numbered names ("1_TssA", "10_TssBiv") are not in STATE_IDX and fall to the
+    end, ordered by state number rather than alphabetically.
     """
     def key(s):
         prefix = s.split("_")[0]
@@ -137,7 +119,7 @@ def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method):
 
 
 def ref_beds(markups_dir):
-    """Return sorted list of ENCODE reference BED paths from markups/15state/."""
+    """Sorted ENCODE reference BED paths from markups/15state/."""
     markups_path = Path(markups_dir) / "15state"
     files = sorted(markups_path.glob("*.bed.gz")) + sorted(markups_path.glob("*.bed"))
     if not files:
@@ -145,13 +127,8 @@ def ref_beds(markups_dir):
     return [str(f) for f in files]
 
 
-
-# ---------------------------------------------------------------------------
-# Data loading (summary bar plots)
-# ---------------------------------------------------------------------------
-
 def _load_comparison_table(methods_dir):
-    """Return pooled-only rows from {methods_dir}/comparison_table.tsv, or None."""
+    """Pooled-only rows from {methods_dir}/comparison_table.tsv, or None."""
     path = os.path.join(methods_dir, "comparison_table.tsv")
     if not os.path.exists(path):
         return None
@@ -159,52 +136,12 @@ def _load_comparison_table(methods_dir):
     return df[df["replicate"].fillna("") == ""].copy()
 
 
-def _load_jaccard_value(analysis_dir, method, state, label):
-    """Return the Jaccard value for (state, label) from the per-method jaccard.tsv.
-
-    For the special 'ref' method the jaccard.tsv lives one level above the
-    variant dir (e.g. analysis/ref/ rather than analysis/ovlp/ref/).
-    """
-    if method in ("ref", "reference"):
-        path = os.path.join(os.path.dirname(analysis_dir), "ref",
-                            "enrichment", "jaccard.tsv")
-    else:
-        path = os.path.join(analysis_dir, method, "enrichment", "jaccard.tsv")
-    if not os.path.exists(path):
-        return np.nan
-    df = pd.read_csv(path, sep="\t")
-
-    # Try exact match first, then fallback to substring match for state,
-    # then fallback to label without genome suffix.
-    mask = (df["state"] == state) & (df["label"] == label)
-    if not mask.any():
-        # Try finding a state that contains 'state' (e.g. "Tss" matches "1_TssA")
-        matches = [s for s in df["state"].unique() if state.lower() in s.lower()]
-        if matches:
-            target_state = next((s for s in matches if s.lower() == state.lower()), matches[0])
-            mask = (df["state"] == target_state) & (df["label"] == label)
-
-    if not mask.any():
-        base_label = label.split(".")[0]
-        # Try matching state (flexible) and base label
-        potential_states = [s for s in df["state"].unique() if state.lower() in s.lower()]
-        if not potential_states: potential_states = [state]
-        
-        for st in potential_states:
-            mask = (df["state"] == st) & (df["label"].str.split(".").str[0] == base_label)
-            if mask.any(): break
-
-    if not mask.any():
-        return np.nan
-    return float(df.loc[mask, "jaccard"].iloc[0])
-
-
 def _collect_table_col(datasets, methods_dirs, col, include_ref=False):
-    """Collect one comparison_table column across datasets.
+    """One comparison_table column across datasets, as index=method,
+    columns=dataset.
 
-    include_ref: also keep the ENCODE reference row (method key "ref"), which is
-    otherwise excluded because "ref" is not among the de-novo METHODS_POOLED.
-    Returns DataFrame with index=method, columns=dataset.
+    include_ref keeps the ENCODE reference row, which is otherwise excluded
+    because "ref" is not among the de-novo METHODS_POOLED.
     """
     allowed = set(METHODS_POOLED) | ({"ref"} if include_ref else set())
     records = {}
@@ -222,31 +159,13 @@ def _collect_table_col(datasets, methods_dirs, col, include_ref=False):
             except (TypeError, ValueError):
                 val = np.nan
             records.setdefault(method, {})[ds] = val
-    return pd.DataFrame(records).T  # index=method, columns=dataset
-
-
-def _collect_jaccard(datasets, analysis_dirs, state, label):
-    """Collect Jaccard values for (state, label) across datasets.
-
-    Returns DataFrame with index=method, columns=dataset.
-    """
-    records = {}
-    for ds, adir in zip(datasets, analysis_dirs):
-        for method in METHODS_POOLED:
-            val = _load_jaccard_value(adir, method, state, label)
-            records.setdefault(method, {})[ds] = val
     return pd.DataFrame(records).T
 
-
-# ---------------------------------------------------------------------------
-# Plotting
-# ---------------------------------------------------------------------------
 
 def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     """Grouped bar chart: mean ± std across datasets.
 
-    order: explicit method-key order (e.g. ["ref", ...] to include the reference);
-    defaults to METHODS_POOLED.
+    order: explicit method-key order, defaults to METHODS_POOLED.
     """
     method_order = order if order is not None else METHODS_POOLED
     methods = [m for m in method_order if m in data.index]
@@ -254,38 +173,32 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
         print(f"  skipping {outpath}: no data")
         return
 
-    # Drop methods that have no data at all (e.g. ENCODE Ref in rep-consistency plots)
     methods = [m for m in methods
                if not data.loc[m].isna().all()]
 
     display   = [DISPLAY_NAMES.get(m, m) for m in methods]
-    colors    = [BIN_COLORS.get(METHOD_INFO[m][0], "#888888") for m in methods]
     means     = data.loc[methods].mean(axis=1, skipna=True).values
     stds      = data.loc[methods].std(axis=1, skipna=True).values
     counts    = data.loc[methods].count(axis=1).values
     ses       = stds / np.sqrt(counts)
 
-    # Write a "no data" placeholder rather than skipping, so Snakemake output files always exist
+    # A placeholder rather than a skip, so the output file always exists.
     if np.all(np.isnan(means)):
         fig, ax = plt.subplots(figsize=(5, 4))
         ax.text(0.5, 0.5, "No data available", ha="center", va="center",
                 transform=ax.transAxes, fontsize=12, color="grey")
         ax.set_axis_off()
         ax.set_title(title, fontsize=11, fontweight="bold")
-        os.makedirs(os.path.dirname(os.path.abspath(outpath)), exist_ok=True)
-        fig.savefig(outpath, bbox_inches="tight")
-        plt.close(fig)
-        print(f"  saved {outpath} (no data)")
+        save_fig(fig, outpath, tight=False, note="(no data)")
         return
 
     x = np.arange(len(methods))
     fig, ax = plt.subplots(figsize=(max(5, len(methods) * 0.8), 4.2))
 
-    # Prepare data for Seaborn to match analysis_epi_1000 look and feel
     df_melted = data.loc[methods].reset_index().melt(id_vars='index', var_name='dataset', value_name='value')
     df_melted = df_melted.rename(columns={'index': 'method'})
     df_melted['display_name'] = df_melted['method'].map(lambda m: DISPLAY_NAMES.get(m, m))
-    palette = {DISPLAY_NAMES.get(m, m): BIN_COLORS.get(METHOD_INFO[m][0], "#888888") for m in methods}
+    palette = {DISPLAY_NAMES.get(m, m): method_color(m) for m in methods}
     display_order = [DISPLAY_NAMES.get(m, m) for m in methods]
 
     sns.barplot(data=df_melted, x="display_name", y="value", order=display_order,
@@ -303,15 +216,14 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     ax.grid(axis="y", alpha=0.3)
 
     yrange = ax.get_ylim()[1] - ax.get_ylim()[0]
-    # Count only datasets that have at least one non-NaN value for the methods we are plotting.
-    # This ensures that for RNA-seq or ATAC-seq validation plots, we only count datasets
-    # where that information was actually available.
+    # Only datasets with data for the plotted methods count, so RNA-seq/ATAC-seq
+    # plots report the datasets where that information was available.
     n_ds = data.loc[methods].notna().any(axis=0).sum()
     for i, (m, se, c) in enumerate(zip(means, ses, counts)):
         if np.isnan(m) or c == 0:
             continue
         top = m + (se if not np.isnan(se) and c > 1 else 0)
-        # Keep the label clear of the individual points as well
+        # Keep the label clear of the individual points as well.
         vmax = data.loc[methods[i]].max(skipna=True)
         if not pd.isna(vmax):
             top = max(top, float(vmax))
@@ -329,7 +241,6 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
         "homer":     "Homer binarization",
         "macs2":     "MACS2 binarization",
     }
-    # Only show binarizations that are actually present in the plotted methods
     plotted_bins = {METHOD_INFO.get(m, (None,))[0] for m in methods}
     active_binarizations = [b for b in ["reference", "default", "omnipeak", "homer", "macs2"]
                             if b in plotted_bins]
@@ -346,16 +257,12 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
         n_note += " (n = datasets with data)"
     ax.set_xlabel(n_note, fontsize=7, color="grey")
 
-    fig.tight_layout()
-    fig.savefig(outpath, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outpath}")
+    save_fig(fig, outpath)
 
 
 def _plot_2way_scatter(x_data, y_data, title, xlabel, ylabel, outpath, order=None):
-    """Scatter plot: X vs Y (mean ± SE) across datasets.
-
-    x_data, y_data: DataFrames with index=method, columns=dataset.
+    """Scatter plot: X vs Y (mean ± SE) across datasets, from DataFrames with
+    index=method, columns=dataset.
     """
     method_order = order if order is not None else METHODS_POOLED
     methods = [m for m in method_order if m in x_data.index and m in y_data.index]
@@ -363,7 +270,6 @@ def _plot_2way_scatter(x_data, y_data, title, xlabel, ylabel, outpath, order=Non
         print(f"  skipping {outpath}: no data")
         return
 
-    # Drop methods that have no data at all
     methods = [m for m in methods
                if not x_data.loc[m].isna().all() and not y_data.loc[m].isna().all()]
 
@@ -374,10 +280,9 @@ def _plot_2way_scatter(x_data, y_data, title, xlabel, ylabel, outpath, order=Non
     fig, ax = plt.subplots(figsize=(6, 5))
 
     for m in methods:
-        color = BIN_COLORS.get(METHOD_INFO[m][0], "#888888")
+        color = method_color(m)
         label = DISPLAY_NAMES.get(m, m)
 
-        # Get matching datasets
         ds_common = x_data.columns.intersection(y_data.columns)
         x_vals = x_data.loc[m, ds_common].astype(float)
         y_vals = y_data.loc[m, ds_common].astype(float)
@@ -395,10 +300,7 @@ def _plot_2way_scatter(x_data, y_data, title, xlabel, ylabel, outpath, order=Non
         x_se = x_vals.std() / np.sqrt(count) if count > 1 else 0
         y_se = y_vals.std() / np.sqrt(count) if count > 1 else 0
 
-        # Plot individual points with small alpha
         ax.scatter(x_vals, y_vals, color=color, alpha=0.2, s=20, edgecolors='none')
-
-        # Plot mean with error bars
         ax.errorbar(x_mean, y_mean, xerr=x_se, yerr=y_se, fmt='o',
                     color=color, label=label, markersize=7, markeredgecolor='white', markeredgewidth=1)
 
@@ -406,14 +308,9 @@ def _plot_2way_scatter(x_data, y_data, title, xlabel, ylabel, outpath, order=Non
     ax.set_xlabel(xlabel, fontsize=9)
     ax.set_ylabel(ylabel, fontsize=9)
     ax.grid(alpha=0.3)
-
-    # Move legend outside
     ax.legend(fontsize=7, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
 
-    os.makedirs(os.path.dirname(os.path.abspath(outpath)), exist_ok=True)
-    fig.savefig(outpath, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outpath}")
+    save_fig(fig, outpath, tight=False)
 
 
 def _collect_per_state_metrics(datasets, analysis_dirs, match_method):
@@ -436,7 +333,6 @@ def _collect_per_state_metrics(datasets, analysis_dirs, match_method):
         if not comp_dir:
             continue
 
-        # Try unified metrics file first
         metrics_path = os.path.join(comp_dir, "per_state_metrics.tsv")
         if os.path.exists(metrics_path):
             try:
@@ -448,7 +344,7 @@ def _collect_per_state_metrics(datasets, analysis_dirs, match_method):
             except Exception as e:
                 print(f"  WARNING: could not load {metrics_path}: {e}", file=sys.stderr)
 
-        # Fallback to per-state kappa/jaccard TSVs
+        # Fall back to the per-state kappa/jaccard TSVs.
         for metric in ["kappa", "jaccard"]:
             try:
                 tsv_files = [f for f in os.listdir(comp_dir)
@@ -468,13 +364,10 @@ def _collect_per_state_metrics(datasets, analysis_dirs, match_method):
     if not all_stacked:
         return pd.DataFrame()
     
-    df = pd.concat(all_stacked, ignore_index=True)
-    # Ensure method names are consistent with display names if possible
-    return df
+    return pd.concat(all_stacked, ignore_index=True)
 
 
 def _save_metric_heatmap(df, title, outfile, metric_label):
-    """Save a per-state metric heatmap."""
     if df.empty:
         return
     df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
@@ -494,33 +387,25 @@ def _save_metric_heatmap(df, title, outfile, metric_label):
     ax.set_title(title, fontsize=9)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
     ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=7)
-    fig.tight_layout()
-    os.makedirs(os.path.dirname(os.path.abspath(outfile)), exist_ok=True)
-    fig.savefig(outfile)
-    plt.close(fig)
-    print(f"  saved {outfile}")
+    save_fig(fig, outfile, bbox_inches=None)
 
 
 def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
-    """Generate per-dataset and summary per-state metrics plots."""
+    """Per-dataset and summary per-state metrics plots."""
     df = _collect_per_state_metrics(datasets, analysis_dirs, match_method)
     if df.empty:
         return
 
-    # Use DISPLAY_NAMES to map method keys to labels for plotting
     df["Method"] = df["method"].apply(lambda m: DISPLAY_NAMES.get(m, m))
 
     for metric, label in [("kappa", "Cohen's Kappa"), ("jaccard", "Jaccard")]:
         if metric not in df.columns or df[metric].dropna().empty:
             continue
 
-        # 1. Heatmaps
-        # Summary heatmap
         summary_df = df.groupby(["state", "Method"])[metric].mean().unstack()
         summary_df = summary_df[~summary_df.index.isin(["FULL", "NOQH"])]
         summary_df = summary_df.reindex(sort_states(summary_df.index))
-        
-        # Match methods in plot using display names
+
         pooled_labels = [DISPLAY_NAMES.get(m, m) for m in METHODS_POOLED if m != "ref"]
         methods_in_plot = [m for m in pooled_labels if m in summary_df.columns]
         other_methods = [m for m in summary_df.columns if m not in pooled_labels and m != DISPLAY_NAMES.get("ref", "ref")]
@@ -529,9 +414,8 @@ def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
         out_path = os.path.join(outdir, f"per_state_{metric}_summary.png")
         _save_metric_heatmap(summary_df, f"Mean Per-state {label} vs Reference (Summary)", out_path, f"Per-state {label}")
 
-        # 2. Bar plots (Summary)
-        # We want a bar plot of average metric per state, combined across methods.
-        # Pseudo-states FULL/NOQH are omitted as they are not interpreted types.
+        # Average metric per state, combined across methods; the FULL/NOQH
+        # pseudo-states are not real state types.
         plot_df = df.dropna(subset=[metric])
         plot_df = plot_df[~plot_df["state"].isin(["FULL", "NOQH"])]
         
@@ -553,20 +437,11 @@ def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
         ax.grid(axis='y', alpha=0.3)
         ax.tick_params(axis='x', rotation=45)
         
-        fig.tight_layout()
-        bar_path = os.path.join(outdir, f"per_state_{metric}_bar.png")
-        fig.savefig(bar_path, bbox_inches="tight")
-        plt.close(fig)
-        print(f"  saved {bar_path}")
+        save_fig(fig, os.path.join(outdir, f"per_state_{metric}_bar.png"))
 
 
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# Replicate consistency summary plots
-# ---------------------------------------------------------------------------
-
+# (comparison_table column, title, ylabel, outfile stem)
 _REP_CONSISTENCY_PLOTS = [
-    # (col_from_methods_table, title, ylabel, outfile_stem)
     ("kappa_noqh_rep1_vs_rep2",
      "Rep. consistency: Kappa (NOQH, raw)",   "Kappa",
      "rep_consistency_kappa_noqh_rep1_vs_rep2"),
@@ -583,7 +458,7 @@ _REP_CONSISTENCY_PLOTS = [
 
 
 def _plot_rep_consistency(datasets, methods_dirs, outdir):
-    """Generate replicate consistency bar plots (mean ± std across datasets with replicates)."""
+    """Replicate consistency bar plots, mean ± std across datasets."""
     os.makedirs(outdir, exist_ok=True)
     for col, title, ylabel, stem in _REP_CONSISTENCY_PLOTS:
         outpath = os.path.join(outdir, f"{stem}.png")
@@ -645,10 +520,7 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
     ax.tick_params(axis="x", rotation=30, labelsize=8)
     ax.legend(title="Metric", fontsize=8, title_fontsize=9,
               bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
-    fig.tight_layout()
-    fig.savefig(outfile, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outfile}")
+    save_fig(fig, outfile)
 
 
 def _plot_rep_consistency_per_state(datasets, methods_dirs, outdir):
@@ -658,13 +530,8 @@ def _plot_rep_consistency_per_state(datasets, methods_dirs, outdir):
         print("  no per-state replicate consistency data found", file=sys.stderr)
         return
 
-    # Map method keys to display names
     df["Method"] = df["method"].apply(lambda m: _SAMPLE_TO_INFO.get(m, (m,))[0])
-
-    # Identify unique states and sort them
     states = sort_states(df["state"].unique())
-
-    # Filter methods to those in METHODS_POOLED
     method_labels = [_SAMPLE_TO_INFO.get(m, (m,))[0] for m in METHODS_POOLED
                      if _SAMPLE_TO_INFO.get(m, (m,))[0] in df["Method"].unique()]
 
@@ -672,7 +539,6 @@ def _plot_rep_consistency_per_state(datasets, methods_dirs, outdir):
         title = "Jaccard" if metric == "jaccard" else "Cohen's Kappa"
         outpath = os.path.join(outdir, f"rep_consistency_per_state_{metric}.png")
 
-        # Plot
         fig, ax = plt.subplots(figsize=(max(10, len(states) * 0.8), 5))
 
         sns.barplot(
@@ -684,7 +550,6 @@ def _plot_rep_consistency_per_state(datasets, methods_dirs, outdir):
             edgecolor="lightgrey", linewidth=0.5
         )
 
-        # Add individual points
         strip_points(ax, data=df, x="state", y=metric, hue="Method",
                      order=states, hue_order=method_labels)
 
@@ -697,10 +562,7 @@ def _plot_rep_consistency_per_state(datasets, methods_dirs, outdir):
         ax.legend(title="Method", fontsize=8, title_fontsize=9,
                   bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
 
-        fig.tight_layout()
-        fig.savefig(outpath, bbox_inches="tight")
-        plt.close(fig)
-        print(f"  saved {outpath}")
+        save_fig(fig, outpath)
 
 
 def _collect_rep_per_state_metrics(datasets, methods_dirs):
@@ -719,8 +581,7 @@ def _collect_rep_per_state_metrics(datasets, methods_dirs):
             continue
 
         def get_method(l):
-            # l can be "ds:method_rep1" or "method_rep1"
-            l = str(l).split(":")[-1]
+            l = str(l).split(":")[-1]   # "ds:method_rep1" or "method_rep1"
             if l.endswith("_rep1"): return l[:-5]
             if l.endswith("_rep2"): return l[:-5]
             return None
@@ -730,7 +591,6 @@ def _collect_rep_per_state_metrics(datasets, methods_dirs):
             m1 = get_method(s1)
             m2 = get_method(s2)
 
-            # Check if it's a replicate pair for the same method
             if m1 and m1 == m2 and ((str(s1).endswith("_rep1") and str(s2).endswith("_rep2")) or
                                     (str(s1).endswith("_rep2") and str(s2).endswith("_rep1"))):
                 rows.append({
@@ -743,7 +603,7 @@ def _collect_rep_per_state_metrics(datasets, methods_dirs):
     return pd.DataFrame(rows)
 
 
-# Map matched_stats sample key → (display label, binarization key)
+# sample key → (display label, binarization key)
 _SAMPLE_TO_INFO = {
     "chromhmm_default": ("Default ChromHMM",  "default"),
     "chromhmm_omni":    ("OmniPeak ChromHMM", "omnipeak"),
@@ -755,10 +615,7 @@ _SAMPLE_TO_INFO = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Peak statistics (from {ds}/peaks/peak_stats.tsv)
-# ---------------------------------------------------------------------------
-
+# Peak statistics, from {ds}/peaks/peak_stats.tsv.
 _PEAK_METHOD_COLORS = {
     "OmniPeak": BIN_COLORS["omnipeak"],
     "Default":  BIN_COLORS["default"],
@@ -785,7 +642,6 @@ def _load_peak_frames(datasets, workdir):
 
 def _peak_bar(data, col, ylabel, title, outpath, p_low=None, p_high=None, marks=None):
     if marks is None:
-        # Use _MARK_ORDER for known marks, then append others found in data
         present = data["mark"].unique()
         marks = [m for m in _MARK_ORDER if m in present]
         marks += sorted([m for m in present if m not in _MARK_ORDER])
@@ -793,11 +649,8 @@ def _peak_bar(data, col, ylabel, title, outpath, p_low=None, p_high=None, marks=
         marks = [m for m in marks if m in data["mark"].unique()]
     methods = [m for m in _PEAK_METHOD_ORDER if m in data["method"].unique()]
     x = np.arange(len(marks))
-    width = 0.8 / len(methods)
-    offsets = np.linspace(-(len(methods)-1)/2, (len(methods)-1)/2, len(methods)) * width
     fig, ax = plt.subplots(figsize=(max(6, len(marks) * len(methods) * 0.22 + 2), 4.5))
 
-    # Use Seaborn for peak bars to match analysis_epi_1000 style
     sns.barplot(data=data, x="mark", y=col, hue="method",
                 order=marks, hue_order=methods, palette=_PEAK_METHOD_COLORS,
                 capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
@@ -813,14 +666,11 @@ def _peak_bar(data, col, ylabel, title, outpath, p_low=None, p_high=None, marks=
     ax.legend(title="Method", fontsize=7, title_fontsize=8,
               bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
     ax.set_title(title, fontsize=11, fontweight="bold")
-    fig.tight_layout()
-    fig.savefig(outpath, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outpath}")
+    save_fig(fig, outpath)
 
 
 def log_peak_outliers(df, p_low=5, p_high=95, marks=None):
-    """Log outliers (< p_low% or > p_high%) for peak counts and mean lengths across methods and marks."""
+    """Log peak count / mean length outliers (< p_low% or > p_high%) per method and mark."""
     methods = [m for m in _PEAK_METHOD_ORDER if m in df["method"].unique()]
     if marks is None:
         present = df["mark"].unique()
@@ -862,7 +712,7 @@ def log_peak_outliers(df, p_low=5, p_high=95, marks=None):
 
 
 def _plot_peak_count(datasets, workdir, outpath, p_low=None, p_high=None, marks=None):
-    """Grouped bar chart: n_peaks per mark per method, mean ± std across datasets."""
+    """Grouped bar chart: n_peaks per mark and method, mean ± std across datasets."""
     if isinstance(datasets, pd.DataFrame):
         data = datasets
     else:
@@ -877,7 +727,7 @@ def _plot_peak_count(datasets, workdir, outpath, p_low=None, p_high=None, marks=
 
 
 def _plot_peak_length(datasets, workdir, outpath, p_low=None, p_high=None, marks=None):
-    """Grouped bar chart: mean peak length per mark per method, mean ± std across datasets."""
+    """Grouped bar chart: peak length per mark and method, mean ± std across datasets."""
     if isinstance(datasets, pd.DataFrame):
         data = datasets
     else:
@@ -891,18 +741,13 @@ def _plot_peak_length(datasets, workdir, outpath, p_low=None, p_high=None, marks
               p_low=p_low, p_high=p_high, marks=marks)
 
 
-
-
-# ---------------------------------------------------------------------------
-# State coverage (total bp per state)
-# ---------------------------------------------------------------------------
-
 def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile, match_method):
-    """Grouped bar chart: fraction of genome per chromatin state, method as hue, all datasets pooled."""
-    from analyze import load_bed_df
+    """Grouped bar chart: fraction of genome per state, method as hue, all
+    datasets pooled.
+    """
 
     def _coverage(paths):
-        """Return {state: total_bp} pooled across paths."""
+        """{state: total_bp} pooled across paths."""
         totals = {}
         for p in paths:
             p = Path(p)
@@ -914,9 +759,8 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
                 totals[state] = totals.get(state, 0) + bp
         return totals
 
-    # Collect per-dataset coverage fractions per method
     all_states = set()
-    method_fracs = {}  # label -> list of {state: fraction} (one per dataset)
+    method_fracs = {}  # label -> [{state: fraction}, ...], one per dataset
 
     for key, label, _ in INTER_DS_METHODS:
         per_ds = []
@@ -946,8 +790,7 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
     labels = [lbl for _, lbl, _ in INTER_DS_METHODS if lbl in method_fracs]
     colors = {lbl: col for _, lbl, col in INTER_DS_METHODS if lbl in method_fracs}
 
-    # Build rows for seaborn: one row per (state, dataset, method)
-    rows = []
+    rows = []   # one row per (state, dataset, method)
     for label in labels:
         for d in method_fracs[label]:
             for s in states:
@@ -957,9 +800,9 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
     n_methods = len(labels)
     figw = max(16, len(states) * n_methods * 0.22)
 
-    # Broken y-axis: upper panel shows 0.40–1.0 (Quies/Het), lower shows 0–0.20
-    BREAK_LOW  = 0.20   # top of lower panel
-    BREAK_HIGH = 0.40   # bottom of upper panel
+    # Broken y-axis: the upper panel holds Quies/Het, the lower one the rest.
+    BREAK_LOW  = 0.20
+    BREAK_HIGH = 0.40
 
     fig, (ax_top, ax_bot) = plt.subplots(
         2, 1, sharex=True,
@@ -983,15 +826,14 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
     ax_top.set_ylim(BREAK_HIGH, 1.02)
     ax_bot.set_ylim(0, BREAK_LOW)
 
-    # Hide the inner spines to create the visual break
+    # Hiding the inner spines creates the visual break.
     ax_top.spines["bottom"].set_visible(False)
     ax_bot.spines["top"].set_visible(False)
     ax_top.tick_params(axis="x", bottom=False)
 
-    # Draw diagonal break marks on both panels
+    # Diagonal break marks at the left and right edges of both panels.
     d = 0.012
     kwargs = dict(transform=fig.transFigure, color="k", clip_on=False, linewidth=0.8)
-    # Positions in figure coordinates: left and right edges of the plot area
     for ax, sign in [(ax_top, -1), (ax_bot, 1)]:
         x0, x1 = ax.get_position().x0, ax.get_position().x1
         y  = ax.get_position().y0 if sign == 1 else ax.get_position().y1
@@ -1018,17 +860,11 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
     )
     ax_top.set_ylabel("")
     ax_bot.set_ylabel("Fraction of genome", fontsize=9)
-    fig.savefig(outfile, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outfile}")
+    save_fig(fig, outfile, tight=False)
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def _stacked_composition_chart(coverages, labels, title, outfile, label_fontsize=7):
-    """Shared helper: stacked 100% bar chart from {label: {state: fraction}} dict."""
+    """Stacked 100% bar chart from a {label: {state: fraction}} dict."""
     all_states = set()
     for fracs in coverages.values():
         all_states.update(fracs.keys())
@@ -1042,7 +878,7 @@ def _stacked_composition_chart(coverages, labels, title, outfile, label_fontsize
     x = np.arange(len(labels))
     bottom = np.zeros(len(labels))
 
-    # Pre-calculate normalized coverages to ensure they sum to 1.0 after discarding
+    # Renormalize so the fractions still sum to 1.0 after discarding "Unknown".
     norm_coverages = {}
     for lbl in labels:
         fracs = coverages[lbl]
@@ -1058,7 +894,7 @@ def _stacked_composition_chart(coverages, labels, title, outfile, label_fontsize
                edgecolor='none', width=0.8)
         bottom += vals
 
-    # Draw a single 1px border around the whole stacked bar
+    # A single border around the whole stacked bar.
     ax.bar(x, bottom, color='none', edgecolor='lightgrey', linewidth=1,
            width=0.8, label='_nolegend_')
 
@@ -1070,17 +906,13 @@ def _stacked_composition_chart(coverages, labels, title, outfile, label_fontsize
     ax.legend(title="State", fontsize=7, title_fontsize=8,
               bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0, ncol=1)
     ax.set_title(title, fontsize=10, fontweight="bold")
-    fig.tight_layout()
-    fig.savefig(outfile, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outfile}")
+    save_fig(fig, outfile)
 
 
 def _plot_reference_composition(markups_dir, outfile):
     """Stacked bar chart: state fraction per ENCODE reference segmentation."""
-    from analyze import load_bed_df
     beds = ref_beds(markups_dir)
-    # Sort beds by cell type label (part after the ENCFF..._ prefix)
+    # Sort by cell type label, the part after the ENCFF..._ prefix.
     beds = sorted(beds, key=lambda p: "_".join(Path(p).name.replace(".bed.gz", "").replace(".bed", "").split("_")[1:]))
     if not beds:
         print(f"  skipping {outfile}: no reference beds", file=sys.stderr)
@@ -1106,7 +938,6 @@ def _plot_reference_composition(markups_dir, outfile):
 
 def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, outfile, match_method):
     """Stacked bar chart: mean state fraction per method, averaged across datasets."""
-    from analyze import load_bed_df
 
     def _fracs_from_path(path):
         p = Path(path)
@@ -1149,7 +980,6 @@ def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, out
 def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
                                          method_key, method_label, outfile, match_method):
     """Stacked bar chart: state fraction per dataset for a single method."""
-    from analyze import load_bed_df
 
     def _fracs_from_path(path):
         p = Path(path)
@@ -1184,11 +1014,9 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
                                          group_a=None, group_b=None):
     """Bar plot: pairwise similarity distributions per de-novo method and metric.
 
-    For each method the upper triangle of the kappa/Jaccard matrix is extracted
-    (one value per dataset pair) and drawn as a bar, grouped by metric.
-
-    If group_a and group_b are provided (sets of dataset name prefixes), only pairs
-    where one dataset is in group_a and the other is in group_b are included.
+    Each bar is the upper triangle of a method's kappa/Jaccard matrix, one value
+    per dataset pair. group_a / group_b, when given, keep only pairs with one
+    dataset from each group.
     """
     suffix = "_noqh" if noqh else ""
     metric_configs = [
@@ -1199,7 +1027,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     ]
 
     def _ds_name(label):
-        """Extract dataset name prefix from a matrix index label like 'imr90:method'."""
+        """Dataset prefix of a matrix index label like 'imr90:method'."""
         return label.split(":")[0]
 
     rows = []
@@ -1262,10 +1090,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     ax.tick_params(axis="x", rotation=30, labelsize=8)
     ax.legend(title="Metric", fontsize=8, title_fontsize=9,
               bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
-    fig.tight_layout()
-    fig.savefig(outfile, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outfile}")
+    save_fig(fig, outfile)
 
 
 def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
@@ -1304,17 +1129,12 @@ def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
         f"({int((-1 + (1 + 8 * n_refs_pairs) ** 0.5) / 2 + 1)} ENCODE references, {n_refs_pairs} pairs each metric)"
     )
     ax.set_title(title, fontsize=10, fontweight="bold")
-    fig.tight_layout()
-    fig.savefig(outfile, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outfile}")
+    save_fig(fig, outfile)
 
 
 def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
-    """Bar chart: number of segments of each dataset's own ENCODE reference.
-
-    One grey bar per dataset (the "ref" row of its comparison_table). Used to
-    show the per-dataset ENCODE references split by assay (ChIP-seq vs Mint-ChIP).
+    """Bar chart: number of segments of each dataset's own ENCODE reference,
+    one grey bar per dataset (the "ref" row of its comparison_table).
     """
     vals, labs = [], []
     for ds, mdir, lab in zip(datasets, methods_dirs, labels):
@@ -1343,17 +1163,12 @@ def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
     yr = ax.get_ylim()[1] - ax.get_ylim()[0]
     for i, v in enumerate(vals):
         ax.text(i, v + yr * 0.01, f"{v:.0f}", ha="center", va="bottom", fontsize=7)
-    fig.tight_layout()
-    os.makedirs(os.path.dirname(os.path.abspath(outfile)), exist_ok=True)
-    fig.savefig(outfile, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  saved {outfile}")
+    save_fig(fig, outfile)
 
 
 def _plot_per_dataset_all_methods_composition(datasets, cells, workdir, nstates,
                                               methods, outdir, match_method):
     """Stacked bar chart: state fraction per method for each dataset."""
-    from analyze import load_bed_df
 
     def _fracs_from_path(path):
         p = Path(path)
@@ -1415,9 +1230,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       method_sim_dist_filtered_noqh_outfile=None):
     """Cross-dataset summary bar plots and similarity distributions.
 
-    Direct-call entry point (the former CLI). Each *_outfile / *_outdir argument
-    that is set selects one plot group to produce, mirroring the old out
-    Snakemake rules. Called from analysis.ipynb.
+    Each *_outfile / *_outdir argument that is set selects one plot group.
     """
     args = SimpleNamespace(
         datasets=datasets or [], methods_dirs=methods_dirs or [],
@@ -1449,15 +1262,14 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         method_sim_dist_filtered_noqh_outfile=method_sim_dist_filtered_noqh_outfile)
 
     if args.methods:
-        # Update global method lists/palettes to the requested subset.
+        # Narrow the global method lists/palettes to the requested subset.
         global INTER_DS_METHODS, METHOD_PALETTE, METHODS_POOLED
         methods_map = {m[0] if isinstance(m, (list, tuple)) else m: m
                        for m in INTER_DS_METHODS}
         new_methods = []
-        # Always keep the ENCODE reference on state-level plots (coverage,
-        # composition) — their titles read "ENCODE reference vs de-novo
-        # methods", and the bar/table plots key the reference off "ref" instead,
-        # so a stray "reference" entry here is harmless to them.
+        # The state-level plots (coverage, composition) always show the ENCODE
+        # reference; the bar/table plots key it off "ref" instead, so a stray
+        # entry here is harmless to them.
         if "ref" not in args.methods and "ref" in methods_map:
             new_methods.append(methods_map["ref"])
         for k in args.methods:
@@ -1473,7 +1285,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
         METHODS_POOLED = [m[0] for m in INTER_DS_METHODS]
 
-    # --- summary bar plots -----------------------------------------------
     if args.outdir:
         if not (len(args.datasets) == len(args.methods_dirs) == len(args.analysis_dirs)):
             raise ValueError("--datasets, --methods-dirs and --analysis-dirs must have equal lengths")
@@ -1492,7 +1303,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       os.path.join(args.outdir, "summary_entropy_noqh.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        # --- RNA-seq validation (expressed genes) ---------------------------
+        # RNA-seq validation (expressed genes).
         data = _collect_table_col(ds, mdirs, "jaccard_Tx_ExpressedGeneBodies", include_ref=True)
         _plot_summary(data, "Jaccard: Tx state vs expressed gene bodies", "Jaccard",
                       os.path.join(args.outdir, "summary_jaccard_tx.png"),
@@ -1604,7 +1415,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       os.path.join(args.outdir, "summary_enrich_quies_nonexp.png"),
                       partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        # --- ATAC-seq validation --------------------------------------------
+        # ATAC-seq validation.
         data = _collect_table_col(ds, mdirs, "jaccard_Active_ATAC", include_ref=True)
         _plot_summary(data, "Jaccard: Active states vs ATAC-seq", "Jaccard",
                       os.path.join(args.outdir, "summary_jaccard_active_atac.png"),
@@ -1649,7 +1460,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       os.path.join(args.outdir, "summary_enrich_quies_atac.png"),
                       partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        # --- Tx segment lengths --------------------------------------------
+        # Tx segment lengths.
         data = _collect_table_col(ds, mdirs, "median_Tx_length", include_ref=True)
         _plot_summary(data, "Median Tx (transcription) segment length", "bp",
                       os.path.join(args.outdir, "summary_median_tx_length.png"),
@@ -1660,13 +1471,12 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       os.path.join(args.outdir, "summary_mean_tx_length.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        # Total number of segments, including the ENCODE reference.
         data = _collect_table_col(ds, mdirs, "n_segments", include_ref=True) / 1000.0
         _plot_summary(data, "Total number of segments", "Segments (×10³)",
                       os.path.join(args.outdir, "summary_n_segments.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        # Similarity vs ENCODE reference (3 variants)
+        # Similarity vs ENCODE reference.
         _plot_summary(_collect_table_col(ds, mdirs, "kappa_vs_ref", include_ref=True),
                       "Agreement vs ENCODE reference (Kappa)", "Cohen's Kappa",
                       os.path.join(args.outdir, "summary_kappa_vs_ref.png"),
@@ -1690,21 +1500,19 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_state_coverage(args.datasets, args.cells, args.workdir, args.markups_dir,
                              args.nstates, args.state_coverage_outfile, args.match_method)
 
-    # --- peak count bar chart ----------------------------------------------
     if args.peak_count_outfile:
         if not args.workdir:
             raise ValueError("--workdir is required for --peak-count-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.peak_count_outfile)), exist_ok=True)
         _plot_peak_count(args.datasets, args.workdir, args.peak_count_outfile, marks=args.marks)
 
-    # --- mean peak length bar chart ----------------------------------------
     if args.peak_length_outfile:
         if not args.workdir:
             raise ValueError("--workdir is required for --peak-length-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.peak_length_outfile)), exist_ok=True)
         _plot_peak_length(args.datasets, args.workdir, args.peak_length_outfile, marks=args.marks)
 
-    # --- peak count and length bar chart (joined, DEPRECATED) ---------------
+    # Deprecated: split into the two plots above.
     if args.peak_stats_outfile:
         print("  WARNING: --peak-stats-outfile is deprecated, splitting into n_peaks and peak_length", 
               file=sys.stderr)
@@ -1716,14 +1524,12 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_peak_count(args.datasets, args.workdir, os.path.join(outdir, "n_peaks.png"), marks=args.marks)
         _plot_peak_length(args.datasets, args.workdir, os.path.join(outdir, "peak_length.png"), marks=args.marks)
 
-    # --- inter-reference state composition ----------------------------------
     if args.ref_composition_outfile:
         if not args.markups_dir:
             raise ValueError("--markups-dir is required for --ref-composition-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_composition_outfile)), exist_ok=True)
         _plot_reference_composition(args.markups_dir, args.ref_composition_outfile)
 
-    # --- inter-reference similarity distribution ----------------------------
     if args.ref_dist_outfile:
         if not (args.ref_comp_matrix and args.ref_kappa_matrix and args.ref_jaccard_matrix):
             raise ValueError("--ref-comp-matrix, --ref-kappa-matrix and --ref-jaccard-matrix are required "
@@ -1744,7 +1550,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                                      args.ref_jaccard_noqh_matrix, args.ref_dist_noqh_outfile,
                                      title_suffix=" — NOQH (excl. Quies/Het)")
 
-    # --- inter-method similarity distribution --------------------------------
     if args.method_sim_dist_outfile or args.method_sim_dist_noqh_outfile:
         if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
             raise ValueError("--method-sim-dist-indir and --method-sim-dist-methods are required "
@@ -1762,7 +1567,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                 args.method_sim_dist_noqh_outfile, noqh=True,
             )
 
-    # --- cross-group filtered similarity distribution -------------------------
     if args.method_sim_dist_filtered_outfile or args.method_sim_dist_filtered_noqh_outfile:
         if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
             raise ValueError("--method-sim-dist-indir and --method-sim-dist-methods are required "
@@ -1789,7 +1593,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                     group_a=ga, group_b=gb,
                 )
 
-    # --- replicate consistency plots ----------------------------------------
     if args.rep_consistency_outdir:
         if len(args.datasets) != len(args.methods_dirs):
             raise ValueError("--datasets and --methods-dirs must have equal lengths")
@@ -1806,7 +1609,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         )
         _plot_rep_consistency_per_state(args.datasets, args.methods_dirs, args.rep_consistency_outdir)
 
-    # --- method state composition -------------------------------------------
     if args.method_composition_outfile:
         if not args.markups_dir:
             raise ValueError("--markups-dir is required for --method-composition-outfile")
@@ -1814,7 +1616,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_method_composition(args.datasets, args.cells, args.workdir, args.markups_dir,
                                  args.nstates, args.method_composition_outfile, args.match_method)
 
-    # --- per-dataset method state composition (4 supplementary plots) -------
     if args.method_ds_composition_outdir:
         if not (args.workdir and args.cells and args.datasets):
             raise ValueError("--workdir, --datasets and --cells are required for "
@@ -1839,7 +1640,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                 method_key, method_label, outfile, args.match_method,
             )
 
-    # --- per-method state composition for each dataset -----------------------
     if args.all_methods_composition_outdir:
         if not (args.workdir and args.cells and args.datasets):
             raise ValueError("--workdir, --datasets and --cells are required for "

@@ -1,33 +1,22 @@
 #!/usr/bin/env python3
 """Aggregate inter-dataset kappa matrices into a cross-dataset comparison table.
 
-For each method, reads the per-method kappa matrices produced by compare.py
-(with --all-pairs --labels ds:method) and extracts the upper-triangle pairs.
-Outputs one row per (method, ds_a, ds_b) with raw kappa and NOQH variants.
-
-Usage:
-    compare_inter_dataset.py --methods M1 M2 ... --indir DIR --outfile OUT.tsv
+Reads the per-method matrices produced by compare.py with all_pairs and
+ds:method labels, and emits one row per (method, ds_a, ds_b).
 """
 
 import os
+import sys
 from types import SimpleNamespace
 
 import pandas as pd
 
-
-def _read_matrix(path):
-    """Read a symmetric kappa matrix TSV; return as DataFrame or None."""
-    if not os.path.exists(path):
-        return None
-    df = pd.read_csv(path, sep="\t", index_col=0)
-    # Normalize index/column names: strip whitespace
-    df.index   = df.index.str.strip()
-    df.columns = df.columns.str.strip()
-    return df
+sys.path.insert(0, os.path.dirname(__file__))
+from utils import load_matrix
 
 
 def _upper_pairs(df):
-    """Yield (label_i, label_j, value) for the upper triangle of a square matrix."""
+    """Yield (label_i, label_j, value) for the upper triangle."""
     labels = list(df.index)
     for i, li in enumerate(labels):
         for j, lj in enumerate(labels):
@@ -36,10 +25,7 @@ def _upper_pairs(df):
 
 
 def run_compare_out(methods, indir, outfile):
-    """Aggregate inter-dataset kappa matrices into a comparison table.
-
-    Direct-call entry point (the former CLI); called from analysis.ipynb.
-    """
+    """Aggregate inter-dataset kappa matrices into a comparison table."""
     args = SimpleNamespace(methods=methods, indir=indir, outfile=outfile)
 
     rows = []
@@ -47,10 +33,10 @@ def run_compare_out(methods, indir, outfile):
         method_dir = os.path.join(args.indir, method)
 
         mats = {
-            "kappa":        _read_matrix(os.path.join(method_dir, "kappa_matrix.tsv")),
-            "kappa_noqh":   _read_matrix(os.path.join(method_dir, "kappa_noqh_matrix.tsv")),
-            "jaccard":      _read_matrix(os.path.join(method_dir, "jaccard_similarity_matrix.tsv")),
-            "jaccard_noqh": _read_matrix(os.path.join(method_dir, "jaccard_noqh_matrix.tsv")),
+            "kappa":        load_matrix(os.path.join(method_dir, "kappa_matrix.tsv")),
+            "kappa_noqh":   load_matrix(os.path.join(method_dir, "kappa_noqh_matrix.tsv")),
+            "jaccard":      load_matrix(os.path.join(method_dir, "jaccard_similarity_matrix.tsv")),
+            "jaccard_noqh": load_matrix(os.path.join(method_dir, "jaccard_noqh_matrix.tsv")),
         }
 
         base_mat = mats["kappa"]
@@ -59,7 +45,7 @@ def run_compare_out(methods, indir, outfile):
             continue
 
         for label_i, label_j, _ in _upper_pairs(base_mat):
-            # Labels are "{ds}:{method}" — extract dataset names
+            # Labels are "{ds}:{method}".
             ds_a = label_i.split(":")[0]
             ds_b = label_j.split(":")[0]
             row = {"method": method, "ds_a": ds_a, "ds_b": ds_b}
@@ -76,7 +62,6 @@ def run_compare_out(methods, indir, outfile):
         return
 
     df = pd.DataFrame(rows)
-    # Column order
     metric_cols = ["kappa", "kappa_noqh", "jaccard", "jaccard_noqh"]
     cols = ["method", "ds_a", "ds_b"] + [c for c in metric_cols if c in df.columns]
     df = df[cols].sort_values(["method", "ds_a", "ds_b"])
