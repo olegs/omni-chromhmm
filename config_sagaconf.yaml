@@ -1,8 +1,8 @@
-workdir: "~/data/2026_sagaconf"
+workdir: "~/data/2026_segmentations/sagaconf"
 
 tools:
   chromhmm_jar: "ChromHMM/ChromHMM.jar"
-  omnipeak_jar: "omnipeak-1.5.6815.jar"
+  omnipeak_jar: "omnipeak.jar"
   homer_dir: "homer"
   chromsizes: "ChromHMM/CHROMSIZES/hg38.txt"
   coords_dir: "ChromHMM/COORDS/hg38"

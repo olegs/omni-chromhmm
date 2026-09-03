@@ -2,7 +2,7 @@
 
 import os
 
-configfile: "config.yaml"
+configfile: "config.yaml" # TODO: change to a real config file
 
 workdir: os.path.expanduser(config.get("workdir","."))
 

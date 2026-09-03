@@ -1,4 +1,7 @@
-cd ~/data/2026_epi_1000
+DIR=~/data/2026_segmentations/epi1000
+mkdir -p $DIR
+
+cd $DIR
 
 # Prepare file names.txt - is a list with names from E001 to E120
 

@@ -1,12 +1,14 @@
 # Please ensure that snakemake part was already processed
+DIR=~/data/2026_segmentations/sagaconf
+mkdir -p $DIR 
 
-CHROMSIZES=~/data/2026_sagaconf/hg38.chrom.sizes;
+CHROMSIZES=$DIR/hg38.chrom.sizes;
 BIN=100;
 
 # 1. Joint KMeans replicates states processing
 for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
  echo "===================="; echo $ds;
- cd ~/data/2026_sagaconf/$ds;
+ cd $DIR/$ds;
 
  for PC in homer macs2 omni; do
   echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
@@ -45,7 +47,7 @@ done;
 # 2. Match individual KMeans to joint KMeans
 for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
  echo "===================="; echo $ds;
- cd ~/data/2026_sagaconf/$ds;
+ cd $DIR/$ds;
 
  for PC in homer macs2 omni; do
   for R in rep1 rep2; do
@@ -63,7 +65,7 @@ done;
 # 3. Joint ChromHMM replicates states processing
 for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
  echo "===================="; echo $ds;
- cd ~/data/2026_sagaconf/$ds;
+ cd $DIR/$ds;
 
  echo "~~~~~~~~~~~~~~~~~~~~"; echo "Joint ChromHMM";
  mkdir -p joint_chromhmm;
@@ -73,14 +75,14 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   --rep1 rep1/chromhmm_default --rep2 rep2/chromhmm_default --outdir $JOINT_BINARIZED;
  # A single model over both replicates, LearnModel segments each replicate (cell)
  # in the shared state space and writes rep{1,2}_15_segments.bed / _dense.bed.
- java -mx4000M -jar ~/data/2026_sagaconf/ChromHMM/ChromHMM.jar LearnModel -b 200 $JOINT_BINARIZED joint_chromhmm 15 hg38;
+ java -mx4000M -jar $DIR/ChromHMM/ChromHMM.jar LearnModel -b 200 $JOINT_BINARIZED joint_chromhmm 15 hg38;
  rm -rf $JOINT_BINARIZED;
 done;
 
 # 4. Match individual ChromHMM to joint ChromHMM
 for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
  echo "===================="; echo $ds;
- cd ~/data/2026_sagaconf/$ds;
+ cd $DIR/$ds;
 
  case $ds in
   mcf7) cell="MCF7" ;;

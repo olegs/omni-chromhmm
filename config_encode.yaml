@@ -1,4 +1,4 @@
-workdir: "~/data/2026_omni_chromhmm"
+workdir: "~/data/2026_segmentations/encode"
 
 tools:
   chromhmm_jar: "ChromHMM/ChromHMM.jar"
