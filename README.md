@@ -66,6 +66,13 @@ Resource limits (pass via `--resources`):
 
 Useful flags: `-p` (echo commands), `-r` (reasons), `--dag | dot -Tpng > dag.png` (DAG visualization).
 
+Joint segmentations across the replicates of a dataset — a single model over `rep1` and `rep2`,
+relabelled to the ENCODE reference with one shared mapping, so both replicates keep the
+joint state space:
+
+```bash
+bash process_encode.sh
+```
 
 ### 1000 epigenomes analysis
  

@@ -27,10 +27,9 @@ if _rules_dir not in sys.path:
     sys.path.insert(0, _rules_dir)
 
 import match
-_EXCLUDE_STATES = {"Quies", "Het"}
 from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
                    should_compare as _should_compare, display_name, \
-                   method_color, save_fig
+                   method_color, save_fig, NOQH_STATES as _EXCLUDE_STATES
 
 
 def _build_seg_to_analysis_map(seg_paths, analysis_dir):

@@ -7,6 +7,9 @@ import numpy as np
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 
+# Sample size to reduce memory usage
+SAMPLE = 100_000_000
+
 # Add current directory to path to import peaks_segmentation
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -98,7 +101,7 @@ def main():
     model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
     
     # Subsampling for training to save memory
-    subsample_size = min(X.shape[0], 10_000_000)
+    subsample_size = min(X.shape[0], SAMPLE)
     print(f"Subsampling {subsample_size} bins for training...", file=sys.stderr)
     np.random.seed(args.seed)
     indices = np.random.choice(X.shape[0], subsample_size, replace=False)

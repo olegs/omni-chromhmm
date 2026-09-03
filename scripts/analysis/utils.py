@@ -56,6 +56,10 @@ DISPLAY_NAMES = {
     "kmeans_macs2_rep2":     "MACS2 KMeans (rep2)",
 }
 
+# The Quies/Het bulk of the genome, dropped by the NOQH variant of every metric,
+# where it would otherwise dominate both kappa and Jaccard.
+NOQH_STATES = {"Quies", "Het"}
+
 BIN_COLORS = {
     "default":   "#4878CF",
     "omnipeak":  "#E8833A",
@@ -121,8 +125,13 @@ def seg_label(path):
     if basename.startswith("ENCFF"):
         return basename.replace(".bed", "")
 
+    reps = ("rep1", "rep2", "replicate1", "replicate2")
     caller = next((p for p in parts if p in ("omni", "homer", "macs2")), None)
-    rep    = next((p for p in parts if p in ("rep1", "rep2", "replicate1", "replicate2")), None)
+    rep    = next((p for p in parts if p in reps), None)
+    if rep is None:
+        # A joint model writes one segmentation per replicate into a folder shared
+        # by them, so its replicate is in the file name: rep1_15_dense.bed.
+        rep = next((r for r in reps if basename.startswith(f"{r}_")), None)
     if rep and rep.startswith("replicate"):
         rep = "rep" + rep[len("replicate"):]
 
@@ -217,6 +226,31 @@ def strip_points(ax, jitter=0.15, size=STRIP_SIZE, dodge=True, **kwargs):
         kwargs["palette"] = {lvl: color for lvl in levels}
     sns.stripplot(ax=ax, dodge=dodge, jitter=jitter, size=size, legend=False,
                   **style, **kwargs)
+
+
+JOINT_HATCH = "//"
+
+
+def _is_joint(method):
+    """True for a joint model, by key (joint_omni) or display name (Joint ...)."""
+    return str(method).lower().startswith("joint")
+
+
+def hatch_joint(ax, order, joint=_is_joint):
+    """Hatch the bars of the joint models, which share their caller's colour.
+
+    sns.barplot draws one bar container per hue level, in hue_order order, so
+    pass the same hue_order as the barplot (with x == hue, that is its order).
+    Without a hue there is a single container holding one bar per x level —
+    pass the barplot order instead.
+    """
+    groups = ax.containers
+    if len(groups) == 1 and len(groups[0]) == len(order):
+        groups = [[bar] for bar in groups[0]]
+    for group, method in zip(groups, order):
+        if joint(method):
+            for bar in group:
+                bar.set_hatch(JOINT_HATCH)
 
 
 def save_fig(fig, path, tight=True, note=None, **kwargs):
