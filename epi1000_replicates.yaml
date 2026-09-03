@@ -1,0 +1,55 @@
+# Replicate / related-dataset groups in the Roadmap Epigenomics 127-epigenome set.
+# Derived from https://egg2.wustl.edu/roadmap/data/byFileType/metadata/EID_metadata.tab
+# (127 rows; E060 and E064 are absent from the consolidated release).
+#
+epi1000replicates:
+
+  ESC:                       # 8 pluripotent lines, identical protocol
+    eids: [E001, E002, E003, E008, E014, E015, E016, E024]
+    labels: [ES-I3, ES-WA7, H1, H9, HUES48, HUES6, HUES64, ES-UCSF4]
+    varies: cell line, sex
+
+  IPSC:                      # 5 iPS lines
+    eids: [E018, E019, E020, E021, E022]
+    labels: [iPS-15b, iPS-18, iPS-20b, iPS-DF-6.9, iPS-DF-19.11]
+    varies: cell line, sex
+
+  SKIN.PEN.FRSK.FIB:         # foreskin fibroblast, donors skin01 / skin02
+    eids: [E055, E056]
+    varies: donor
+
+  SKIN.PEN.FRSK.KER:         # foreskin keratinocyte, donors skin02 / skin03
+    eids: [E057, E058]
+    varies: donor
+
+  SKIN.PEN.FRSK.MEL:         # foreskin melanocyte, donors skin01 / skin03
+    eids: [E059, E061]
+    varies: donor
+
+  GI.RECT.MUC:               # rectal mucosa, donor 29 (50Y) / donor 31 (61Y)
+    eids: [E101, E102]
+    varies: donor
+
+  BRN.FET:                   # fetal brain, 17GW male / 17GW female
+    eids: [E081, E082]
+    varies: donor, sex
+
+  MUS.SKLT:                  # skeletal muscle, 54Y male / 72Y female
+    eids: [E107, E108]
+    varies: donor, sex
+
+  BLD.MOB.CD34.PC:           # G-CSF mobilized CD34+ HSC, female / male
+    eids: [E050, E051]
+    varies: donor, sex
+
+  BLD.CD4.NPC:               # identical STD_NAME "Primary T helper naive cells
+    eids: [E038, E039]       # from peripheral blood"; different sorting panel
+    varies: donor, sorting panel
+
+  BLD.CD4.MPC:               # "T helper memory ... 2" (E037) and "... 1" (E040)
+    eids: [E037, E040]
+    varies: donor, sorting panel
+
+  BLD.CD14.MONO:             # CD14+ monocytes, Roadmap (E029) vs ENCODE (E124)
+    eids: [E029, E124]
+    varies: donor, consortium

@@ -85,6 +85,10 @@ cd ~/data/2026_segmentations/epi1000
 bash process_epi_1000.sh
 ```
 
+`epi1000_replicates.yaml` groups the epigenomes that are replicates of the same biological
+condition (differing only in donor, cell line, sex or consortium); the notebook measures
+segmentation reproducibility within those groups.
+
 ### SAGAconf dataset analysis
 
 [Robust chromatin state annotation](https://genome.cshlp.org/content/34/3/469)
