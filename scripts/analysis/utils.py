@@ -253,6 +253,18 @@ def hatch_joint(ax, order, joint=_is_joint):
                 bar.set_hatch(JOINT_HATCH)
 
 
+def hatch_all(ax):
+    """Hatch every bar of *ax*, for a plot of a single joint model.
+
+    The published 18-state and 15-state reference segmentations come from one
+    model trained over every epigenome; a plot showing only such a model has no
+    individual counterpart to pick out, so all of its bars carry the hatch.
+    """
+    for container in ax.containers:
+        for bar in container:
+            bar.set_hatch(JOINT_HATCH)
+
+
 def save_fig(fig, path, tight=True, note=None, **kwargs):
     """Write *fig* to *path*, then close it and report the file.
 
