@@ -117,6 +117,12 @@ bash process_sagaconf.sh
 1. Launch `analysis_encode.ipynb` for ENCODE analysis, cross-segmentation comparison and inter-dataset summary plots.
 2. Launch `analysis_epi1000.ipynb` for analysis of the 1000 epigenomes dataset.
 3. Launch `analysis_sagaconf.ipynb` for analysis of the SAGAconf dataset.
+4. Launch `summary.ipynb` last. It recomputes nothing: it reads the metric caches the three
+   notebooks leave in their working directories, ranks the eight methods on each comparison
+   (replicate reproducibility, cross-sample concordance, individual/joint agreement, transition
+   complexity, functional correspondence, state-space fidelity, segment-count stability) and
+   writes the summary ranking and the score profiles to `out/summary`, along with
+   the evidence table behind them.
 
 ## Questions?
 Contact Oleg Shpynov (oleg.shpynov@jetbrains.com).
