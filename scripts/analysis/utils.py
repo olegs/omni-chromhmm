@@ -14,51 +14,184 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Metrics. The three keys of a match.agreement_metrics() result, plus the two
+# comparison domains every agreement is measured in: full over all states, noqh
+# with the Quies/Het background dropped. These are the on-disk spelling — the
+# keys of agreement_by_mode() and the "_noqh" file suffix — so they are kept
+# lowercase and the *_DISPLAY forms below carry the human-readable spelling.
+JACCARD = "jaccard"
+KAPPA = "kappa"
+COSINE = "cosine"
+FULL = "full"
+NOQH = "noqh"
+
+# The state-composition cosine, as the comparison tables and the summary plots
+# name it. Same quantity as COSINE above, reached by a different code path
+# (compare.py computes it from the per-state bp vectors).
+COMPOSITION = "composition"
+
+# Metric and domain display names, for plot titles, labels and legends, and for
+# the columns of the notebook caches.
+JACCARD_DISPLAY = "Jaccard"
+KAPPA_DISPLAY = "Kappa"
+COSINE_DISPLAY = "Cosine"
+COMPOSITION_DISPLAY = "Composition"
+
+FULL_DISPLAY = "FULL"
+NOQH_DISPLAY = "NOQH"
+
+METRIC_DISPLAY = {JACCARD: JACCARD_DISPLAY, KAPPA: KAPPA_DISPLAY,
+                  COSINE: COSINE_DISPLAY, COMPOSITION: COMPOSITION_DISPLAY}
+DOMAIN_DISPLAY = {FULL: FULL_DISPLAY, NOQH: NOQH_DISPLAY}
+
+# "" for FULL, "_noqh" for NOQH: the suffix every domain-specific column, TSV
+# and matrix name carries.
+NOQH_SUFFIX = f"_{NOQH}"
+
+
+def normalize_metric(name):
+    """Normalize a metric name (jaccard, kappa, cosine) or None when unknown."""
+    name = str(name).strip().lower()
+    return name if name in (JACCARD, KAPPA, COSINE) else None
+
+
+def normalize_domain(name):
+    """Normalize a comparison domain (full, noqh) or None when unknown."""
+    name = str(name).strip().lower()
+    return name if name in (FULL, NOQH) else None
+
+
+def metric_display(name):
+    """Display spelling of a metric name, or None when unknown."""
+    return METRIC_DISPLAY.get(str(name).strip().lower())
+
+
+def domain_display(name):
+    """Display spelling of a comparison domain, or None when unknown."""
+    return DOMAIN_DISPLAY.get(str(name).strip().lower())
+
+# Methods
+CHROMHMM = "chromhmm"
+HOMER = "homer"
+MACS2 = "macs2"
+OMNI = "omni"
+
+# Method family display names
+CHROMHMM_DISPLAY = "ChromHMM"
+HOMER_DISPLAY = "HOMER"
+MACS2_DISPLAY = "MACS2"
+OMNI_DISPLAY = "OmniPeak"
+
+# Interpreted state types
+QUIESCENT = "Quiescent"
+FACULTATIVE_HET = "FacultativeHet"
+CONSTITUTIVE_HET = "ConstitutiveHet"
+
+# Canonical keys
+CHROMHMM_DEFAULT = "chromhmm_default"
+CHROMHMM_HOMER = "chromhmm_homer"
+CHROMHMM_MACS2 = "chromhmm_macs2"
+CHROMHMM_OMNI = "chromhmm_omni"
+KMEANS_HOMER = "kmeans_homer"
+KMEANS_MACS2 = "kmeans_macs2"
+KMEANS_OMNI = "kmeans_omni"
+JOINT_CHROMHMM = "joint_chromhmm"
+JOINT_KMEANS_HOMER = "joint_kmeans_homer"
+JOINT_KMEANS_MACS2 = "joint_kmeans_macs2"
+JOINT_KMEANS_OMNI = "joint_kmeans_omni"
+
+CALLER_KEYS = {
+    CHROMHMM: (CHROMHMM_DEFAULT, JOINT_CHROMHMM),
+    HOMER:    (KMEANS_HOMER,    JOINT_KMEANS_HOMER),
+    MACS2:    (KMEANS_MACS2,    JOINT_KMEANS_MACS2),
+    OMNI:     (KMEANS_OMNI,     JOINT_KMEANS_OMNI),
+}
+
+
+def method_key(caller, joint=False):
+    """Canonical key of a caller's model: its individual one, or its joint one."""
+    return CALLER_KEYS[caller][1 if joint else 0]
+
+
 METHOD_ORDER = [
     "ref",
-    "chromhmm_default",
-    "kmeans_homer",
-    "kmeans_macs2",
-    "kmeans_omni",
-    "joint_chromhmm",
-    "joint_kmeans_homer",
-    "joint_kmeans_macs2",
-    "joint_kmeans_omni",
-    "chromhmm_default_rep1",
-    "kmeans_homer_rep1",
-    "kmeans_macs2_rep1",
-    "kmeans_omni_rep1",
-    "chromhmm_default_rep2",
-    "kmeans_homer_rep2",
-    "kmeans_macs2_rep2",
-    "kmeans_omni_rep2",
+    CHROMHMM_DEFAULT,
+    KMEANS_HOMER,
+    KMEANS_MACS2,
+    KMEANS_OMNI,
+    CHROMHMM_HOMER,
+    CHROMHMM_MACS2,
+    CHROMHMM_OMNI,
+    JOINT_CHROMHMM,
+    JOINT_KMEANS_HOMER,
+    JOINT_KMEANS_MACS2,
+    JOINT_KMEANS_OMNI,
+    f"{CHROMHMM_DEFAULT}_rep1",
+    f"{KMEANS_HOMER}_rep1",
+    f"{KMEANS_MACS2}_rep1",
+    f"{KMEANS_OMNI}_rep1",
+    f"{CHROMHMM_DEFAULT}_rep2",
+    f"{KMEANS_HOMER}_rep2",
+    f"{KMEANS_MACS2}_rep2",
+    f"{KMEANS_OMNI}_rep2",
 ]
 
 METHOD_IDX = {m: i for i, m in enumerate(METHOD_ORDER)}
 
 DISPLAY_NAMES = {
     "ref":                   "ENCODE Ref",
-    "chromhmm_default":      "Default ChromHMM",
-    "kmeans_omni":           "OmniPeak KMeans",
-    "kmeans_homer":          "Homer KMeans",
-    "kmeans_macs2":          "MACS2 KMeans",
-    "joint_chromhmm":        "Joint ChromHMM",
-    "joint_kmeans_omni":     "Joint OmniPeak KMeans",
-    "joint_kmeans_homer":    "Joint Homer KMeans",
-    "joint_kmeans_macs2":    "Joint MACS2 KMeans",
-    "chromhmm_default_rep1": "Default ChromHMM (rep1)",
-    "kmeans_omni_rep1":      "OmniPeak KMeans (rep1)",
-    "kmeans_homer_rep1":     "Homer KMeans (rep1)",
-    "kmeans_macs2_rep1":     "MACS2 KMeans (rep1)",
-    "chromhmm_default_rep2": "Default ChromHMM (rep2)",
-    "kmeans_omni_rep2":      "OmniPeak KMeans (rep2)",
-    "kmeans_homer_rep2":     "Homer KMeans (rep2)",
-    "kmeans_macs2_rep2":     "MACS2 KMeans (rep2)",
+    CHROMHMM_DEFAULT:      "Default ChromHMM",
+    CHROMHMM_OMNI:         "OmniPeak ChromHMM",
+    CHROMHMM_HOMER:        "Homer ChromHMM",
+    CHROMHMM_MACS2:        "MACS2 ChromHMM",
+    KMEANS_OMNI:           "OmniPeak KMeans",
+    KMEANS_HOMER:          "Homer KMeans",
+    KMEANS_MACS2:          "MACS2 KMeans",
+    JOINT_CHROMHMM:        "Joint ChromHMM",
+    JOINT_KMEANS_OMNI:     "Joint OmniPeak KMeans",
+    JOINT_KMEANS_HOMER:    "Joint Homer KMeans",
+    JOINT_KMEANS_MACS2:    "Joint MACS2 KMeans",
+    f"{CHROMHMM_DEFAULT}_rep1": "Default ChromHMM (rep1)",
+    f"{KMEANS_OMNI}_rep1":      "OmniPeak KMeans (rep1)",
+    f"{KMEANS_HOMER}_rep1":     "Homer KMeans (rep1)",
+    f"{KMEANS_MACS2}_rep1":     "MACS2 KMeans (rep1)",
+    f"{CHROMHMM_DEFAULT}_rep2": "Default ChromHMM (rep2)",
+    f"{KMEANS_OMNI}_rep2":      "OmniPeak KMeans (rep2)",
+    f"{KMEANS_HOMER}_rep2":     "Homer KMeans (rep2)",
+    f"{KMEANS_MACS2}_rep2":     "MACS2 KMeans (rep2)",
 }
+
+def normalize_method(name):
+    """Normalize a method name to its canonical key, or None when unknown."""
+    name = str(name).strip().lower().replace(" ", "_").replace("omnipeak", "omni")
+    if name in (CHROMHMM, "default_chromhmm", CHROMHMM_DEFAULT, "ref_15", "individual"):
+        return CHROMHMM_DEFAULT
+    if name in (JOINT_CHROMHMM, "joint_ref_15", "joint"):
+        return JOINT_CHROMHMM
+    is_joint = name.startswith("joint_")
+    if is_joint:
+        name = name[len("joint_"):]
+    if name.startswith("kmeans_"):
+        name = name[len("kmeans_"):]
+    elif name.endswith("_kmeans"):
+        name = name[:-len("_kmeans")]
+    if name in (HOMER, MACS2, OMNI):
+        if name == HOMER: canonical = KMEANS_HOMER
+        elif name == MACS2: canonical = KMEANS_MACS2
+        else: canonical = KMEANS_OMNI
+        if is_joint:
+            return "joint_" + canonical
+        return canonical
+    return None
 
 # The Quies/Het bulk of the genome, dropped by the NOQH variant of every metric,
 # where it would otherwise dominate both kappa and Jaccard.
-NOQH_STATES = {"Quies", "Het"}
+NOQH_STATES = {
+    "Quies", "Quiescent", "Quies_low",
+    "Het", "9_Het", "13_Het",
+    "15_Quies", "18_Quies",
+    "8_ZNF/Rpts", "ZNF/Rpts"
+}
 
 BIN_COLORS = {
     "default":   "#4878CF",
@@ -104,8 +237,19 @@ def parse_method(name):
 METHOD_INFO = {m: parse_method(m) for m in METHOD_ORDER}
 
 
+def caller_key(method):
+    """The caller family (chromhmm, omni, homer, macs2) for a method key."""
+    binarization = parse_method(method)[0]
+    return {"default": CHROMHMM, "omnipeak": OMNI}.get(binarization, binarization)
+
+
 def display_name(method):
     return DISPLAY_NAMES.get(method, method)
+
+
+def slug(name):
+    """Filename-safe form of a display name: "Joint ChromHMM" -> joint_chromhmm."""
+    return str(name).lower().replace(" ", "_")
 
 
 def bin_color(binarization):

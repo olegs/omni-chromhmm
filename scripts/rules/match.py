@@ -15,6 +15,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+# utils lives next door, in scripts/analysis; put it on the path so the metric
+# names below are the shared constants whether this runs as a CLI or an import.
+_analysis_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "analysis"))
+if _analysis_dir not in sys.path:
+    sys.path.insert(0, _analysis_dir)
+
+import utils
+
 
 # ---------------------------------------------------------------------------
 # BED I/O
@@ -56,7 +64,11 @@ def build_index(segs):
 
 
 def pair_overlap(ref_segs, work_segs, ref_index=None):
-    """overlap[(work_name, ref_name)] = total overlapping bp."""
+    """overlap[(work_name, ref_name)] = total overlapping bp.
+
+    The work state comes first, so agreement_metrics(pair_overlap(side2, side1),
+    lengths1, lengths2) keeps its lengths on the sides they name.
+    """
     ref_by_chr, ref_starts = ref_index if ref_index is not None else build_index(ref_segs)
     overlap = defaultdict(int)
     for row in work_segs:
@@ -86,17 +98,60 @@ def state_lengths(segs):
     return out
 
 
+def per_state_agreement(overlap, lengths1, lengths2, exclude=()):
+    """One-vs-rest agreement of every state, as {state: {jaccard, kappa}}.
+
+    *overlap* is a pair_overlap() result keyed (side1_state, side2_state) and
+    *lengths1* / *lengths2* the state_lengths() of the two sides.
+
+      jaccard : intersection over union of the state's genomic extent, so a bp
+                counts against it whatever the other side calls there - a state
+                in *exclude* included, an uncovered region included
+      kappa   : Cohen's kappa of the same 2x2 table, over the shared bp
+
+    A state in *exclude*, or with no extent on either side, is left out: a state
+    neither side ever calls has no reproducibility to report, and scoring it 1.0
+    rewards a model for not emitting the state at all.
+    """
+    states = (set(lengths1) | set(lengths2)) - set(exclude)
+    # Marginals off the confusion matrix, not the lengths, so po/pe stay
+    # consistent when the two sides cover different regions.
+    total = sum(overlap.values())
+    a1, a2 = defaultdict(int), defaultdict(int)
+    for (s1, s2), bp in overlap.items():
+        a1[s1] += bp
+        a2[s2] += bp
+
+    out = {}
+    for s in sorted(states):
+        intersection = overlap.get((s, s), 0)
+        union = lengths1.get(s, 0) + lengths2.get(s, 0) - intersection
+        if union <= 0:
+            continue
+        metrics = {utils.JACCARD: intersection / union, utils.KAPPA: 0.0}
+        if total > 0:
+            p1, p2 = a1[s] / total, a2[s] / total
+            # Agreement on "s" plus agreement on "not s".
+            po = (intersection + (total - a1[s] - a2[s] + intersection)) / total
+            pe = p1 * p2 + (1 - p1) * (1 - p2)
+            metrics[utils.KAPPA] = (po - pe) / (1 - pe) if pe < 1 else 1.0
+        out[s] = metrics
+    return out
+
+
 def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
     """Agreement of two segmentations of the same genome, as a dict.
 
-    *overlap* is a pair_overlap() result and *lengths1* / *lengths2* the
-    state_lengths() of the two sides. Their states, minus *exclude*, span the bp
-    confusion matrix that all three metrics are read from:
+    *overlap* is a pair_overlap() result keyed (side1_state, side2_state) and
+    *lengths1* / *lengths2* the state_lengths() of the two sides. Their states,
+    minus *exclude*, are what the three metrics are read over:
 
-      Kappa   : Cohen's kappa - agreement on identically named states, corrected
-                for the agreement expected from the state compositions alone
-      Jaccard : per-state intersection over union, averaged over the states
-      Cosine  : cosine similarity of the two state-composition vectors
+      kappa   : Cohen's kappa over the confusion matrix restricted to those
+                states - agreement on identically named states, corrected for
+                the agreement expected from the state compositions alone
+      jaccard : mean of the per_state_agreement() Jaccards, so *exclude* picks
+                which states are averaged, not what any one of them scores
+      cosine  : cosine similarity of the two state-composition vectors
 
     All three are 0.0 when the two sides share no state or never overlap.
     *exclude* is matched exactly, so a model that numbers its states needs the
@@ -105,7 +160,11 @@ def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
     states = (set(lengths1) | set(lengths2)) - set(exclude)
     total = sum(overlap.get((s1, s2), 0) for s1 in states for s2 in states)
     if not states or total == 0:
-        return {"Jaccard": 0.0, "Kappa": 0.0, "Cosine": 0.0}
+        return {
+            utils.JACCARD: 0.0,
+            utils.KAPPA: 0.0,
+            utils.COSINE: 0.0
+        }
 
     # Marginals of the confusion matrix restricted to *states*: how much each
     # side calls a state, as measured against the other side.
@@ -116,21 +175,17 @@ def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
     pe = sum((a1[s] / total) * (a2[s] / total) for s in states)
     kappa = (po - pe) / (1 - pe) if pe < 1 else 1.0
 
-    jaccards = []
-    for s in states:
-        intersection = overlap.get((s, s), 0)
-        union = a1[s] + a2[s] - intersection
-        if union > 0:
-            jaccards.append(intersection / union)
+    per_state = per_state_agreement(overlap, lengths1, lengths2, exclude=exclude)
+    jaccards = [m[utils.JACCARD] for m in per_state.values()]
 
     ordered = sorted(states)
-    v1 = np.array([a1[s] for s in ordered])
-    v2 = np.array([a2[s] for s in ordered])
+    v1 = np.array([lengths1.get(s, 0) for s in ordered])
+    v2 = np.array([lengths2.get(s, 0) for s in ordered])
     norms = np.linalg.norm(v1) * np.linalg.norm(v2)
     return {
-        "Jaccard": float(np.mean(jaccards)) if jaccards else 0.0,
-        "Kappa": kappa,
-        "Cosine": float(np.dot(v1, v2) / norms) if norms > 0 else 0.0,
+        utils.JACCARD: float(np.mean(jaccards)) if jaccards else 0.0,
+        utils.KAPPA: kappa,
+        utils.COSINE: float(np.dot(v1, v2) / norms) if norms > 0 else 0.0,
     }
 
 
@@ -139,11 +194,12 @@ def agreement_by_mode(overlap, lengths1, lengths2, background=()):
 
     Returns {"full": ..., "noqh": ...}: "full" keeps every state, "noqh" drops
     *background* (the Quies/Het bulk of the genome, which otherwise dominates
-    both kappa and Jaccard).
+    both kappa and Jaccard). The keys are utils.FULL / utils.NOQH.
     """
     return {
-        "full": agreement_metrics(overlap, lengths1, lengths2),
-        "noqh": agreement_metrics(overlap, lengths1, lengths2, exclude=background),
+        utils.FULL: agreement_metrics(overlap, lengths1, lengths2),
+        utils.NOQH: agreement_metrics(overlap, lengths1, lengths2,
+                                      exclude=background),
     }
 
 

@@ -27,9 +27,12 @@ if _rules_dir not in sys.path:
     sys.path.insert(0, _rules_dir)
 
 import match
+import utils
 from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
                    should_compare as _should_compare, display_name, \
-                   method_color, save_fig, NOQH_STATES as _EXCLUDE_STATES
+                   method_color, save_fig, NOQH_STATES as _EXCLUDE_STATES, \
+                   JACCARD, KAPPA, NOQH_SUFFIX, \
+                   JACCARD_DISPLAY, KAPPA_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY
 
 
 def _build_seg_to_analysis_map(seg_paths, analysis_dir):
@@ -134,16 +137,16 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
     df_full = pd.DataFrame(results_full)
     df_active = pd.DataFrame(results_active) if results_active else pd.DataFrame()
 
-    df_full["Type"] = "Full"
+    df_full["Type"] = FULL_DISPLAY
     if not df_active.empty:
-        df_active["Type"] = "Excl. Quies/Het"
+        df_active["Type"] = NOQH_DISPLAY
     
-    df_combined = pd.concat([df_full, df_active])
+    df_combined = pd.concat([df_full, df_active], ignore_index=True)
     
     fig, ax = plt.subplots(figsize=(max(6, len(df_full) * 0.8), 4.2))
     
     sns.barplot(data=df_combined, x="segmentation", y="total_entropy", hue="Type",
-                ax=ax, palette={"Full": "#4878CF", "Excl. Quies/Het": "#E8833A"},
+                ax=ax, palette={FULL_DISPLAY: "#4878CF", NOQH_DISPLAY: "#E8833A"},
                 capsize=0.05, edgecolor="lightgrey", linewidth=1)
     
     display_names = [_get_method_style(l)[0] for l in df_full["segmentation"]]
@@ -344,9 +347,9 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
         bins_i_noqh = _filter_bins(bins_i, _EXCLUDE_STATES)
         bins_j_noqh = _filter_bins(eff_bins_j, _EXCLUDE_STATES)
         kappa_noqh, po_noqh, _, _, _ = compute_kappa(bins_i_noqh, bins_j_noqh)
-        row["kappa_noqh"]   = kappa_noqh
-        row["overlap_noqh"] = po_noqh
-        row["jaccard_noqh"] = compute_jaccard(bins_i_noqh, bins_j_noqh)
+        row[f"{KAPPA}{NOQH_SUFFIX}"]   = kappa_noqh
+        row[f"overlap{NOQH_SUFFIX}"] = po_noqh
+        row[f"{JACCARD}{NOQH_SUFFIX}"] = compute_jaccard(bins_i_noqh, bins_j_noqh)
 
     print(f"  {label_i} vs {label_j}: "
           f"comp_sim={row['composition_similarity']:.4f}, "
@@ -434,9 +437,9 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                 
                 if not skip_noqh:
                     comp_sim_noqh_mat[i, j] = comp_sim_noqh_mat[j, i] = row["composition_noqh_similarity"]
-                    kappa_noqh_mat[i, j]   = kappa_noqh_mat[j, i]   = row["kappa_noqh"]
-                    overlap_noqh_mat[i, j] = overlap_noqh_mat[j, i] = row["overlap_noqh"]
-                    jaccard_noqh_mat[i, j] = jaccard_noqh_mat[j, i] = row["jaccard_noqh"]
+                    kappa_noqh_mat[i, j]   = kappa_noqh_mat[j, i]   = row[f"{KAPPA}{NOQH_SUFFIX}"]
+                    overlap_noqh_mat[i, j] = overlap_noqh_mat[j, i] = row[f"overlap{NOQH_SUFFIX}"]
+                    jaccard_noqh_mat[i, j] = jaccard_noqh_mat[j, i] = row[f"{JACCARD}{NOQH_SUFFIX}"]
                 comparison_rows.append(row)
     else:
         print(f"  No pairs to compare ({pair_desc}).", file=sys.stderr)
@@ -447,14 +450,16 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
         pj = row.pop("_per_state_jaccard", None) or {}
         for state in sorted(set(pk.keys()) | set(pj.keys()), key=_natural_sort_key):
             ps_rows.append({"seg1": row["seg1"], "seg2": row["seg2"], "state": state,
-                            "kappa": pk.get(state), "jaccard": pj.get(state)})
+                            KAPPA: pk.get(state),
+                            JACCARD: pj.get(state)})
 
     if ps_rows:
         ps_df = pd.DataFrame(ps_rows)
         ps_df.to_csv(os.path.join(outdir, "per_state_metrics.tsv"),
                      sep="\t", index=False, float_format="%.4f")
         ref_label = labels[0]
-        for metric, label in [("kappa", "Cohen's Kappa"), ("jaccard", "Jaccard")]:
+        for metric, label in [(KAPPA, f"Cohen's {KAPPA_DISPLAY}"),
+                              (JACCARD, JACCARD_DISPLAY)]:
             wide_a = ps_df[ps_df["seg1"] == ref_label].pivot_table(
                 index="state", columns="seg2", values=metric, aggfunc="mean")
             wide_b = ps_df[ps_df["seg2"] == ref_label].pivot_table(
@@ -467,9 +472,10 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                 vmax = max(float(np.nanmax(np.abs(wide.values))), 0.1) if not wide.isna().all().all() else 0.1
                 fig, ax = plt.subplots(figsize=(max(6, wide.shape[1] * 0.8),
                                                 max(4, wide.shape[0] * 0.35)))
-                sns.heatmap(wide, cmap="RdYlGn" if metric == "kappa" else "YlGnBu",
-                            vmin=-vmax if metric == "kappa" else 0, vmax=vmax,
-                            center=0 if metric == "kappa" else None,
+                is_kappa = metric == KAPPA
+                sns.heatmap(wide, cmap="RdYlGn" if is_kappa else "YlGnBu",
+                            vmin=-vmax if is_kappa else 0, vmax=vmax,
+                            center=0 if is_kappa else None,
                             linewidths=0.5, annot=True, fmt=".2f",
                             annot_kws={"fontsize": 7},
                             cbar_kws={"label": f"Per-state {label}"},
@@ -491,17 +497,17 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
         print(f"  saved {outdir}/{name}_matrix.tsv")
         return df
 
-    kappa_df   = _save_matrix(kappa_mat, "kappa")
+    kappa_df   = _save_matrix(kappa_mat, KAPPA)
     _save_matrix(comp_sim_mat, "composition_similarity")
-    jaccard_df = _save_matrix(jaccard_mat, "jaccard_similarity")
+    jaccard_df = _save_matrix(jaccard_mat, f"{JACCARD}_similarity")
     _save_matrix(overlap_mat, "overlap")
     em_df = _save_matrix(em_sim_mat, "emission_similarity")
     _save_matrix(bw_sim_mat, "bw_emission_similarity")
     if not skip_noqh:
-        _save_matrix(comp_sim_noqh_mat, "composition_noqh_similarity")
-        _save_matrix(kappa_noqh_mat,   "kappa_noqh")
-        _save_matrix(overlap_noqh_mat, "overlap_noqh")
-        _save_matrix(jaccard_noqh_mat, "jaccard_noqh")
+        _save_matrix(comp_sim_noqh_mat, f"composition{NOQH_SUFFIX}_similarity")
+        _save_matrix(kappa_noqh_mat,   f"{KAPPA}{NOQH_SUFFIX}")
+        _save_matrix(overlap_noqh_mat, f"overlap{NOQH_SUFFIX}")
+        _save_matrix(jaccard_noqh_mat, f"{JACCARD}{NOQH_SUFFIX}")
 
     # Per-seg comparison rows, written into each analysis dir.
     for i, p in enumerate(seg_paths):
@@ -580,7 +586,7 @@ def run_segment_stats(seg_paths, outdir, analysis_dir=None, skip_noqh=False):
     col_order = ["segmentation", "n_states", "n_segments",
                  "min_length", "max_length", "mean_length", "median_length"]
 
-    results = {"": [], "_noqh": []}   # suffix -> per-seg stats dicts
+    results = {"": [], NOQH_SUFFIX: []}   # suffix -> per-seg stats dicts
 
     for seg_path in seg_paths:
         segs = load_bed(seg_path)
@@ -592,7 +598,7 @@ def run_segment_stats(seg_paths, outdir, analysis_dir=None, skip_noqh=False):
 
         variants = [("", None)]
         if not skip_noqh:
-            variants.append(("_noqh", _EXCLUDE_STATES))
+            variants.append((NOQH_SUFFIX, _EXCLUDE_STATES))
 
         for suffix, excl in variants:
             stats = compute_segment_stats(segs, exclude_states=excl)
@@ -613,7 +619,7 @@ def run_segment_stats(seg_paths, outdir, analysis_dir=None, skip_noqh=False):
                     os.path.join(stats_dir, f"segment_stats{suffix}.tsv"),
                     sep="\t", index=False, float_format="%.1f")
 
-    for suffix in ("", "_noqh"):
+    for suffix in ("", NOQH_SUFFIX):
         if not results[suffix]:
             continue
         df = pd.DataFrame(results[suffix])[col_order]
@@ -672,7 +678,7 @@ def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
 
         results_active = _compute_entropy(args.seg, bin_sizes, exclude_states=_EXCLUDE_STATES,
                                           mappings=mappings)
-        _save_entropy_summary(results_active, comparison_dir, suffix="_noqh",
+        _save_entropy_summary(results_active, comparison_dir, suffix=NOQH_SUFFIX,
                               title_extra=f"\n(excluding {', '.join(sorted(_EXCLUDE_STATES))})")
         _save_entropy_combined_plot(results_full, results_active, comparison_dir)
 

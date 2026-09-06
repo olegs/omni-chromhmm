@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 sys.path.insert(0, os.path.dirname(__file__))
+import utils
 from utils import save_fig
 
 
@@ -273,9 +274,6 @@ def make_expressed_annotations(rnaseq_path, gtf_path):
     return result
 
 
-QUIESCENT_STATES = {"Quies", "Quiescent", "8_ZNF/Rpts", "9_Het", "Quies_low"}
-
-
 def build_transition_matrix(segs, bin_size, exclude_states=None, mapping=None):
     """Build empirical transition count matrix at bin resolution."""
     exclude = set(exclude_states or [])
@@ -332,7 +330,8 @@ def segmentation_stats(segs, bin_size, background=()):
 
       {"n_segments": int,
        "composition": [{State, Fraction, MeanLength, MedianLength}, ...],
-       "entropy":     {"full": bits, "noqh": bits},   # noqh drops *background*
+       "entropy":     {"full": bits, "noqh": bits},   # utils.FULL / utils.NOQH;
+                                                     # noqh drops *background*
        "colors":      {state: "#RRGGBB"}}
 
     Lighter than run_analyze()'s on-disk report, which the notebooks tabulate
@@ -354,7 +353,8 @@ def segmentation_stats(segs, bin_size, background=()):
 
     entropy = {}
     segs4 = [(r[0], r[1], r[2], r[3]) for r in segs]
-    for mode, excl in (("full", set()), ("noqh", set(background))):
+    for mode, excl in ((utils.FULL, set()),
+                       (utils.NOQH, set(background))):
         states, counts, state_bp = build_transition_matrix(segs4, bin_size, exclude_states=excl)
         entropy[mode] = transition_entropy(states, counts, state_bp)[0] if states else 0
 
@@ -370,7 +370,7 @@ def save_transition_entropy(segs, bin_size, outdir, skip_noqh=False):
 
     variants = [("", None)]
     if not skip_noqh:
-        variants.append(("_noqh", QUIESCENT_STATES))
+        variants.append((utils.NOQH_SUFFIX, utils.NOQH_STATES))
 
     for suffix, excl in variants:
         states, counts, state_bp = build_transition_matrix(segs, bin_size, excl)

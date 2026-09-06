@@ -16,7 +16,9 @@ matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 
 from utils import (METHOD_IDX, BIN_COLORS, METHOD_INFO, display_name,
-                   bin_color, load_matrix, save_fig)
+                   bin_color, load_matrix, save_fig,
+                   COMPOSITION, JACCARD, KAPPA, NOQH_SUFFIX,
+                   COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY)
 
 
 def _build_analysis_to_seg_map(analysis_dirs, seg_names):
@@ -39,7 +41,7 @@ def _build_analysis_to_seg_map(analysis_dirs, seg_names):
 def load_entropy(comparison_dir):
     """{seg_name: {entropy, entropy_noqh}}."""
     result = {}
-    for suffix, col in [("", "entropy"), ("_noqh", "entropy_noqh")]:
+    for suffix, col in [("", "entropy"), (NOQH_SUFFIX, f"entropy{NOQH_SUFFIX}")]:
         path = os.path.join(comparison_dir, f"entropy_summary{suffix}.tsv")
         if not os.path.exists(path):
             continue
@@ -66,11 +68,11 @@ def load_segment_stats(comparison_dir):
         for _, row in df.iterrows()
     }
 
-    noqh_path = os.path.join(comparison_dir, "segment_stats_noqh.tsv")
+    noqh_path = os.path.join(comparison_dir, f"segment_stats{NOQH_SUFFIX}.tsv")
     if os.path.exists(noqh_path):
         for _, row in pd.read_csv(noqh_path, sep="\t").iterrows():
             if row["segmentation"] in stats:
-                stats[row["segmentation"]]["max_length_noqh"] = int(row["max_length"])
+                stats[row["segmentation"]][f"max_length{NOQH_SUFFIX}"] = int(row["max_length"])
 
     return stats
 
@@ -181,20 +183,21 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
         }
 
         if seg_name in entropy_data:
-            row["entropy"]      = entropy_data[seg_name].get("entropy", np.nan)
-            row["entropy_noqh"] = entropy_data[seg_name].get("entropy_noqh", np.nan)
+            row["entropy"] = entropy_data[seg_name].get("entropy", np.nan)
+            row[f"entropy{NOQH_SUFFIX}"] = entropy_data[seg_name].get(
+                f"entropy{NOQH_SUFFIX}", np.nan)
 
         if seg_name in seg_stats:
             row.update(seg_stats[seg_name])
 
         if seg_name and ref_seg:
             for mat, col in [
-                (kappa_mat,        "kappa_vs_ref"),
-                (kappa_noqh_mat,   "kappa_noqh_vs_ref"),
-                (jaccard_mat,      "jaccard_vs_ref"),
-                (jaccard_noqh_mat, "jaccard_noqh_vs_ref"),
-                (comp_mat,         "composition_vs_ref"),
-                (comp_noqh_mat,    "composition_noqh_vs_ref"),
+                (kappa_mat,        f"{KAPPA}_vs_ref"),
+                (kappa_noqh_mat,   f"{KAPPA}{NOQH_SUFFIX}_vs_ref"),
+                (jaccard_mat,      f"{JACCARD}_vs_ref"),
+                (jaccard_noqh_mat, f"{JACCARD}{NOQH_SUFFIX}_vs_ref"),
+                (comp_mat,         f"{COMPOSITION}_vs_ref"),
+                (comp_noqh_mat,    f"{COMPOSITION}{NOQH_SUFFIX}_vs_ref"),
             ]:
                 if mat is not None and seg_name in mat.index and ref_seg in mat.columns:
                     val = mat.loc[seg_name, ref_seg]
@@ -206,14 +209,14 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             rep1_seg = f"{seg_name}_rep1"
             rep2_seg = f"{seg_name}_rep2"
             base_rep_cols = [
-                (kappa_mat,      "kappa_rep1_vs_rep2"),
-                (jaccard_mat,    "jaccard_rep1_vs_rep2"),
-                (comp_mat,       "composition_rep1_vs_rep2"),
-                (overlap_mat,    "overlap_rep1_vs_rep2"),
-                (kappa_noqh_mat,   "kappa_noqh_rep1_vs_rep2"),
-                (jaccard_noqh_mat, "jaccard_noqh_rep1_vs_rep2"),
-                (comp_noqh_mat,    "composition_noqh_rep1_vs_rep2"),
-                (overlap_noqh_mat, "overlap_noqh_rep1_vs_rep2"),
+                (kappa_mat,        f"{KAPPA}_rep1_vs_rep2"),
+                (jaccard_mat,      f"{JACCARD}_rep1_vs_rep2"),
+                (comp_mat,         f"{COMPOSITION}_rep1_vs_rep2"),
+                (overlap_mat,      "overlap_rep1_vs_rep2"),
+                (kappa_noqh_mat,   f"{KAPPA}{NOQH_SUFFIX}_rep1_vs_rep2"),
+                (jaccard_noqh_mat, f"{JACCARD}{NOQH_SUFFIX}_rep1_vs_rep2"),
+                (comp_noqh_mat,    f"{COMPOSITION}{NOQH_SUFFIX}_rep1_vs_rep2"),
+                (overlap_noqh_mat, f"overlap{NOQH_SUFFIX}_rep1_vs_rep2"),
             ]
             for mat, col_name in base_rep_cols:
                 if mat is not None and rep1_seg in mat.index and rep2_seg in mat.columns:
@@ -315,7 +318,7 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                             row[f"enrich_{pool_name}_ATAC"] = pooled_cov / ann_frac
                             # Fraction of ATAC peaks covered by these states.
                             row[f"sensitivity_{pool_name}_ATAC"] = overlap_sum / ann_bp
-                            row[f"jaccard_{pool_name}_ATAC"] = overlap_sum / (state_bp_sum + ann_bp - overlap_sum)
+                            row[f"{JACCARD}_{pool_name}_ATAC"] = overlap_sum / (state_bp_sum + ann_bp - overlap_sum)
 
         # Biological validation: fraction of each annotation covered by states.
         for pool_name, substrs, ann_name, col_prefix in [
@@ -368,7 +371,7 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                         row[f"sensitivity_{col_prefix}"] = overlap_sum / ann_bp
                         row[f"coverage_{col_prefix}"] = overlap_sum / state_bp_sum if state_bp_sum > 0 else np.nan
                         row[f"enrich_{col_prefix}"] = (overlap_sum / state_bp_sum) / ann_frac if state_bp_sum > 0 else np.nan
-                        row[f"jaccard_{col_prefix}"] = overlap_sum / (state_bp_sum + ann_bp - overlap_sum) if (state_bp_sum + ann_bp - overlap_sum) > 0 else np.nan
+                        row[f"{JACCARD}_{col_prefix}"] = overlap_sum / (state_bp_sum + ann_bp - overlap_sum) if (state_bp_sum + ann_bp - overlap_sum) > 0 else np.nan
 
         rows.append(row)
 
@@ -429,15 +432,17 @@ def plot_comparison(df, outdir):
                   bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
         return fig, ax
 
+    # (column, title, ylabel) per metric, first over all states then without the
+    # Quies/Het background.
+    _REP_METRICS = [(KAPPA, KAPPA_DISPLAY, KAPPA_DISPLAY),
+                    (JACCARD, JACCARD_DISPLAY, "Similarity"),
+                    (COMPOSITION, COMPOSITION_DISPLAY, "Cosine similarity"),
+                    ("overlap", "Overlap", "Overlap fraction")]
     _REP_COLS = [
-        ("kappa_rep1_vs_rep2",          "Replicate reproducibility (Kappa)",                    "Kappa"),
-        ("jaccard_rep1_vs_rep2",        "Replicate reproducibility (Jaccard)",                  "Similarity"),
-        ("composition_rep1_vs_rep2",    "Replicate reproducibility (Composition)",              "Cosine similarity"),
-        ("overlap_rep1_vs_rep2",        "Replicate reproducibility (Overlap)",                  "Overlap fraction"),
-        ("kappa_noqh_rep1_vs_rep2",     "Replicate reproducibility (Kappa excl. Quies/Het)",    "Kappa"),
-        ("jaccard_noqh_rep1_vs_rep2",   "Replicate reproducibility (Jaccard excl. Quies/Het)",  "Similarity"),
-        ("composition_noqh_rep1_vs_rep2", "Replicate reproducibility (Composition excl. Quies/Het)", "Cosine similarity"),
-        ("overlap_noqh_rep1_vs_rep2",   "Replicate reproducibility (Overlap excl. Quies/Het)",  "Overlap fraction"),
+        (f"{metric}{suffix}_rep1_vs_rep2",
+         f"Replicate reproducibility ({metric_display}{excl})", ylabel)
+        for suffix, excl in (("", ""), (NOQH_SUFFIX, " excl. Quies/Het"))
+        for metric, metric_display, ylabel in _REP_METRICS
     ]
     for col, title, ylabel in _REP_COLS:
         if col in df_main.columns and df_main[col].notna().any():
@@ -447,20 +452,20 @@ def plot_comparison(df, outdir):
 
     for col, title in [
         ("enrich_Tx_ExpressedGeneBodies",  "Tx enrichment vs expressed gene bodies"),
-        ("jaccard_Tx_ExpressedGeneBodies", "Jaccard: Tx state vs expressed gene bodies"),
+        (f"{JACCARD}_Tx_ExpressedGeneBodies", f"{JACCARD_DISPLAY}: Tx state vs expressed gene bodies"),
         ("sensitivity_Tx_ExpressedGeneBodies", "Fraction of expressed gene bodies covered by Tx states"),
         ("enrich_Active_ATAC",             "Active chromatin enrichment at ATAC-seq peaks"),
         ("sensitivity_Active_ATAC",        "Fraction of ATAC-seq peaks covered by Active states"),
-        ("jaccard_Active_ATAC",            "Jaccard: Active states vs ATAC-seq"),
+        (f"{JACCARD}_Active_ATAC",  f"{JACCARD_DISPLAY}: Active states vs ATAC-seq"),
         ("coverage_Active_ATAC",           "Fraction of Active states covered by ATAC-seq peaks"),
         ("enrich_Tss_RefSeqTSS2kb",        "Tss enrichment at RefSeq TSS ±2 kb"),
-        ("jaccard_Tss_RefSeqTSS2kb",       "Jaccard: Tss state vs RefSeq TSS ±2 kb"),
+        (f"{JACCARD}_Tss_RefSeqTSS2kb", f"{JACCARD_DISPLAY}: Tss state vs RefSeq TSS ±2 kb"),
         ("sensitivity_Tss_RefSeqTSS2kb",   "Fraction of RefSeq TSS ±2 kb covered by Tss states"),
         ("coverage_Tss_RefSeqTSS2kb",      "Fraction of Tss states covered by RefSeq TSS ±2 kb"),
         ("enrich_Tss_ExpressedTSS",        "Tss enrichment at Expressed TSS"),
         ("enrich_Tss_ExpressedTSS2kb",      "Tss enrichment at Expressed TSS ±2 kb"),
-        ("jaccard_Tss_ExpressedTSS",       "Jaccard: Tss state vs Expressed TSS"),
-        ("jaccard_Tss_ExpressedTSS2kb",    "Jaccard: Tss state vs Expressed TSS ±2 kb"),
+        (f"{JACCARD}_Tss_ExpressedTSS", f"{JACCARD_DISPLAY}: Tss state vs Expressed TSS"),
+        (f"{JACCARD}_Tss_ExpressedTSS2kb", f"{JACCARD_DISPLAY}: Tss state vs Expressed TSS ±2 kb"),
         ("sensitivity_Tss_ExpressedTSS",   "Fraction of Expressed TSS covered by Tss states"),
         ("coverage_Tss_ExpressedTSS",      "Fraction of Tss states covered by Expressed TSS"),
         ("enrich_Active_NonExpGeneBodies",  "Active states enrichment at non-expressed genes"),
@@ -470,7 +475,7 @@ def plot_comparison(df, outdir):
     ]:
         ylabel = "Fold enrichment" if col.startswith("enrich") else \
                  "Fraction" if col.startswith("sensitivity") else \
-                 "Jaccard" if col.startswith("jaccard") else \
+                 JACCARD_DISPLAY if col.startswith(JACCARD) else \
                  "Fraction" if col.startswith("coverage") else "bp"
         if col in df_main.columns and df_main[col].notna().any():
             fig, ax = _make_fig()

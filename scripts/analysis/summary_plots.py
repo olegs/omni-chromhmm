@@ -24,8 +24,22 @@ import seaborn as sns
 
 sys.path.insert(0, os.path.dirname(__file__))
 from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
-                   strip_points, method_color, save_fig)
+                   strip_points, method_color, save_fig,
+                   CHROMHMM_DEFAULT, CHROMHMM_HOMER, CHROMHMM_MACS2, CHROMHMM_OMNI,
+                   KMEANS_HOMER, KMEANS_MACS2, KMEANS_OMNI, display_name,
+                   COMPOSITION, JACCARD, KAPPA, FULL, NOQH, NOQH_SUFFIX,
+                   COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY,
+                   FULL_DISPLAY, NOQH_DISPLAY)
 from analyze import load_bed_df
+
+# The three similarity series every distribution plot shows, in bar order, as
+# (metric, legend label, bar color). The metric is the comparison_table column
+# prefix and matrix file stem; the label is what the "Metric" column holds.
+SIMILARITY_METRICS = [(COMPOSITION, COMPOSITION_DISPLAY, "#E8833A"),
+                      (KAPPA, KAPPA_DISPLAY, "#4878CF"),
+                      (JACCARD, JACCARD_DISPLAY, "#2CA02C")]
+SIMILARITY_ORDER = [label for _, label, _ in SIMILARITY_METRICS]
+SIMILARITY_COLORS = {label: color for _, label, color in SIMILARITY_METRICS}
 
 METHODS_POOLED = [m for m in METHOD_ORDER
                   if not m.endswith("_rep1") and not m.endswith("_rep2")]
@@ -76,14 +90,14 @@ STATE_COLORS = {
 
 # (METHOD_ORDER key, display label, hex color)
 INTER_DS_METHODS = [
-    ("ref",              "ENCODE Ref",      BIN_COLORS["reference"]),
-    ("chromhmm_default", "Default ChromHMM", BIN_COLORS["default"]),
-    ("chromhmm_homer",   "ChromHMM HOMER",     BIN_COLORS["homer"]),
-    ("kmeans_homer",     "KMeans HOMER",       BIN_COLORS["homer"]),
-    ("chromhmm_macs2",   "ChromHMM MACS2",     BIN_COLORS["macs2"]),
-    ("kmeans_macs2",     "KMeans MACS2",       BIN_COLORS["macs2"]),
-    ("chromhmm_omni",    "ChromHMM OmniPeak",  BIN_COLORS["omnipeak"]),
-    ("kmeans_omni",      "KMeans OmniPeak",    BIN_COLORS["omnipeak"]),
+    ("ref",              DISPLAY_NAMES["ref"],      BIN_COLORS["reference"]),
+    (CHROMHMM_DEFAULT, DISPLAY_NAMES[CHROMHMM_DEFAULT], BIN_COLORS["default"]),
+    (CHROMHMM_HOMER,   DISPLAY_NAMES[CHROMHMM_HOMER],     BIN_COLORS["homer"]),
+    (KMEANS_HOMER,     DISPLAY_NAMES[KMEANS_HOMER],       BIN_COLORS["homer"]),
+    (CHROMHMM_MACS2,   DISPLAY_NAMES[CHROMHMM_MACS2],     BIN_COLORS["macs2"]),
+    (KMEANS_MACS2,     DISPLAY_NAMES[KMEANS_MACS2],       BIN_COLORS["macs2"]),
+    (CHROMHMM_OMNI,    DISPLAY_NAMES[CHROMHMM_OMNI],    BIN_COLORS["omnipeak"]),
+    (KMEANS_OMNI,      DISPLAY_NAMES[KMEANS_OMNI],      BIN_COLORS["omnipeak"]),
 ]
 METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
 
@@ -107,13 +121,13 @@ def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method):
     root = Path(workdir) / ds
     sfx = match_method if match_method.endswith("matched") else f"{match_method}_matched"
     mapping = {
-        "chromhmm_default": root / "chromhmm_default_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
-        "kmeans_omni":      root / "omni"  / f"omni_kmeans_states_{sfx}.bed",
-        "kmeans_homer":     root / "homer" / f"homer_kmeans_states_{sfx}.bed",
-        "kmeans_macs2":     root / "macs2" / f"macs2_kmeans_states_{sfx}.bed",
-        "chromhmm_omni":    root / "omni"  / f"omni_chromhmm_states_{sfx}.bed",
-        "chromhmm_homer":   root / "homer" / f"homer_chromhmm_states_{sfx}.bed",
-        "chromhmm_macs2":   root / "macs2" / f"macs2_chromhmm_states_{sfx}.bed",
+        CHROMHMM_DEFAULT: root / f"{CHROMHMM_DEFAULT}_result" / f"{cell}_{nstates}_dense_{sfx}.bed",
+        KMEANS_OMNI:      root / "omni"  / f"omni_kmeans_states_{sfx}.bed",
+        KMEANS_HOMER:     root / "homer" / f"homer_kmeans_states_{sfx}.bed",
+        KMEANS_MACS2:     root / "macs2" / f"macs2_kmeans_states_{sfx}.bed",
+        CHROMHMM_OMNI:    root / "omni"  / f"omni_chromhmm_states_{sfx}.bed",
+        CHROMHMM_HOMER:   root / "homer" / f"homer_chromhmm_states_{sfx}.bed",
+        CHROMHMM_MACS2:   root / "macs2" / f"macs2_chromhmm_states_{sfx}.bed",
     }
     return mapping[method_key]
 
@@ -345,7 +359,7 @@ def _collect_per_state_metrics(datasets, analysis_dirs, match_method):
                 print(f"  WARNING: could not load {metrics_path}: {e}", file=sys.stderr)
 
         # Fall back to the per-state kappa/jaccard TSVs.
-        for metric in ["kappa", "jaccard"]:
+        for metric in [KAPPA, JACCARD]:
             try:
                 tsv_files = [f for f in os.listdir(comp_dir)
                              if f.startswith(f"per_state_{metric}_vs_") and f.endswith(".tsv")]
@@ -374,7 +388,7 @@ def _save_metric_heatmap(df, title, outfile, metric_label):
     if df.empty:
         return
 
-    is_kappa = "kappa" in metric_label.lower()
+    is_kappa = KAPPA in metric_label.lower()
     vmax = max(float(np.nanmax(np.abs(df.values))), 0.1) if not df.isna().all().all() else 0.1
     fig, ax = plt.subplots(figsize=(max(6, df.shape[1] * 0.8),
                                     max(4, df.shape[0] * 0.35)))
@@ -398,12 +412,13 @@ def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
 
     df["Method"] = df["method"].apply(lambda m: DISPLAY_NAMES.get(m, m))
 
-    for metric, label in [("kappa", "Cohen's Kappa"), ("jaccard", "Jaccard")]:
+    for metric, label in [(KAPPA, f"Cohen's {KAPPA_DISPLAY}"),
+                          (JACCARD, JACCARD_DISPLAY)]:
         if metric not in df.columns or df[metric].dropna().empty:
             continue
 
         summary_df = df.groupby(["state", "Method"])[metric].mean().unstack()
-        summary_df = summary_df[~summary_df.index.isin(["FULL", "NOQH"])]
+        summary_df = summary_df[~summary_df.index.isin([FULL_DISPLAY, NOQH_DISPLAY])]
         summary_df = summary_df.reindex(sort_states(summary_df.index))
 
         pooled_labels = [DISPLAY_NAMES.get(m, m) for m in METHODS_POOLED if m != "ref"]
@@ -417,7 +432,7 @@ def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
         # Average metric per state, combined across methods; the FULL/NOQH
         # pseudo-states are not real state types.
         plot_df = df.dropna(subset=[metric])
-        plot_df = plot_df[~plot_df["state"].isin(["FULL", "NOQH"])]
+        plot_df = plot_df[~plot_df["state"].isin([FULL_DISPLAY, NOQH_DISPLAY])]
         
         states_order = sort_states(plot_df["state"].unique())
         fig, ax = plt.subplots(figsize=(max(12, len(states_order) * 0.8), 5))
@@ -433,27 +448,21 @@ def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
         ax.set_title(f"Average Per-state {label} vs Reference", fontsize=11, fontweight="bold")
         ax.set_ylabel(label, fontsize=9)
         ax.set_xlabel("State", fontsize=9)
-        ax.set_ylim(0 if metric == "jaccard" else None, 1.05)
+        ax.set_ylim(0 if metric == JACCARD else None, 1.05)
         ax.grid(axis='y', alpha=0.3)
         ax.tick_params(axis='x', rotation=45)
         
         save_fig(fig, os.path.join(outdir, f"per_state_{metric}_bar.png"))
 
 
-# (comparison_table column, title, ylabel, outfile stem)
+# (comparison_table column, title, ylabel, outfile stem), one row per metric and
+# comparison domain. NOQH first, matching the order the plots are shown in.
 _REP_CONSISTENCY_PLOTS = [
-    ("kappa_noqh_rep1_vs_rep2",
-     "Rep. consistency: Kappa (NOQH, raw)",   "Kappa",
-     "rep_consistency_kappa_noqh_rep1_vs_rep2"),
-    ("kappa_rep1_vs_rep2",
-     "Rep. consistency: Kappa (full, raw)",   "Kappa",
-     "rep_consistency_kappa_rep1_vs_rep2"),
-    ("jaccard_noqh_rep1_vs_rep2",
-     "Rep. consistency: Jaccard (NOQH, raw)", "Jaccard",
-     "rep_consistency_jaccard_noqh_rep1_vs_rep2"),
-    ("jaccard_rep1_vs_rep2",
-     "Rep. consistency: Jaccard (full, raw)", "Jaccard",
-     "rep_consistency_jaccard_rep1_vs_rep2"),
+    (f"{metric}{suffix}_rep1_vs_rep2",
+     f"Rep. consistency: {label} ({domain}, raw)", label,
+     f"rep_consistency_{metric}{suffix}_rep1_vs_rep2")
+    for metric, label in ((KAPPA, KAPPA_DISPLAY), (JACCARD, JACCARD_DISPLAY))
+    for suffix, domain in ((NOQH_SUFFIX, NOQH_DISPLAY), ("", FULL))
 ]
 
 
@@ -468,12 +477,9 @@ def _plot_rep_consistency(datasets, methods_dirs, outdir):
 
 def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=False):
     """Bar plot: replicate consistency distribution per de-novo method and metric."""
-    suffix = "_noqh" if noqh else ""
-    metric_configs = [
-        ("Composition", f"composition{suffix}_rep1_vs_rep2", "#E8833A"),
-        ("Kappa",       f"kappa{suffix}_rep1_vs_rep2",       "#4878CF"),
-        ("Jaccard",     f"jaccard{suffix}_rep1_vs_rep2",     "#2CA02C"),
-    ]
+    suffix = NOQH_SUFFIX if noqh else ""
+    metric_configs = [(label, f"{metric}{suffix}_rep1_vs_rep2", color)
+                      for metric, label, color in SIMILARITY_METRICS]
 
     rows = []
     for metric, col, _ in metric_configs:
@@ -510,7 +516,7 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
     ax.set_ylabel("Replicate similarity", fontsize=9)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    mode = "NOQH (excl. Quies/Het)" if noqh else "Full"
+    mode = NOQH_DISPLAY if noqh else FULL_DISPLAY
     n_ds = plot_df["dataset"].nunique()
     ax.set_title(
         f"Replicate consistency by method — {mode}\n"
@@ -535,8 +541,8 @@ def _plot_rep_consistency_per_state(datasets, methods_dirs, outdir):
     method_labels = [_SAMPLE_TO_INFO.get(m, (m,))[0] for m in METHODS_POOLED
                      if _SAMPLE_TO_INFO.get(m, (m,))[0] in df["Method"].unique()]
 
-    for metric in ["jaccard", "kappa"]:
-        title = "Jaccard" if metric == "jaccard" else "Cohen's Kappa"
+    for metric, title in [(JACCARD, JACCARD_DISPLAY),
+                          (KAPPA, f"Cohen's {KAPPA_DISPLAY}")]:
         outpath = os.path.join(outdir, f"rep_consistency_per_state_{metric}.png")
 
         fig, ax = plt.subplots(figsize=(max(10, len(states) * 0.8), 5))
@@ -597,21 +603,21 @@ def _collect_rep_per_state_metrics(datasets, methods_dirs):
                     "dataset": ds,
                     "method": m1,
                     "state": row["state"],
-                    "kappa": row["kappa"],
-                    "jaccard": row["jaccard"]
+                    KAPPA: row[KAPPA],
+                    JACCARD: row[JACCARD]
                 })
     return pd.DataFrame(rows)
 
 
 # sample key → (display label, binarization key)
 _SAMPLE_TO_INFO = {
-    "chromhmm_default": ("Default ChromHMM",  "default"),
-    "chromhmm_omni":    ("OmniPeak ChromHMM", "omnipeak"),
-    "kmeans_omni":      ("KMeans OmniPeak",   "omnipeak"),
-    "chromhmm_homer":   ("HOMER ChromHMM",    "homer"),
-    "kmeans_homer":     ("KMeans HOMER",      "homer"),
-    "chromhmm_macs2":   ("MACS2 ChromHMM",    "macs2"),
-    "kmeans_macs2":     ("KMeans MACS2",      "macs2"),
+    CHROMHMM_DEFAULT: (DISPLAY_NAMES[CHROMHMM_DEFAULT],  "default"),
+    CHROMHMM_OMNI:    (DISPLAY_NAMES[CHROMHMM_OMNI], "omnipeak"),
+    KMEANS_OMNI:      (DISPLAY_NAMES[KMEANS_OMNI],   "omnipeak"),
+    CHROMHMM_HOMER:   (DISPLAY_NAMES[CHROMHMM_HOMER],    "homer"),
+    KMEANS_HOMER:     (DISPLAY_NAMES[KMEANS_HOMER],      "homer"),
+    CHROMHMM_MACS2:   (DISPLAY_NAMES[CHROMHMM_MACS2],    "macs2"),
+    KMEANS_MACS2:     (DISPLAY_NAMES[KMEANS_MACS2],      "macs2"),
 }
 
 
@@ -1018,12 +1024,16 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     per dataset pair. group_a / group_b, when given, keep only pairs with one
     dataset from each group.
     """
-    suffix = "_noqh" if noqh else ""
+    suffix = NOQH_SUFFIX if noqh else ""
+    # Kappa is the only one whose FULL matrix is not called *_similarity_matrix.
     metric_configs = [
-        ("Composition", f"composition{suffix}_similarity_matrix.tsv",                 "#E8833A"),
-        ("Kappa",   f"kappa{suffix}_matrix.tsv",                                        "#4878CF"),
-        ("Jaccard", f"jaccard_noqh_matrix.tsv" if noqh else "jaccard_similarity_matrix.tsv",
-                    "#2CA02C"),
+        (COMPOSITION_DISPLAY, f"{COMPOSITION}{suffix}_similarity_matrix.tsv",
+                              SIMILARITY_COLORS[COMPOSITION_DISPLAY]),
+        (KAPPA_DISPLAY,       f"{KAPPA}{suffix}_matrix.tsv",
+                              SIMILARITY_COLORS[KAPPA_DISPLAY]),
+        (JACCARD_DISPLAY,     f"{JACCARD}{suffix}_matrix.tsv" if noqh
+                              else f"{JACCARD}_similarity_matrix.tsv",
+                              SIMILARITY_COLORS[JACCARD_DISPLAY]),
     ]
 
     def _ds_name(label):
@@ -1058,14 +1068,14 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     plot_df = pd.DataFrame(rows)
     method_labels = [_SAMPLE_TO_INFO.get(m, (m,))[0] for m in methods
                      if _SAMPLE_TO_INFO.get(m, (m,))[0] in plot_df["Method"].unique()]
-    palette = {"Composition": "#E8833A", "Kappa": "#4878CF", "Jaccard": "#2CA02C"}
+    palette = SIMILARITY_COLORS
 
     n_methods = len(method_labels)
     fig, ax = plt.subplots(figsize=(max(10, n_methods * 1.4 + 3), 5))
     sns.barplot(
         data=plot_df, x="Method", y="value", hue="Metric",
         order=method_labels,
-        hue_order=["Composition", "Kappa", "Jaccard"],
+        hue_order=SIMILARITY_ORDER,
         palette=palette,
         estimator="mean", errorbar="se",
         ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
@@ -1073,14 +1083,14 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     )
     strip_points(ax, data=plot_df, x="Method", y="value", hue="Metric",
                  order=method_labels,
-                 hue_order=["Composition", "Kappa", "Jaccard"], size=2)
+                 hue_order=SIMILARITY_ORDER, size=2)
     ax.set_xlabel("")
     ax.set_ylabel("Pairwise similarity", fontsize=9)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    mode = "NOQH (excl. Quies/Het)" if noqh else "Full"
+    mode = NOQH_DISPLAY if noqh else FULL_DISPLAY
     n_ds = pd.concat([plot_df["ds_i"], plot_df["ds_j"]]).nunique()
-    n_pairs = plot_df[plot_df["Metric"] == "Composition"]["Method"].count() // max(n_methods, 1)
+    n_pairs = plot_df[plot_df["Metric"] == COMPOSITION_DISPLAY]["Method"].count() // max(n_methods, 1)
     pair_desc = " — ChIP↔Mint-ChIP pairs only" if (group_a and group_b) else ""
     ax.set_title(
         f"Inter-dataset similarity by method — {mode}{pair_desc}\n"
@@ -1096,11 +1106,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
 def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
                                   title_suffix=""):
     """Bar plot of pairwise similarity among ENCODE reference segmentations."""
-    metrics = [
-        ("Composition", comp_path),
-        ("Kappa",   kappa_path),
-        ("Jaccard", jaccard_path),
-    ]
+    metrics = list(zip(SIMILARITY_ORDER, [comp_path, kappa_path, jaccard_path]))
     rows = []
     for metric, path in metrics:
         mat = pd.read_csv(path, sep="\t", index_col=0)
@@ -1112,18 +1118,17 @@ def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
 
     fig, ax = plt.subplots(figsize=(5, 5))
     sns.barplot(data=plot_df, x="Metric", y="value", hue="Metric",
-                order=["Composition", "Kappa", "Jaccard"],
-                palette={"Composition": "#E8833A", "Kappa": "#4878CF", "Jaccard": "#2CA02C"},
+                order=SIMILARITY_ORDER, palette=SIMILARITY_COLORS,
                 estimator="mean", errorbar="se",
                 ax=ax, capsize=0.15, err_kws={"linewidth": 1.0},
                 legend=False, edgecolor="lightgrey", linewidth=1)
     strip_points(ax, data=plot_df, x="Metric", y="value",
-                 order=["Composition", "Kappa", "Jaccard"], dodge=False)
+                 order=SIMILARITY_ORDER, dodge=False)
     ax.set_xlabel("")
     ax.set_ylabel("Pairwise similarity", fontsize=9)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    n_refs_pairs = plot_df[plot_df["Metric"] == "Composition"]["value"].count()
+    n_refs_pairs = plot_df[plot_df["Metric"] == COMPOSITION_DISPLAY]["value"].count()
     title = (
         f"Inter-reference similarity distribution{title_suffix}\n"
         f"({int((-1 + (1 + 8 * n_refs_pairs) ** 0.5) / 2 + 1)} ENCODE references, {n_refs_pairs} pairs each metric)"
@@ -1292,20 +1297,20 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         ds, mdirs, adirs = args.datasets, args.methods_dirs, args.analysis_dirs
 
         data = _collect_table_col(ds, mdirs, "entropy", include_ref=True)
-        _plot_summary(data, "Transition matrix entropy (full)",
+        _plot_summary(data, f"Transition matrix entropy ({FULL_DISPLAY})",
                       "Entropy (bits)",
                       os.path.join(args.outdir, "summary_entropy.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        data = _collect_table_col(ds, mdirs, "entropy_noqh", include_ref=True)
-        _plot_summary(data, "Transition matrix entropy (NOQH, excl. Quies/Het)",
+        data = _collect_table_col(ds, mdirs, f"entropy{NOQH_SUFFIX}", include_ref=True)
+        _plot_summary(data, f"Transition matrix entropy ({NOQH_DISPLAY})",
                       "Entropy (bits)",
                       os.path.join(args.outdir, "summary_entropy_noqh.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         # RNA-seq validation (expressed genes).
-        data = _collect_table_col(ds, mdirs, "jaccard_Tx_ExpressedGeneBodies", include_ref=True)
-        _plot_summary(data, "Jaccard: Tx state vs expressed gene bodies", "Jaccard",
+        data = _collect_table_col(ds, mdirs, f"{JACCARD}_Tx_ExpressedGeneBodies", include_ref=True)
+        _plot_summary(data, f"{JACCARD_DISPLAY}: Tx state vs expressed gene bodies", JACCARD_DISPLAY,
                       os.path.join(args.outdir, "summary_jaccard_tx.png"),
                       partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
@@ -1333,8 +1338,8 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                            os.path.join(args.outdir, "summary_2way_tx.png"),
                            order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        data = _collect_table_col(ds, mdirs, "jaccard_Tss_RefSeqTSS2kb", include_ref=True)
-        _plot_summary(data, "Jaccard: Tss state vs RefSeq TSS ±2 kb", "Jaccard",
+        data = _collect_table_col(ds, mdirs, f"{JACCARD}_Tss_RefSeqTSS2kb", include_ref=True)
+        _plot_summary(data, f"{JACCARD_DISPLAY}: Tss state vs RefSeq TSS ±2 kb", JACCARD_DISPLAY,
                       os.path.join(args.outdir, "summary_jaccard_tss.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
@@ -1362,13 +1367,13 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                            os.path.join(args.outdir, "summary_2way_tss.png"),
                            order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        data = _collect_table_col(ds, mdirs, "jaccard_Tss_ExpressedTSS", include_ref=True)
-        _plot_summary(data, "Jaccard: Tss state vs Expressed TSS", "Jaccard",
+        data = _collect_table_col(ds, mdirs, f"{JACCARD}_Tss_ExpressedTSS", include_ref=True)
+        _plot_summary(data, f"{JACCARD_DISPLAY}: Tss state vs Expressed TSS", JACCARD_DISPLAY,
                       os.path.join(args.outdir, "summary_jaccard_tss_exptss.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        data = _collect_table_col(ds, mdirs, "jaccard_Tss_ExpressedTSS2kb", include_ref=True)
-        _plot_summary(data, "Jaccard: Tss state vs Expressed TSS ±2 kb", "Jaccard",
+        data = _collect_table_col(ds, mdirs, f"{JACCARD}_Tss_ExpressedTSS2kb", include_ref=True)
+        _plot_summary(data, f"{JACCARD_DISPLAY}: Tss state vs Expressed TSS ±2 kb", JACCARD_DISPLAY,
                       os.path.join(args.outdir, "summary_jaccard_tss_exptss2kb.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
@@ -1416,8 +1421,8 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         # ATAC-seq validation.
-        data = _collect_table_col(ds, mdirs, "jaccard_Active_ATAC", include_ref=True)
-        _plot_summary(data, "Jaccard: Active states vs ATAC-seq", "Jaccard",
+        data = _collect_table_col(ds, mdirs, f"{JACCARD}_Active_ATAC", include_ref=True)
+        _plot_summary(data, f"{JACCARD_DISPLAY}: Active states vs ATAC-seq", JACCARD_DISPLAY,
                       os.path.join(args.outdir, "summary_jaccard_active_atac.png"),
                       partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
@@ -1477,13 +1482,13 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         # Similarity vs ENCODE reference.
-        _plot_summary(_collect_table_col(ds, mdirs, "kappa_vs_ref", include_ref=True),
-                      "Agreement vs ENCODE reference (Kappa)", "Cohen's Kappa",
+        _plot_summary(_collect_table_col(ds, mdirs, f"{KAPPA}_vs_ref", include_ref=True),
+                      f"Agreement vs ENCODE reference ({KAPPA_DISPLAY})", f"Cohen's {KAPPA_DISPLAY}",
                       os.path.join(args.outdir, "summary_kappa_vs_ref.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
-        _plot_summary(_collect_table_col(ds, mdirs, "jaccard_vs_ref", include_ref=True),
-                      "Agreement vs ENCODE reference (Jaccard)", "Mean per-state Jaccard",
+        _plot_summary(_collect_table_col(ds, mdirs, f"{JACCARD}_vs_ref", include_ref=True),
+                      f"Agreement vs ENCODE reference ({JACCARD_DISPLAY})", f"Mean per-state {JACCARD_DISPLAY}",
                       os.path.join(args.outdir, "summary_jaccard_vs_ref.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
@@ -1538,7 +1543,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_reference_distribution(args.ref_comp_matrix,
                                      args.ref_kappa_matrix,
                                      args.ref_jaccard_matrix, args.ref_dist_outfile,
-                                     title_suffix=" — Full")
+                                     title_suffix=f" — {FULL_DISPLAY}")
 
     if args.ref_dist_noqh_outfile:
         if not (args.ref_comp_noqh_matrix and args.ref_kappa_noqh_matrix and args.ref_jaccard_noqh_matrix):
@@ -1548,7 +1553,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_reference_distribution(args.ref_comp_noqh_matrix,
                                      args.ref_kappa_noqh_matrix,
                                      args.ref_jaccard_noqh_matrix, args.ref_dist_noqh_outfile,
-                                     title_suffix=" — NOQH (excl. Quies/Het)")
+                                     title_suffix=f" — {NOQH_DISPLAY}")
 
     if args.method_sim_dist_outfile or args.method_sim_dist_noqh_outfile:
         if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
@@ -1624,13 +1629,13 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
             raise ValueError("--datasets and --cells must have equal lengths")
         os.makedirs(args.method_ds_composition_outdir, exist_ok=True)
         _supp_methods = [
-            ("chromhmm_default", "Default ChromHMM"),
-            ("chromhmm_omni",    "ChromHMM OmniPeak"),
-            ("kmeans_omni",      "KMeans OmniPeak"),
-            ("chromhmm_homer",   "ChromHMM HOMER"),
-            ("kmeans_homer",     "KMeans HOMER"),
-            ("chromhmm_macs2",   "ChromHMM MACS2"),
-            ("kmeans_macs2",     "KMeans MACS2"),
+            (CHROMHMM_DEFAULT, DISPLAY_NAMES[CHROMHMM_DEFAULT]),
+            (CHROMHMM_OMNI,    DISPLAY_NAMES[CHROMHMM_OMNI]),
+            (KMEANS_OMNI,      DISPLAY_NAMES[KMEANS_OMNI]),
+            (CHROMHMM_HOMER,   DISPLAY_NAMES[CHROMHMM_HOMER]),
+            (KMEANS_HOMER,     DISPLAY_NAMES[KMEANS_HOMER]),
+            (CHROMHMM_MACS2,   DISPLAY_NAMES[CHROMHMM_MACS2]),
+            (KMEANS_MACS2,     DISPLAY_NAMES[KMEANS_MACS2]),
         ]
         for method_key, method_label in _supp_methods:
             outfile = os.path.join(args.method_ds_composition_outdir,

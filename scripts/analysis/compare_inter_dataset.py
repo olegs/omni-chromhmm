@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
-from utils import load_matrix
+from utils import load_matrix, JACCARD, KAPPA, NOQH_SUFFIX
 
 
 def _upper_pairs(df):
@@ -33,15 +33,15 @@ def run_compare_out(methods, indir, outfile):
         method_dir = os.path.join(args.indir, method)
 
         mats = {
-            "kappa":        load_matrix(os.path.join(method_dir, "kappa_matrix.tsv")),
-            "kappa_noqh":   load_matrix(os.path.join(method_dir, "kappa_noqh_matrix.tsv")),
-            "jaccard":      load_matrix(os.path.join(method_dir, "jaccard_similarity_matrix.tsv")),
-            "jaccard_noqh": load_matrix(os.path.join(method_dir, "jaccard_noqh_matrix.tsv")),
+            KAPPA:                    load_matrix(os.path.join(method_dir, f"{KAPPA}_matrix.tsv")),
+            f"{KAPPA}{NOQH_SUFFIX}":   load_matrix(os.path.join(method_dir, f"{KAPPA}{NOQH_SUFFIX}_matrix.tsv")),
+            JACCARD:                  load_matrix(os.path.join(method_dir, f"{JACCARD}_similarity_matrix.tsv")),
+            f"{JACCARD}{NOQH_SUFFIX}": load_matrix(os.path.join(method_dir, f"{JACCARD}{NOQH_SUFFIX}_matrix.tsv")),
         }
 
-        base_mat = mats["kappa"]
+        base_mat = mats[KAPPA]
         if base_mat is None:
-            print(f"  WARNING: missing kappa_matrix.tsv for {method}, skipping")
+            print(f"  WARNING: missing {KAPPA}_matrix.tsv for {method}, skipping")
             continue
 
         for label_i, label_j, _ in _upper_pairs(base_mat):
@@ -62,7 +62,8 @@ def run_compare_out(methods, indir, outfile):
         return
 
     df = pd.DataFrame(rows)
-    metric_cols = ["kappa", "kappa_noqh", "jaccard", "jaccard_noqh"]
+    metric_cols = [KAPPA, f"{KAPPA}{NOQH_SUFFIX}",
+                   JACCARD, f"{JACCARD}{NOQH_SUFFIX}"]
     cols = ["method", "ds_a", "ds_b"] + [c for c in metric_cols if c in df.columns]
     df = df[cols].sort_values(["method", "ds_a", "ds_b"])
     df.to_csv(args.outfile, sep="\t", index=False, float_format="%.4f")
