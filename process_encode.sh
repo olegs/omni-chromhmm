@@ -1,3 +1,6 @@
+# Project root directory
+ROOT=$(cd "$(dirname "$0")" && pwd)
+
 # Joint segmentations across replicates of the ENCODE datasets.
 # Please ensure that snakemake part was already processed, see README.md
 DIR=~/data/2026_segmentations/encode
@@ -29,7 +32,7 @@ ref_bed() {
 # space of the individual _matched segmentations.
 match_joint() { # reference bed, rep1 bed, rep2 bed
  if [[ -f $1 ]] && [[ -f $2 ]] && [[ -f $3 ]]; then
-  python ~/work/omni-chromhmm/scripts/rules/match.py \
+  python "$ROOT/scripts/rules/match.py" \
    --ref $1 --work $2 $3 --out ${2/.bed/_matched.bed} ${3/.bed/_matched.bed};
  else
   echo "Skipping matching, missing $1, $2 or $3";
@@ -66,7 +69,7 @@ for ds in $DATASETS; do
   done;
   # Concatenated (not stacked) model: replicates are rows sharing one mark space,
   # so a single KMeans yields a shared state space but an own segmentation per replicate.
-  python ~/work/omni-chromhmm/scripts/rules/joint_peaks_segmentation.py \
+  python "$ROOT/scripts/rules/joint_peaks_segmentation.py" \
    --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --cells "$REPS" \
    --peaks "${ALL_PEAKS[@]}" --states $STATES --outdir joint_kmeans/$PC;
  done;
@@ -94,7 +97,7 @@ for ds in $DATASETS; do
  mkdir -p joint_chromhmm;
  JOINT_BINARIZED=$(mktemp -d);
  # Concatenate the binarized signal of both replicates, same marks, replicate as cell
- python ~/work/omni-chromhmm/scripts/joint_chromhmm.py concat \
+ python "$ROOT/scripts/joint_chromhmm.py" concat \
   --rep1 rep1/chromhmm_default --rep2 rep2/chromhmm_default --outdir $JOINT_BINARIZED;
  # A single model over both replicates, LearnModel segments each replicate (cell)
  # in the shared state space and writes rep{1,2}_15_segments.bed / _dense.bed.

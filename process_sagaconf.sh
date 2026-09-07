@@ -1,3 +1,6 @@
+# Project root directory
+ROOT=$(cd "$(dirname "$0")" && pwd)
+
 # Please ensure that snakemake part was already processed
 DIR=~/data/2026_segmentations/sagaconf
 mkdir -p $DIR 
@@ -38,7 +41,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   done;
   # Concatenated (not stacked) model: replicates are rows sharing one mark space,
   # so a single KMeans yields a shared state space but an own segmentation per replicate.
-  python ~/work/omni-chromhmm/scripts/rules/joint_peaks_segmentation.py \
+  python "$ROOT/scripts/rules/joint_peaks_segmentation.py" \
    --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --cells "$REPS" \
    --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_kmeans/$PC;
  done;
@@ -56,7 +59,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
    MATCHED=$R/$PC/${PC}_kmeans_states_matched.bed
    if [[ -f $REF ]] && [[ -f $WORK ]]; then
     echo "Matching $ds $PC $R individual to joint"
-    python ~/work/omni-chromhmm/scripts/rules/match.py --ref $REF --work $WORK --out $MATCHED
+    python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK --out $MATCHED
    fi
   done;
  done;
@@ -71,7 +74,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
  mkdir -p joint_chromhmm;
  JOINT_BINARIZED=$(mktemp -d);
  # Concatenate the binarized signal of both replicates, same marks, replicate as cell
- python ~/work/omni-chromhmm/scripts/joint_chromhmm.py concat \
+ python "$ROOT/scripts/joint_chromhmm.py" concat \
   --rep1 rep1/chromhmm_default --rep2 rep2/chromhmm_default --outdir $JOINT_BINARIZED;
  # A single model over both replicates, LearnModel segments each replicate (cell)
  # in the shared state space and writes rep{1,2}_15_segments.bed / _dense.bed.
@@ -98,7 +101,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   MATCHED=$R/chromhmm_default_result/${cell}_15_dense_matched.bed
   if [[ -f $REF ]] && [[ -f $WORK ]]; then
    echo "Matching $ds ChromHMM $R individual to joint"
-   python ~/work/omni-chromhmm/scripts/rules/match.py --ref $REF --work $WORK --out $MATCHED
+   python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK --out $MATCHED
   fi
  done;
 done;

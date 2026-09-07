@@ -47,10 +47,12 @@ mkdir -p ~/data/2026_segmentations/encode
 cd ~/data/2026_segmentations/encode
 
 # Add -n to dry run
+# Set REPO to the directory where you cloned omni-chromhmm
+REPO=~/work/omni-chromhmm
 for ds in imr90 monocytes monocytes_mint gm12878_mint spleen; do
   snakemake -p $ds/.done --use-conda --cores all --directory $(pwd) \
-  --snakefile ~/work/omni-chromhmm/Snakefile \
-  --configfile ~/work/omni-chromhmm/config_encode.yaml \
+  --snakefile $REPO/Snakefile \
+  --configfile $REPO/config_encode.yaml \
   --config homer=True macs2=True omnipeak=True \
   --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
   --rerun-incomplete --rerun-trigger mtime;
@@ -82,7 +84,7 @@ bash process_encode.sh
 mkdir -p ~/data/2026_segmentations/epi1000
 cd ~/data/2026_segmentations/epi1000
 
-bash process_epi_1000.sh
+bash process_epi1000.sh
 ```
 
 `epi1000_replicates.yaml` groups the epigenomes that are replicates of the same biological
@@ -98,10 +100,12 @@ mkdir -p ~/data/2026_segmentations/sagaconf
 cd ~/data/2026_segmentations/sagaconf
 
 # Add -n to dry run
+# Set REPO to the directory where you cloned omni-chromhmm
+REPO=~/work/omni-chromhmm
 for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   snakemake -p $ds/.done --use-conda --cores all --directory $(pwd) \
-  --snakefile ~/work/omni-chromhmm/Snakefile \
-  --configfile ~/work/omni-chromhmm/config_sagaconf.yaml \
+  --snakefile $REPO/Snakefile \
+  --configfile $REPO/config_sagaconf.yaml \
   --config homer=True macs2=True omnipeak=True \
   --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
   --rerun-incomplete --rerun-trigger mtime;

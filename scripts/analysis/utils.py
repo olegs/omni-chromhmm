@@ -42,6 +42,11 @@ NOQH_DISPLAY = "NOQH"
 
 METRIC_DISPLAY = {JACCARD: JACCARD_DISPLAY, KAPPA: KAPPA_DISPLAY,
                   COSINE: COSINE_DISPLAY, COMPOSITION: COMPOSITION_DISPLAY}
+
+# Every on-disk spelling a metric can appear under, most canonical first: the
+# state-composition cosine is written as "cosine" by the notebook agreement
+# caches and as "composition" by the comparison tables compare.py feeds.
+METRIC_ALIASES = {COSINE: (COSINE, COMPOSITION)}
 DOMAIN_DISPLAY = {FULL: FULL_DISPLAY, NOQH: NOQH_DISPLAY}
 
 # "" for FULL, "_noqh" for NOQH: the suffix every domain-specific column, TSV
@@ -53,6 +58,13 @@ def normalize_metric(name):
     """Normalize a metric name (jaccard, kappa, cosine) or None when unknown."""
     name = str(name).strip().lower()
     return name if name in (JACCARD, KAPPA, COSINE) else None
+
+
+def metric_aliases(name):
+    """The on-disk spellings of a metric, canonical first — what a cache column
+    may be called. Unknown names are returned unchanged, as a single spelling."""
+    name = str(name).strip().lower()
+    return METRIC_ALIASES.get(name, (name,))
 
 
 def normalize_domain(name):

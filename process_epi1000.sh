@@ -1,3 +1,6 @@
+# Project root directory
+ROOT=$(cd "$(dirname "$0")" && pwd)
+
 DIR=~/data/2026_segmentations/epi1000
 mkdir -p $DIR
 
@@ -38,7 +41,7 @@ for E in $(cat marks.txt); do echo $E;
  WORK=${E}_15_coreMarks_dense.bed.gz;
  MATCHED=${WORK/.bed.gz/_matched.bed};
  if [[ -f $REF ]] & [[ -f $WORK ]]; then
-	python ~/work/omni-chromhmm/scripts/rules/match.py --ref $REF --work $WORK > $MATCHED;
+	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
 
@@ -121,7 +124,7 @@ for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
   fi
   PEAKS+=("${P:-NONE}");
  done;
- python ~/work/omni-chromhmm/scripts/rules/peaks_segmentation.py --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES --cell $E;
+ python "$ROOT/scripts/rules/peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES --cell $E;
  echo "Done: $STATES";
 done;
 done;
@@ -143,7 +146,7 @@ done;
 
 # Peaks from binarized files for ChromHMM
 for E in $(cat names.txt); do echo $E;
- python ~/work/omni-chromhmm/scripts/rules/binarized_to_bed.py --bin 200 --outdir $E/${E}_chromhmm  $E/chromhmm_binary/*_binary.txt;
+ python "$ROOT/scripts/rules/binarized_to_bed.py" --bin 200 --outdir $E/${E}_chromhmm  $E/chromhmm_binary/*_binary.txt;
 done;
 
 
@@ -157,7 +160,7 @@ for PC in homer macs2 omni; do echo $PC;
  WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
  MATCHED=${WORK/.bed/_matched.bed};
  if [[ -f $REF ]] & [[ -f $WORK ]]; then
-	python ~/work/omni-chromhmm/scripts/rules/match.py --ref $REF --work $WORK > $MATCHED;
+	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
 done;
@@ -169,7 +172,7 @@ for E in $(cat names.txt); do echo $E;
  WORK=${E}/${E}_chromhmm/${E}_15_dense.bed;
  MATCHED=${WORK/.bed/_matched.bed};
  if [[ -f $REF ]] && [[ -f $WORK ]]; then
-	python ~/work/omni-chromhmm/scripts/rules/match.py --ref $REF --work $WORK > $MATCHED;
+	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
 
@@ -193,7 +196,7 @@ for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
    ALL_PEAKS+=("${P:-NONE}");
   done;
  done;
- python ~/work/omni-chromhmm/scripts/rules/joint_peaks_segmentation.py --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --cells "$CELLS" --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_kmeans/$PC;
+ python "$ROOT/scripts/rules/joint_peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --cells "$CELLS" --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_kmeans/$PC;
 done;
 
 
@@ -210,7 +213,7 @@ for PC in homer macs2 omni; do echo $PC;
   fi;
  done;
  if [ ${#WORKS[@]} -gt 0 ]; then
-  python ~/work/omni-chromhmm/scripts/rules/match.py --ref "${REFS[@]}" --work "${WORKS[@]}" --out "${MATCHEDS[@]}";
+  python "$ROOT/scripts/rules/match.py" --ref "${REFS[@]}" --work "${WORKS[@]}" --out "${MATCHEDS[@]}";
  fi;
 done;
 

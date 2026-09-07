@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Aggregate inter-dataset kappa matrices into a cross-dataset comparison table.
+"""Aggregate the inter-dataset agreement matrices into a comparison table.
 
 Reads the per-method matrices produced by compare.py with all_pairs and
-ds:method labels, and emits one row per (method, ds_a, ds_b).
+ds:method labels, and emits one row per (method, ds_a, ds_b) carrying kappa,
+Jaccard and the state-composition cosine, each in both comparison domains.
 """
 
 import os
@@ -12,7 +13,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
-from utils import load_matrix, JACCARD, KAPPA, NOQH_SUFFIX
+from utils import load_matrix, COMPOSITION, JACCARD, KAPPA, NOQH_SUFFIX
 
 
 def _upper_pairs(df):
@@ -25,18 +26,22 @@ def _upper_pairs(df):
 
 
 def run_compare_out(methods, indir, outfile):
-    """Aggregate inter-dataset kappa matrices into a comparison table."""
+    """Aggregate the inter-dataset agreement matrices into a comparison table."""
     args = SimpleNamespace(methods=methods, indir=indir, outfile=outfile)
 
     rows = []
     for method in args.methods:
         method_dir = os.path.join(args.indir, method)
 
+        # compare.py names the composition matrices "..._similarity_matrix.tsv"
+        # in both domains, while kappa drops the "similarity" part.
         mats = {
             KAPPA:                    load_matrix(os.path.join(method_dir, f"{KAPPA}_matrix.tsv")),
             f"{KAPPA}{NOQH_SUFFIX}":   load_matrix(os.path.join(method_dir, f"{KAPPA}{NOQH_SUFFIX}_matrix.tsv")),
             JACCARD:                  load_matrix(os.path.join(method_dir, f"{JACCARD}_similarity_matrix.tsv")),
             f"{JACCARD}{NOQH_SUFFIX}": load_matrix(os.path.join(method_dir, f"{JACCARD}{NOQH_SUFFIX}_matrix.tsv")),
+            COMPOSITION:              load_matrix(os.path.join(method_dir, f"{COMPOSITION}_similarity_matrix.tsv")),
+            f"{COMPOSITION}{NOQH_SUFFIX}": load_matrix(os.path.join(method_dir, f"{COMPOSITION}{NOQH_SUFFIX}_similarity_matrix.tsv")),
         }
 
         base_mat = mats[KAPPA]
@@ -63,7 +68,8 @@ def run_compare_out(methods, indir, outfile):
 
     df = pd.DataFrame(rows)
     metric_cols = [KAPPA, f"{KAPPA}{NOQH_SUFFIX}",
-                   JACCARD, f"{JACCARD}{NOQH_SUFFIX}"]
+                   JACCARD, f"{JACCARD}{NOQH_SUFFIX}",
+                   COMPOSITION, f"{COMPOSITION}{NOQH_SUFFIX}"]
     cols = ["method", "ds_a", "ds_b"] + [c for c in metric_cols if c in df.columns]
     df = df[cols].sort_values(["method", "ds_a", "ds_b"])
     df.to_csv(args.outfile, sep="\t", index=False, float_format="%.4f")

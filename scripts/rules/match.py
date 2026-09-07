@@ -128,13 +128,16 @@ def per_state_agreement(overlap, lengths1, lengths2, exclude=()):
         union = lengths1.get(s, 0) + lengths2.get(s, 0) - intersection
         if union <= 0:
             continue
-        metrics = {utils.JACCARD: intersection / union, utils.KAPPA: 0.0}
+        metrics = {utils.JACCARD: intersection / union, utils.KAPPA: 0.0, utils.COSINE: 0.0}
         if total > 0:
             p1, p2 = a1[s] / total, a2[s] / total
             # Agreement on "s" plus agreement on "not s".
             po = (intersection + (total - a1[s] - a2[s] + intersection)) / total
             pe = p1 * p2 + (1 - p1) * (1 - p2)
             metrics[utils.KAPPA] = (po - pe) / (1 - pe) if pe < 1 else 1.0
+        
+        norm = np.sqrt(lengths1.get(s, 0) * lengths2.get(s, 0))
+        metrics[utils.COSINE] = intersection / norm if norm > 0 else 0.0
         out[s] = metrics
     return out
 
@@ -177,6 +180,7 @@ def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
 
     per_state = per_state_agreement(overlap, lengths1, lengths2, exclude=exclude)
     jaccards = [m[utils.JACCARD] for m in per_state.values()]
+    cosines = [m[utils.COSINE] for m in per_state.values()]
 
     ordered = sorted(states)
     v1 = np.array([lengths1.get(s, 0) for s in ordered])
@@ -185,7 +189,7 @@ def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
     return {
         utils.JACCARD: float(np.mean(jaccards)) if jaccards else 0.0,
         utils.KAPPA: kappa,
-        utils.COSINE: float(np.dot(v1, v2) / norms) if norms > 0 else 0.0,
+        utils.COSINE: float(np.mean(cosines)) if cosines else 0.0,
     }
 
 
