@@ -27,7 +27,7 @@ from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
                    strip_points, method_color, save_fig,
                    CHROMHMM_DEFAULT, CHROMHMM_HOMER, CHROMHMM_MACS2, CHROMHMM_OMNI,
                    KMEANS_HOMER, KMEANS_MACS2, KMEANS_OMNI, display_name,
-                   COMPOSITION, JACCARD, KAPPA, COSINE, FULL, NOQH, NOQH_SUFFIX,
+                   COMPOSITION, JACCARD, KAPPA, FULL, NOQH, NOQH_SUFFIX,
                    COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY, COSINE_DISPLAY,
                    FULL_DISPLAY, NOQH_DISPLAY)
 from analyze import load_bed_df
@@ -542,8 +542,7 @@ def _plot_rep_consistency_per_state(datasets, methods_dirs, outdir):
                      if _SAMPLE_TO_INFO.get(m, (m,))[0] in df["Method"].unique()]
 
     for metric, title in [(JACCARD, JACCARD_DISPLAY),
-                          (KAPPA, KAPPA_DISPLAY),
-                          (COSINE, COSINE_DISPLAY)]:
+                          (KAPPA, KAPPA_DISPLAY)]:
         outpath = os.path.join(outdir, f"rep_consistency_per_state_{metric}.png")
 
         fig, ax = plt.subplots(figsize=(max(10, len(states) * 0.8), 5))
@@ -605,8 +604,7 @@ def _collect_rep_per_state_metrics(datasets, methods_dirs):
                     "method": m1,
                     "state": row["state"],
                     KAPPA: row[KAPPA],
-                    JACCARD: row[JACCARD],
-                    COSINE: row.get(COSINE)
+                    JACCARD: row[JACCARD]
                 })
     return pd.DataFrame(rows)
 
@@ -1495,7 +1493,8 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         _plot_summary(_collect_table_col(ds, mdirs, f"{COMPOSITION}_vs_ref", include_ref=True),
-                      f"Agreement vs ENCODE reference ({COSINE_DISPLAY})", f"{COSINE_DISPLAY} similarity",
+                      f"Agreement vs ENCODE reference ({COSINE_DISPLAY})",
+                      f"{COSINE_DISPLAY} similarity",
                       os.path.join(args.outdir, "summary_cosine_vs_ref.png"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 

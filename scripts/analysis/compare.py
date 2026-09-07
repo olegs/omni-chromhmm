@@ -31,8 +31,8 @@ import utils
 from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
                    should_compare as _should_compare, display_name, \
                    method_color, save_fig, NOQH_STATES as _EXCLUDE_STATES, \
-                   JACCARD, KAPPA, COSINE, NOQH_SUFFIX, \
-                   JACCARD_DISPLAY, KAPPA_DISPLAY, COSINE_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY
+                   JACCARD, KAPPA, NOQH_SUFFIX, \
+                   JACCARD_DISPLAY, KAPPA_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY
 
 
 def _build_seg_to_analysis_map(seg_paths, analysis_dir):
@@ -216,11 +216,6 @@ def compute_jaccard(bins1, bins2):
     return float(np.mean(list(compute_per_state_jaccard(bins1, bins2).values())))
 
 
-def compute_cosine(bins1, bins2):
-    """Mean per-state cosine similarity between two bin-level segmentations."""
-    return float(np.mean(list(compute_per_state_cosine(bins1, bins2).values())))
-
-
 def compute_per_state_jaccard(bins1, bins2):
     """Jaccard similarity for each state present in either segmentation."""
     labels1, labels2 = _aligned_label_arrays(bins1, bins2)
@@ -234,25 +229,6 @@ def compute_per_state_jaccard(bins1, bins2):
         tp = int((a & b).sum())
         denom = int((a | b).sum())
         out[s] = tp / denom if denom > 0 else 1.0
-    return out
-
-
-def compute_per_state_cosine(bins1, bins2):
-    """Cosine similarity for each state present in either segmentation.
-
-    For a single state, this is |A ∩ B| / sqrt(|A| * |B|).
-    """
-    labels1, labels2 = _aligned_label_arrays(bins1, bins2)
-    if len(labels1) == 0:
-        return {}
-    states = sorted(set(labels1) | set(labels2), key=_natural_sort_key)
-    out = {}
-    for s in states:
-        a = (labels1 == s)
-        b = (labels2 == s)
-        intersection = int((a & b).sum())
-        norm = np.sqrt(int(a.sum()) * int(b.sum()))
-        out[s] = intersection / norm if norm > 0 else 0.0
     return out
 
 
@@ -284,7 +260,8 @@ def _load_emissions_npz(path):
 
 
 def compute_composition_similarity(segs1, segs2, exclude_states=None):
-    """Cosine similarity of state distributions (by total bp)."""
+    """Cosine similarity of state distributions (by total bp).
+    """
     import match
     l1 = match.state_lengths(segs1)
     l2 = match.state_lengths(segs2)
@@ -344,9 +321,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     match_compare(segs_full_i, segs_full_j, overlap, mapping, pair_dir)
 
     row["jaccard_similarity"] = compute_jaccard(bins_i, eff_bins_j)
-    row["cosine_similarity"]  = compute_cosine(bins_i, eff_bins_j)
     row["_per_state_jaccard"] = compute_per_state_jaccard(bins_i, eff_bins_j)
-    row["_per_state_cosine"]  = compute_per_state_cosine(bins_i, eff_bins_j)
 
     # Overlap fraction: genome bp with identical state labels.
     all_ref_states = {x[3] for x in segs_full_i}
@@ -376,7 +351,6 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
         row[f"{KAPPA}{NOQH_SUFFIX}"]   = kappa_noqh
         row[f"overlap{NOQH_SUFFIX}"] = po_noqh
         row[f"{JACCARD}{NOQH_SUFFIX}"] = compute_jaccard(bins_i_noqh, bins_j_noqh)
-        row[f"{COSINE}{NOQH_SUFFIX}"]  = compute_cosine(bins_i_noqh, bins_j_noqh)
 
     print(f"  {label_i} vs {label_j}: "
           f"comp_sim={row['composition_similarity']:.4f}, "
@@ -420,12 +394,10 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     comp_sim_mat        = np.eye(n)
     comp_sim_noqh_mat   = np.eye(n)
     jaccard_mat         = np.eye(n)
-    cosine_mat          = np.eye(n)
     overlap_mat         = np.eye(n)
     kappa_noqh_mat      = np.eye(n)
     overlap_noqh_mat    = np.eye(n)
     jaccard_noqh_mat    = np.eye(n)
-    cosine_noqh_mat     = np.eye(n)
     em_sim_mat          = np.eye(n)
     bw_sim_mat          = np.eye(n)
 
@@ -458,7 +430,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                 comp_sim_mat[i, j] = comp_sim_mat[j, i] = row["composition_similarity"]
                 kappa_mat[i, j] = kappa_mat[j, i] = row["kappa"]
                 jaccard_mat[i, j] = jaccard_mat[j, i] = row["jaccard_similarity"]
-                cosine_mat[i, j] = cosine_mat[j, i] = row["cosine_similarity"]
                 overlap_mat[i, j] = overlap_mat[j, i] = row["overlap_fraction"]
                 if "emission_similarity" in row:
                     em_sim_mat[i, j] = em_sim_mat[j, i] = row["emission_similarity"]
@@ -470,7 +441,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                     kappa_noqh_mat[i, j]   = kappa_noqh_mat[j, i]   = row[f"{KAPPA}{NOQH_SUFFIX}"]
                     overlap_noqh_mat[i, j] = overlap_noqh_mat[j, i] = row[f"overlap{NOQH_SUFFIX}"]
                     jaccard_noqh_mat[i, j] = jaccard_noqh_mat[j, i] = row[f"{JACCARD}{NOQH_SUFFIX}"]
-                    cosine_noqh_mat[i, j]  = cosine_noqh_mat[j, i]  = row[f"{COSINE}{NOQH_SUFFIX}"]
                 comparison_rows.append(row)
     else:
         print(f"  No pairs to compare ({pair_desc}).", file=sys.stderr)
@@ -479,13 +449,11 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     for row in comparison_rows:
         pk = row.pop("_per_state_kappa", None) or {}
         pj = row.pop("_per_state_jaccard", None) or {}
-        pc = row.pop("_per_state_cosine", None) or {}
-        states = sorted(set(pk.keys()) | set(pj.keys()) | set(pc.keys()), key=_natural_sort_key)
+        states = sorted(set(pk.keys()) | set(pj.keys()), key=_natural_sort_key)
         for state in states:
             ps_rows.append({"seg1": row["seg1"], "seg2": row["seg2"], "state": state,
                             KAPPA: pk.get(state),
-                            JACCARD: pj.get(state),
-                            utils.COSINE: pc.get(state)})
+                            JACCARD: pj.get(state)})
 
     if ps_rows:
         ps_df = pd.DataFrame(ps_rows)
@@ -493,8 +461,7 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                      sep="\t", index=False, float_format="%.4f")
         ref_label = labels[0]
         for metric, label in [(KAPPA, f"Cohen's {KAPPA_DISPLAY}"),
-                              (JACCARD, JACCARD_DISPLAY),
-                              (COSINE, COSINE_DISPLAY)]:
+                              (JACCARD, JACCARD_DISPLAY)]:
             wide_a = ps_df[ps_df["seg1"] == ref_label].pivot_table(
                 index="state", columns="seg2", values=metric, aggfunc="mean")
             wide_b = ps_df[ps_df["seg2"] == ref_label].pivot_table(
@@ -535,7 +502,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     kappa_df   = _save_matrix(kappa_mat, KAPPA)
     _save_matrix(comp_sim_mat, "composition_similarity")
     jaccard_df = _save_matrix(jaccard_mat, f"{JACCARD}_similarity")
-    cosine_df  = _save_matrix(cosine_mat, f"{COSINE}_similarity")
     _save_matrix(overlap_mat, "overlap")
     em_df = _save_matrix(em_sim_mat, "emission_similarity")
     _save_matrix(bw_sim_mat, "bw_emission_similarity")
@@ -544,7 +510,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
         _save_matrix(kappa_noqh_mat,   f"{KAPPA}{NOQH_SUFFIX}")
         _save_matrix(overlap_noqh_mat, f"overlap{NOQH_SUFFIX}")
         _save_matrix(jaccard_noqh_mat, f"{JACCARD}{NOQH_SUFFIX}")
-        _save_matrix(cosine_noqh_mat,  f"{COSINE}{NOQH_SUFFIX}")
 
     # Per-seg comparison rows, written into each analysis dir.
     for i, p in enumerate(seg_paths):
@@ -557,8 +522,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                                    sep="\t", float_format="%.4f")
         jaccard_df.iloc[[i]].to_csv(os.path.join(comp_dir, "jaccard_vs_all.tsv"),
                                      sep="\t", float_format="%.4f")
-        cosine_df.iloc[[i]].to_csv(os.path.join(comp_dir, "cosine_vs_all.tsv"),
-                                    sep="\t", float_format="%.4f")
         if em_df is not None and i in bin_emission_paths:
             em_df.iloc[[i]].dropna(axis=1).to_csv(
                 os.path.join(comp_dir, "emission_similarity_vs_all.tsv"),

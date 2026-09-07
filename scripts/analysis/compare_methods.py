@@ -436,7 +436,7 @@ def plot_comparison(df, outdir):
     # Quies/Het background.
     _REP_METRICS = [(KAPPA, KAPPA_DISPLAY, KAPPA_DISPLAY),
                     (JACCARD, JACCARD_DISPLAY, "Similarity"),
-                    (COMPOSITION, COMPOSITION_DISPLAY, "Cosine similarity"),
+                    (COMPOSITION, COMPOSITION_DISPLAY, "Cosine composition similarity"),
                     ("overlap", "Overlap", "Overlap fraction")]
     _REP_COLS = [
         (f"{metric}{suffix}_rep1_vs_rep2",

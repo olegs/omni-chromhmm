@@ -14,20 +14,27 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Metrics. The three keys of a match.agreement_metrics() result, plus the two
-# comparison domains every agreement is measured in: full over all states, noqh
-# with the Quies/Het background dropped. These are the on-disk spelling — the
-# keys of agreement_by_mode() and the "_noqh" file suffix — so they are kept
-# lowercase and the *_DISPLAY forms below carry the human-readable spelling.
+# Metrics, plus the two comparison domains every agreement is measured in: full
+# over all states, noqh with the Quies/Het background dropped. These are the
+# on-disk spelling — the keys of agreement_by_mode() and the "_noqh" file
+# suffix — so they are kept lowercase and the *_DISPLAY forms below carry the
+# human-readable spelling.
 JACCARD = "jaccard"
 KAPPA = "kappa"
 COSINE = "cosine"
 FULL = "full"
 NOQH = "noqh"
 
-# The state-composition cosine, as the comparison tables and the summary plots
-# name it. Same quantity as COSINE above, reached by a different code path
-# (compare.py computes it from the per-state bp vectors).
+# The cosine is the cosine of the two state-composition vectors (bp per state),
+# and nothing else. It is blind to *where* the states are: it asks whether the
+# two segmentations spend the genome on states in the same proportions, so it
+# saturates near 1 once a background state dominates both sides, and two
+# segmentations that agree nowhere still score 1.0 when their state budgets
+# match. Read it next to kappa, which does look at placement.
+#
+# compare.py reaches the same quantity from the per-state bp vectors of two
+# segment lists and writes it as "composition", which is why that spelling is
+# an alias below.
 COMPOSITION = "composition"
 
 # Metric and domain display names, for plot titles, labels and legends, and for
@@ -44,8 +51,8 @@ METRIC_DISPLAY = {JACCARD: JACCARD_DISPLAY, KAPPA: KAPPA_DISPLAY,
                   COSINE: COSINE_DISPLAY, COMPOSITION: COMPOSITION_DISPLAY}
 
 # Every on-disk spelling a metric can appear under, most canonical first: the
-# state-composition cosine is written as "cosine" by the notebook agreement
-# caches and as "composition" by the comparison tables compare.py feeds.
+# cosine is written as "cosine" by the notebook agreement caches and as
+# "composition" by the comparison tables compare.py feeds.
 METRIC_ALIASES = {COSINE: (COSINE, COMPOSITION)}
 DOMAIN_DISPLAY = {FULL: FULL_DISPLAY, NOQH: NOQH_DISPLAY}
 
@@ -55,7 +62,11 @@ NOQH_SUFFIX = f"_{NOQH}"
 
 
 def normalize_metric(name):
-    """Normalize a metric name (jaccard, kappa, cosine) or None when unknown."""
+    """Normalize a metric name (jaccard, kappa, cosine) or None when unknown.
+
+    The display spellings lowercase to the keys, so a cache column name
+    round-trips back to its metric.
+    """
     name = str(name).strip().lower()
     return name if name in (JACCARD, KAPPA, COSINE) else None
 
