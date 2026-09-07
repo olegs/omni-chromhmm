@@ -399,8 +399,10 @@ def _save_metric_heatmap(df, title, outfile, metric_label):
                 cbar_kws={"label": metric_label},
                 ax=ax, mask=df.isna().values)
     ax.set_title(title, fontsize=9)
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
-    ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=7)
+    ax.tick_params(axis="x", rotation=45, labelsize=7)
+    for label in ax.get_xticklabels():
+        label.set_ha("right")
+    ax.tick_params(axis="y", rotation=0, labelsize=7)
     save_fig(fig, outfile, bbox_inches=None)
 
 

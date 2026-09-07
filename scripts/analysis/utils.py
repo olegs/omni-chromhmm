@@ -37,12 +37,23 @@ NOQH = "noqh"
 # an alias below.
 COMPOSITION = "composition"
 
+# Agreement of the state *signatures* of two segmentations rather than of their
+# placement: the mean cosine of the emission vectors of the states paired up by
+# match.emission_cosine_mapping(). It says whether two segmentations describe
+# the genome with the same state definitions, so it stays meaningful where the
+# placement metrics do not — across samples that differ biologically.
+#
+# Not one of the metrics normalize_metric() ranks: it is not cached next to
+# jaccard/kappa/cosine, compare.py writes it per pair under this spelling.
+EMISSION = "emission_similarity"
+
 # Metric and domain display names, for plot titles, labels and legends, and for
 # the columns of the notebook caches.
 JACCARD_DISPLAY = "Jaccard"
 KAPPA_DISPLAY = "Kappa"
 COSINE_DISPLAY = "Cosine"
 COMPOSITION_DISPLAY = "Composition"
+EMISSION_DISPLAY = "Emission similarity"
 
 FULL_DISPLAY = "FULL"
 NOQH_DISPLAY = "NOQH"

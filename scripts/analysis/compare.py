@@ -483,8 +483,10 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                             cbar_kws={"label": f"Per-state {label}"},
                             ax=ax, mask=wide.isna().values)
                 ax.set_title(f"Per-state {label} vs {ref_label}", fontsize=9)
-                ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
-                ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=7)
+                ax.tick_params(axis="x", rotation=45, labelsize=7)
+                for label in ax.get_xticklabels():
+                    label.set_ha("right")
+                ax.tick_params(axis="y", rotation=0, labelsize=7)
                 save_fig(fig, os.path.join(outdir, f"per_state_{metric}_vs_{ref_label}.png"),
                          bbox_inches=None)
 

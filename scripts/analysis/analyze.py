@@ -597,7 +597,16 @@ def compute_emissions(segs, inputs, bin_size):
         if marks is None:
             marks = m
         by_chrom[chrom] = data
+    return state_emissions(segs, by_chrom, marks, bin_size)
 
+
+def state_emissions(segs, by_chrom, marks, bin_size):
+    """State emission matrix over an already loaded binarization.
+
+    by_chrom : {chrom: (n_bins, n_marks) array} of the binarized signal, in
+    *bin_size* bins — whatever produced it, a BinarizeBed run read by
+    load_binary() or peaks binarized in memory.
+    """
     sums = defaultdict(lambda: np.zeros(len(marks), dtype=np.float64))
     counts = defaultdict(int)
     for row in segs:
