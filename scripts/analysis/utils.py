@@ -227,6 +227,13 @@ NOQH_STATES = {
     "8_ZNF/Rpts", "ZNF/Rpts"
 }
 
+# The same background, named in the vocabulary of interpretation.py: what the
+# NOQH domain drops once the states have been interpreted from their emissions
+# rather than matched to a reference by name. A comparison of two segmentations
+# whose references name their states differently has to go through the types,
+# because the name-based metrics count every one-sided name as a disagreement.
+NOQH_TYPES = (QUIESCENT, FACULTATIVE_HET, CONSTITUTIVE_HET)
+
 BIN_COLORS = {
     "default":   "#4878CF",
     "omnipeak":  "#E8833A",
