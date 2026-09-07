@@ -253,23 +253,66 @@ def remap_bins(bins, mapping):
             for chrom, positions in bins.items()}
 
 
+def _cosine_matrix(mat1, mat2):
+    """Pairwise cosine of the rows of mat1 and mat2; 0 where a row is all zeros."""
+    denom = np.outer(np.linalg.norm(mat1, axis=1), np.linalg.norm(mat2, axis=1))
+    sim = np.zeros(denom.shape)
+    nonzero = denom > 0
+    sim[nonzero] = (mat1 @ mat2.T)[nonzero] / denom[nonzero]
+    return sim
+
+
+def background_augmented(mat):
+    """Emission vectors with a background component appended.
+
+    The cosine keeps the direction of a vector and throws away its magnitude,
+    which breaks down on the quiescent state: it carries almost no marks, so
+    its binarized emission vector is tiny - norm 5e-4 for the MACS2 KMeans
+    model of SAGAconf GM12878 - and its direction is noise. MCF7's quiescent
+    state points at H3K36me3 and GM12878's at H3K4me3, a cosine of 0.14, so the
+    assignment below saw no reason to pair the two and sent the state holding
+    96% of one genome onto a state holding 0.3% of the other.
+
+    Appending 1 - max(mark) puts the discarded magnitude back as a component of
+    its own. An unmarked state gets a vector pointing at the background
+    component and nothing else, so two of them pair with each other, while a
+    state whose mark is called in every bin gets a background component of 0
+    and is left as it was. Scored against the interpreted state types, which
+    are read off the same emissions by a different route, this takes the share
+    of the genome mapped onto a state of its own type from 29% to 93% over the
+    ten SAGAconf cell-line pairs, and from 2% to 99% for MACS2 KMeans.
+
+    Only for a matrix of binarization fractions, where "the share of the
+    strongest mark that is missing" means something. A matrix of raw bigwig
+    signal is returned unchanged rather than augmented on a scale it does not
+    share - there the strongest state is 30, not 1.
+    """
+    if mat.size == 0 or mat.shape[1] == 0 or mat.max() > 1.0 or mat.min() < 0.0:
+        return mat
+    return np.column_stack([mat, 1.0 - mat.max(axis=1)])
+
+
 def emission_cosine_mapping(states1, mat1, states2, mat2):
     """One-to-one mapping states1→states2 via cosine similarity (Hungarian).
 
     Returns (avg_similarity, mapping_dict).
     Both mat1 and mat2 are (n_states, n_marks) float arrays.
+
+    The assignment runs on background_augmented() vectors, so that the states
+    carrying no marks pair with each other instead of being scattered. The
+    similarity returned is the plain cosine of the emission vectors themselves
+    over that pairing: the pairing is what was wrong, and augmenting the
+    reported number too would push it towards 1 for every method whose states
+    are mostly background.
     """
-    n1, n2 = len(states1), len(states2)
-    cost = np.zeros((n1, n2))
-    for i in range(n1):
-        for j in range(n2):
-            norm1 = np.linalg.norm(mat1[i])
-            norm2 = np.linalg.norm(mat2[j])
-            cost[i, j] = (1.0 - np.dot(mat1[i], mat2[j]) / (norm1 * norm2)
-                          if norm1 > 0 and norm2 > 0 else 1.0)
+    mat1 = np.asarray(mat1, dtype=float)
+    mat2 = np.asarray(mat2, dtype=float)
+    cost = 1.0 - _cosine_matrix(background_augmented(mat1),
+                                background_augmented(mat2))
     row_ind, col_ind = linear_sum_assignment(cost)
     mapping = {states1[r]: states2[c] for r, c in zip(row_ind, col_ind)}
-    avg_sim = sum(1.0 - cost[r, c] for r, c in zip(row_ind, col_ind)) / max(len(row_ind), 1)
+    sim = _cosine_matrix(mat1, mat2)
+    avg_sim = sum(sim[r, c] for r, c in zip(row_ind, col_ind)) / max(len(row_ind), 1)
     return avg_sim, mapping
 
 
