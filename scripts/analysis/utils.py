@@ -55,6 +55,20 @@ COSINE_DISPLAY = "Cosine"
 COMPOSITION_DISPLAY = "Composition"
 EMISSION_DISPLAY = "Emission similarity"
 
+# Overlap of a state family with an independent annotation of the same sample:
+# the harmonic mean of the annotated share of the family (precision) and of the
+# share of the annotation the family covers (recall). Computed from the
+# per-state enrichment tables by annotation_f1(), so - like the emission
+# similarity - it is not one of the metrics normalize_metric() ranks, and it has
+# no lowercase on-disk spelling because nothing caches it next to
+# jaccard/kappa/cosine.
+#
+# A monotone transform of the Jaccard of the same two sets (F1 = 2J / (1 + J)),
+# so it orders the callers of one annotation exactly as the Jaccard does; it is
+# read instead of the Jaccard because precision and recall are what a validation
+# against an annotation is asking about.
+F1_DISPLAY = "F1"
+
 FULL_DISPLAY = "FULL"
 NOQH_DISPLAY = "NOQH"
 
@@ -233,6 +247,115 @@ NOQH_STATES = {
 # whose references name their states differently has to go through the types,
 # because the name-based metrics count every one-sided name as a disagreement.
 NOQH_TYPES = (QUIESCENT, FACULTATIVE_HET, CONSTITUTIVE_HET)
+
+# The state families the functional validations score, over the names the
+# 15-state markups use: the promoter family is Tss with its flanking states,
+# the active family adds the enhancers. Biv is in neither - a bivalent promoter
+# is as much repressed as active, so counting it as active would charge a
+# caller for finding one.
+PROMOTER_STATES = ("Tss", "TssFlnk", "TssFlnkU", "TssFlnkD")
+TX_STATES = ("Tx", "TxWk")
+ENHANCER_STATES = ("Enh", "Enh1", "Enh2", "EnhG", "EnhG1", "EnhG2", "EnhLo")
+ACTIVE_STATES = PROMOTER_STATES + ENHANCER_STATES
+
+# (key, label, state family, annotation label prefix) of the functional
+# validations: a state family against an annotation of the same sample that
+# says which loci are actually active in it, scored by annotation_f1().
+#
+# The RefSeq annotations are deliberately not among them - a TSS the sample
+# does not transcribe is no evidence that a state placed there is wrong or
+# right - and the ATAC-seq label carries the accession of the experiment
+# ("atac_ENCFF243NTP"), so annotations are matched by prefix rather than by
+# name.
+FUNCTIONAL_TARGETS = (
+    ("functional_atac", "Active chromatin vs ATAC-seq",
+     ACTIVE_STATES, "atac_"),
+    ("functional_tss", "Tss states vs expressed TSS \u00b12 kb",
+     PROMOTER_STATES, "ExpressedTSS2kb"),
+    ("functional_tx", "Tx states vs expressed gene bodies",
+     TX_STATES, "ExpressedGeneBodies"),
+)
+
+# (key, label, state, annotation label prefix) of the one validation scored on
+# a single state, by annotation_jaccard(): the Tx state itself against the
+# expressed gene bodies, the quantity analysis_encode.ipynb plots as
+# summary_jaccard_tx.png. Apart from FUNCTIONAL_TARGETS because it is neither a
+# family nor an F1 - swapping the metric on a family would reorder nothing, so
+# what this adds over ("functional_tx", ...) above is the narrower state set:
+# Tx alone, without the TxWk the callers disagree most about.
+FUNCTIONAL_TX_JACCARD = ("functional_tx_jaccard",
+                         "Tx state vs expressed gene bodies",
+                         "Tx", "ExpressedGeneBodies")
+
+
+def annotation_f1(dirpath, states, prefix):
+    """F1 of the union of `states` against every annotation `prefix` names.
+
+    Read off the enrichment and report tables of one segmentation in
+    `dirpath` ({analysis_dir}/{method}), as [{"Label", F1_DISPLAY}, ...] - one
+    entry per matching annotation, empty when either table is missing or no
+    annotation matches.
+
+    The enrichment table holds, per state and annotation, the annotated share
+    of the state (coverage) and that share over the share of the genome the
+    annotation takes (fold_enrichment), so the annotation size comes back as
+    coverage / fold_enrichment x genome - as a median over the states that
+    overlap it at all, since a state with no overlap has both at 0.
+
+    The family is scored as one set: its bp are summed and so are its overlaps,
+    rather than averaging the per-state numbers, which would let a tiny state
+    that happens to sit inside the annotation outweigh the family's bulk.
+    """
+    enrichment = os.path.join(dirpath, "enrichment", "enrichment.tsv")
+    report = os.path.join(dirpath, "report.tsv")
+    if not (os.path.exists(enrichment) and os.path.exists(report)):
+        return []
+    enrich = pd.read_csv(enrichment, sep="\t")
+    sizes = pd.read_csv(report, sep="\t").set_index("state")["total_bp"]
+    genome = sizes.sum()
+
+    rows = []
+    for label, group in enrich.groupby("label"):
+        if not str(label).startswith(prefix):
+            continue
+        positive = group[group["fold_enrichment"] > 0]
+        if positive.empty:
+            continue
+        annotation = float(np.median(positive["coverage"]
+                                     / positive["fold_enrichment"])) * genome
+        family = group[group["state"].isin(states)]
+        family_bp = float(sizes.reindex(family["state"]).sum())
+        if annotation <= 0 or family_bp <= 0:
+            continue
+        overlap = float((family["coverage"].values
+                         * sizes.reindex(family["state"]).values).sum())
+        rows.append({"Label": str(label),
+                     F1_DISPLAY: 2 * overlap / (family_bp + annotation)})
+    return rows
+
+
+def annotation_jaccard(dirpath, state, prefix):
+    """Jaccard of a single `state` against every annotation `prefix` names.
+
+    Read off enrichment/jaccard.tsv of one segmentation in `dirpath`
+    ({analysis_dir}/{method}), as [{"Label", JACCARD_DISPLAY}, ...] - one entry
+    per matching annotation, empty when the table is missing or no annotation
+    matches.
+
+    One state rather than a family, and the exact bp Jaccard
+    analyze.compute_enrichment() wrote rather than a number recovered from the
+    enrichment table: a family Jaccard would need the union of its states,
+    which the per-state table cannot give, and it would in any case order the
+    callers exactly as annotation_f1() already does (F1 = 2J / (1 + J)).
+    """
+    path = os.path.join(dirpath, "enrichment", "jaccard.tsv")
+    if not os.path.exists(path):
+        return []
+    df = pd.read_csv(path, sep="\t")
+    hits = df[(df["state"].astype(str) == state)
+              & df["label"].astype(str).str.startswith(prefix)]
+    return [{"Label": str(label), JACCARD_DISPLAY: float(value)}
+            for label, value in zip(hits["label"], hits["jaccard"])]
 
 BIN_COLORS = {
     "default":   "#4878CF",
