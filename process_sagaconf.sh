@@ -78,7 +78,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   --rep1 rep1/chromhmm_default --rep2 rep2/chromhmm_default --outdir $JOINT_BINARIZED;
  # A single model over both replicates, LearnModel segments each replicate (cell)
  # in the shared state space and writes rep{1,2}_15_segments.bed / _dense.bed.
- java -mx4000M -jar $DIR/ChromHMM/ChromHMM.jar LearnModel -b 200 $JOINT_BINARIZED joint_chromhmm 15 hg38;
+ java -mx4000M -jar $DIR/ChromHMM/ChromHMM.jar LearnModel -p 8 -b 200 $JOINT_BINARIZED joint_chromhmm 15 hg38;
  rm -rf $JOINT_BINARIZED;
 done;
 

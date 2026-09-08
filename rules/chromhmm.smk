@@ -76,6 +76,7 @@ rule chromhmm_learn_default:
         segments="{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_segments.bed",
         emissions="{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_emissions.txt",
         transitions="{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_transitions.txt",
+    threads: 8
     params:
         indir="{folder}/chromhmm_default",
         outdir="{folder}/chromhmm_default_result",
@@ -85,7 +86,7 @@ rule chromhmm_learn_default:
     shell:
         r"""
         mkdir -p {params.outdir}
-        {CHROMHMM} LearnModel -b {params.bin} {params.indir} {params.outdir} {params.n} {params.genome}
+        {CHROMHMM} LearnModel -p {threads} -b {params.bin} {params.indir} {params.outdir} {params.n} {params.genome}
         # ChromHMM LearnModel might not prefix emissions/transitions correctly.
         # Ensure outputs match Snakemake's expectations.
         [ -f {params.outdir}/emissions_{params.n}.txt ] && mv {params.outdir}/emissions_{params.n}.txt {output.emissions}

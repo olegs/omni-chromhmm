@@ -101,7 +101,7 @@ for ds in $DATASETS; do
   --rep1 rep1/chromhmm_default --rep2 rep2/chromhmm_default --outdir $JOINT_BINARIZED;
  # A single model over both replicates, LearnModel segments each replicate (cell)
  # in the shared state space and writes rep{1,2}_15_segments.bed / _dense.bed.
- java -mx4000M -jar $CHROMHMM_JAR LearnModel -b $CHROMHMM_BIN \
+ java -mx4000M -jar $CHROMHMM_JAR LearnModel -p 8 -b $CHROMHMM_BIN \
   $JOINT_BINARIZED joint_chromhmm $STATES $GENOME;
  rm -rf $JOINT_BINARIZED;
 done;
