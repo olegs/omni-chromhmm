@@ -28,14 +28,23 @@ rule install_homer:
         mkdir -p {params.dir}
         # Use absolute path for installation to ensure HOMER internal paths are correct.
         ABS_DIR=$(cd {params.dir} && pwd)
+        LOG=$ABS_DIR/$(basename {log})
         cd $ABS_DIR
         test -f configureHomer.pl || curl -sSL -o configureHomer.pl {params.url}
-        perl configureHomer.pl -install &> $ABS_DIR/$(basename {log})
-        # Force re-compilation on macOS or if binaries are missing/incompatible.
-        # This ensures SeqTag.cpp is updated with the correct absolute homeDirectory.
-        if [ "$(uname)" == "Darwin" ] && [ -d cpp ]; then
-            cd cpp && make clean && make &>> $ABS_DIR/$(basename {log})
-        fi
+        perl configureHomer.pl -install > $LOG 2>&1
+        # `-install` as the trailing argument leaves configureHomer.pl's %install
+        # empty, so it never calls compileSoftware() -- the package is unzipped but
+        # cpp/SeqTag.cpp keeps the upstream hard-coded homeDirectory
+        # (/gpfs/data01/cbenner/...) and every binary dies with "HOMER not
+        # configured properly".  `-make` calls compileSoftware() unconditionally:
+        # it rewrites SeqTag.cpp with $ABS_DIR, then recompiles.
+        perl configureHomer.pl -make >> $LOG 2>&1
+        # compileSoftware() runs make via backticks, so build failures are silent;
+        # rebuild here to surface any error in the log, then assert the binaries
+        # really carry the local install path.
+        make -C cpp >> $LOG 2>&1
+        grep -aq "$ABS_DIR" {output.make}
+        grep -aq "$ABS_DIR" {output.find}
         """
 
 
@@ -54,7 +63,7 @@ rule homer_tagdir:
         # trap ERR removes the incomplete output directory on failure.
         """
         trap "rm -rf {output}" ERR
-        samtools view -h {input.bam} | {input.tool} {output} /dev/stdin -format sam -single &> {log}
+        samtools view -h {input.bam} | {input.tool} {output} /dev/stdin -format sam -single > {log} 2>&1
         test -f {output}/tagInfo.txt
         """
 
@@ -73,7 +82,7 @@ rule homer_control_tagdir:
         # trap ERR removes the incomplete output directory on failure.
         """
         trap "rm -rf {output}" ERR
-        samtools view -h {input.bam} | {input.tool} {output} /dev/stdin -format sam -single &> {log}
+        samtools view -h {input.bam} | {input.tool} {output} /dev/stdin -format sam -single > {log} 2>&1
         test -f {output}/tagInfo.txt
         """
 
@@ -91,7 +100,7 @@ rule homer_findpeaks:
         if folder_has_controls(w.folder) else "",
     shell:
         r"""
-        {input.tool} {input.tagdir} -style histone {params.control} -o {output} &> {log}
+        {input.tool} {input.tagdir} -style histone {params.control} -o {output} > {log} 2>&1
         test -f {output}
         """
 

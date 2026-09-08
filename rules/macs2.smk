@@ -42,7 +42,7 @@ rule macs2_callpeak:
             {params.opts} \
             --outdir {params.outdir} \
             -n {params.name} \
-            &> {log}
+            > {log} 2>&1
         # Narrow mode produces .narrowPeak; broad mode produces .broadPeak.
         # Both share the same first 3 BED columns. Merge into sorted 3-col BED.
         peak_file=""

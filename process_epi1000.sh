@@ -40,7 +40,7 @@ for E in $(cat marks.txt); do echo $E;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=${E}_15_coreMarks_dense.bed.gz;
  MATCHED=${WORK/.bed.gz/_matched.bed};
- if [[ -f $REF ]] & [[ -f $WORK ]]; then
+ if [[ -f $REF ]] && [[ -f $WORK ]]; then
 	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
  fi;
 done;
@@ -159,7 +159,7 @@ for PC in homer macs2 omni; do echo $PC;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
  MATCHED=${WORK/.bed/_matched.bed};
- if [[ -f $REF ]] & [[ -f $WORK ]]; then
+ if [[ -f $REF ]] && [[ -f $WORK ]]; then
 	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
  fi;
 done;

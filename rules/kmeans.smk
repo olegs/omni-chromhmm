@@ -30,4 +30,4 @@ rule kmeans_states:
         "--bin {params.bin} --chromsizes {input.cs} --marks {params.marks} "
         "--peaks {input.peaks} --states {params.n} --out {output.kmeans} "
         "--save-binary {params.outdir} --cell {params.cell} "
-        "&> {log}"
+        "> {log} 2>&1"

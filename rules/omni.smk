@@ -29,4 +29,4 @@ rule omnipeak_call:
         "{OMNIPEAK} analyze -t {input.bam} {params.control} -cs {params.cs} --bin {params.bin} "
         "--threads {threads} -w {params.wdir} "
         "-p {output.peak} --clip 0 "
-        "&> {log}"
+        "> {log} 2>&1"

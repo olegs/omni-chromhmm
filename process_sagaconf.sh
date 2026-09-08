@@ -20,7 +20,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   MARKS_LIST=(H3K27me3 H3K9me2 H3K4me2 H3K4me3 H3F3A H3K79me2 H3K4me1 H3K9ac H4K20me1 H3K9me3 H3K27ac H2AFZ H3K36me3)
   PRESENT_MARKS=()
   for M in "${MARKS_LIST[@]}"; do
-    if ls rep*/$PC/*${M}* &>/dev/null; then
+    if ls rep*/$PC/*${M}* >/dev/null 2>&1; then
       PRESENT_MARKS+=($M)
     fi
   done
