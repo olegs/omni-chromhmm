@@ -9,16 +9,6 @@
 # This file owns:
 #   - Peak -> binary matrix:  {folder}/{caller}/chromhmm_peaks/
 
-# Reference ChromHMM markup download.
-
-_MARKUPS_DIR = os.path.join(workflow.basedir, "markups")
-
-rule download_markups:
-    """Download ENCODE reference ChromHMM BED files into markups/."""
-    output: directory(_MARKUPS_DIR)
-    shell:
-        "bash download_chromhmm.sh {_MARKUPS_DIR}"
-
 # --- Default ChromHMM binarization ---------------------------------------
 
 rule make_cellmark_table:
