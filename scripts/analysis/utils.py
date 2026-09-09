@@ -8,6 +8,7 @@ ENCODE reference segmentation.
 import json
 import os
 import pickle
+import random
 
 import numpy as np
 import pandas as pd
@@ -573,6 +574,265 @@ def hatch_all(ax):
             bar.set_hatch(JOINT_HATCH)
 
 
+# Every bar chart of the notebooks is the same figure: mean +- SE bars in the
+# style above, the observations on top of them, the joint models hatched, and
+# the mean of each bar written inside the axes. bar_plot() draws it, and the
+# two variants below cover the composition plots, whose Quiescent state needs
+# either a broken axis or a stack.
+BAR_STYLE = dict(capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
+                 edgecolor="lightgrey", linewidth=1)
+TITLE_STYLE = dict(fontsize=11, fontweight="bold")
+AXIS_FONTSIZE = 9
+TICK_FONTSIZE = 8
+
+
+def _bars(ax, data, x, y, order, hue, hue_order, palette, color, hatch, points,
+          bar_kwargs):
+    """One sns.barplot in the shared style, with its points and hatching.
+
+    Bars are dodged when *hue* names a second variable; without it the colour
+    follows *x*, which seaborn wants spelled as an undodged hue.
+    """
+    dodge = hue is not None and hue != x
+    plot_hue = hue if hue is not None else (x if palette is not None else None)
+    plot_order = hue_order if dodge else (order if plot_hue is not None else None)
+    style = dict(BAR_STYLE, **bar_kwargs)
+    sns.barplot(data=data, x=x, y=y, hue=plot_hue, order=order,
+                hue_order=plot_order, palette=palette if plot_hue else None,
+                color=color, dodge=dodge, legend=dodge, ax=ax, **style)
+    strip_points(ax, data=data, x=x, y=y,
+                 **({"hue": hue, "hue_order": hue_order} if dodge else {}),
+                 order=order, dodge=dodge, **(points or {"size": 2}))
+    if hatch == "joint":
+        hatch_joint(ax, plot_order or order)
+    elif hatch == "all":
+        hatch_all(ax)
+
+
+def _bar_legend(ax, levels, legend, title, kwargs):
+    """Restyle the barplot legend outside the axes, or drop it."""
+    if not legend:
+        if ax.get_legend() is not None:
+            ax.get_legend().remove()
+        return
+    opts = dict(title=title, fontsize=8, title_fontsize=9,
+                bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
+    opts.update(kwargs or {})
+    labels = [display_name(level) for level in levels]
+    # One bar of every group as the handle, so the swatch is the patch itself -
+    # its colour and its hatch. Labelled handles alone give a line per entry.
+    bars = [group[0] for group in ax.containers if len(group)]
+    if len(bars) == len(labels):
+        ax.legend(bars, labels, **opts)
+    else:
+        ax.legend(labels=labels, **opts)
+
+
+def _xticklabels(order, xticklabels):
+    """Tick labels for *order*: as given, display names, or the levels."""
+    if xticklabels == "display":
+        return [display_name(level) for level in order]
+    return order if xticklabels is None else xticklabels
+
+
+def bar_labels(ax, data, x, y, order, fmt="{:.2f}", fontsize=6):
+    """Write the mean of every bar of *order* above it, inside the axes."""
+    for i, level in enumerate(order):
+        vals = pd.to_numeric(data.loc[data[x] == level, y], errors="coerce").dropna()
+        if vals.empty:
+            continue
+        mean, err = vals.mean(), vals.sem()
+        ax.text(i, bar_label_y(ax, mean + (0 if pd.isna(err) else err), vals.max()),
+                fmt.format(mean), ha="center", va="bottom", fontsize=fontsize)
+
+
+def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
+             color=None, ax=None, figsize=(6, 4.2), title=None, xlabel="",
+             ylabel=None, xticklabels=None, rotation=45, tick_fontsize=TICK_FONTSIZE,
+             ylim=None, log=False, labels=None, label_fontsize=6, hatch="joint",
+             legend=False, legend_title="Method", legend_kwargs=None, points=None,
+             path=None, **bar_kwargs):
+    """Bar chart of *y* per *x* level, mean +- SE with the observations on top.
+
+    *order* fixes the x levels (defaults to their order of appearance) and
+    *palette* colours them; pass *hue* / *hue_order* instead for grouped bars,
+    or *color* for a single-colour chart. *xticklabels* replaces the tick
+    labels - "display" for display_name() of *order*. *labels* is a format
+    string for the per-bar mean, which only makes sense without a *hue*, where
+    one bar is one group of values. *hatch* is "joint" for hatch_joint(), "all"
+    for hatch_all(), None for neither, and *points* overrides the
+    strip_points() keywords. Extra keywords go to sns.barplot().
+
+    Writes the figure to *path* and closes it, or returns the axes when *path*
+    is None; pass *ax* to draw into an existing figure instead.
+    """
+    if order is None:
+        order = list(pd.unique(data[x]))
+    fig = None
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+
+    _bars(ax, data, x, y, order, hue, hue_order, palette, color, hatch, points,
+          bar_kwargs)
+
+    if title:
+        ax.set_title(title, **TITLE_STYLE)
+    ax.set_xlabel(xlabel or "", fontsize=AXIS_FONTSIZE)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels(_xticklabels(order, xticklabels), rotation=rotation,
+                       ha="right" if rotation else "center", fontsize=tick_fontsize)
+    ax.tick_params(axis="y", labelsize=tick_fontsize)
+    if log and (pd.to_numeric(data[y], errors="coerce") > 0).any():
+        ax.set_yscale("log")
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    ax.grid(axis="y", alpha=0.3)
+    _bar_legend(ax, hue_order or order, legend, legend_title, legend_kwargs)
+    if labels:
+        if ylim is None and not log:
+            # Headroom for the labels, which bar_label_y() keeps inside the axes
+            # and would otherwise write over the tallest bar.
+            low, high = ax.get_ylim()
+            ax.set_ylim(low, high + 0.07 * (high - low))
+        # After the y limits: a label is placed relative to them.
+        bar_labels(ax, data, x, y, order, fmt=labels, fontsize=label_fontsize)
+    if path is not None and fig is not None:
+        save_fig(fig, path)
+        return None
+    return ax
+
+
+def broken_bar_plot(data, x, y, order, break_low=0.20, break_high=0.40, top=1.02,
+                    height_ratios=(1, 4), figsize=(12, 6), title=None, xlabel=None,
+                    ylabel=None, xticklabels=None, rotation=45,
+                    tick_fontsize=TICK_FONTSIZE, path=None, **kwargs):
+    """bar_plot() with the y axis broken between *break_low* and *break_high*.
+
+    What the state composition plots need: the Quiescent state covers more than
+    half of the genome, and on a shared 0..1 axis it flattens every other state
+    to nothing. The two axes hold the same bars over the two y ranges, and the
+    break is marked by the hidden inner spines plus a pair of diagonals.
+    """
+    fig, (ax_top, ax_bot) = plt.subplots(
+        2, 1, sharex=True, figsize=figsize,
+        gridspec_kw={"height_ratios": list(height_ratios), "hspace": 0.06})
+    for ax in (ax_top, ax_bot):
+        bar_plot(data, x, y, order=order, ax=ax, rotation=rotation,
+                 tick_fontsize=tick_fontsize, xticklabels=xticklabels,
+                 legend=kwargs.get("legend", False) and ax is ax_top, **{
+                     k: v for k, v in kwargs.items() if k != "legend"})
+    # The break is what carries the scale, so the ranges come after the bars.
+    ax_top.set_ylim(break_high, top)
+    ax_bot.set_ylim(0, break_low)
+    ax_top.spines["bottom"].set_visible(False)
+    ax_bot.spines["top"].set_visible(False)
+    ax_top.tick_params(axis="x", bottom=False)
+
+    d = 0.012   # half-length of a break mark, in figure coordinates
+    for ax, sign in ((ax_top, -1), (ax_bot, 1)):
+        pos = ax.get_position()
+        y_fig = pos.y0 if sign == 1 else pos.y1
+        for x_fig in (pos.x0, pos.x1):
+            fig.add_artist(plt.Line2D([x_fig - d, x_fig + d],
+                                      [y_fig + sign * d * 1.5, y_fig - sign * d * 1.5],
+                                      transform=fig.transFigure, color="k",
+                                      clip_on=False, linewidth=0.8))
+
+    if title:
+        ax_top.set_title(title, **TITLE_STYLE)
+    ax_top.set_xlabel("")
+    ax_bot.set_xlabel(xlabel or "", fontsize=AXIS_FONTSIZE)
+    ax_top.set_ylabel("")
+    ax_bot.set_ylabel(ylabel or "", fontsize=AXIS_FONTSIZE)
+    if path is not None:
+        # tight_layout() would move the axes the break marks are placed against.
+        save_fig(fig, path, tight=False)
+        return None
+    return ax_top, ax_bot
+
+
+def stacked_bar_plot(pivot, colors=None, figsize=(15, 6), width=0.8, title=None,
+                     xlabel=None, ylabel=None, xticklabels=None, rotation=90,
+                     tick_fontsize=6, legend_title="State",
+                     legend_fontsize="x-small", path=None):
+    """Stacked bars of a fraction table, with the row totals outlined.
+
+    *pivot* is indexed by the bars (dataset or method) and its columns are the
+    components, stacked in column order and coloured by *colors*. The outline
+    of the row sums is what shows how much of the genome a segmentation covers
+    at all, which the stack alone hides.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    pivot.plot(kind="bar", stacked=True, ax=ax, width=width, color=colors, linewidth=0)
+    # Drawn after the stack so ax.legend() below picks up the components only.
+    pivot.sum(axis=1).plot(kind="bar", ax=ax, width=width, facecolor="none",
+                           edgecolor="lightgrey", linewidth=1, legend=False)
+    if title:
+        ax.set_title(title, **TITLE_STYLE)
+    ax.legend(title=legend_title, fontsize=legend_fontsize,
+              bbox_to_anchor=(1.01, 1), loc="upper left")
+    ax.set_xlabel(xlabel or "", fontsize=AXIS_FONTSIZE)
+    ax.set_ylabel(ylabel or "", fontsize=AXIS_FONTSIZE)
+    if xticklabels is not None:
+        ax.set_xticks(range(len(pivot.index)))
+        ax.set_xticklabels(xticklabels, rotation=rotation,
+                           ha="right" if rotation not in (0, 90) else "center",
+                           fontsize=tick_fontsize)
+    else:
+        ax.tick_params(axis="x", rotation=rotation, labelsize=tick_fontsize)
+    ax.grid(axis="y", alpha=0.3)
+    if path is not None:
+        save_fig(fig, path)
+        return None
+    return ax
+
+
+def sample_pairs(pairs, limit=1000, seed=42):
+    """At most *limit* of *pairs*, sampled reproducibly and sorted.
+
+    The pairwise consistency of a hundred segmentations is tens of thousands of
+    pairs, which the notebooks read off a sample of. Sorting the sample keeps
+    it lined up with a cached list of overlaps computed from the same call.
+    """
+    pairs = list(pairs)
+    if len(pairs) <= limit:
+        return pairs
+    return sorted(random.Random(seed).sample(pairs, limit))
+
+
+def keyed_cache(path, keys, compute, label=None, valid=None, progress=None):
+    """{key: compute(key)} over *keys*, backed by a {key: value} pickle.
+
+    Only the keys the cache does not hold - or holds a value *valid* rejects -
+    are computed, and the file is rewritten only when some were, which is what
+    makes the per-sample and per-pair tables of the notebooks resumable across
+    runs. *progress* wraps the missing keys: pass tqdm to show a bar.
+    """
+    what = label or os.path.basename(path)
+    cache = {}
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            cache = pickle.load(f)
+        if valid is not None:
+            stale = [key for key, value in cache.items() if not valid(value)]
+            if stale:
+                print(f"Dropping {len(stale)} cached {what} entries that no "
+                      f"longer match the inputs")
+                for key in stale:
+                    del cache[key]
+        print(f"Loaded {len(cache)} cached {what} entries from {path}")
+    missing = [key for key in keys if key not in cache]
+    if missing:
+        print(f"Computing {what} for {len(missing)} of {len(keys)} keys...")
+        for key in (progress(missing) if progress else missing):
+            cache[key] = compute(key)
+        _save(path, lambda p: _dump_pickle(p, cache))
+        print(f"Saved {what} to {path}")
+    return {key: cache[key] for key in keys}
+
+
 def save_fig(fig, path, tight=True, note=None, **kwargs):
     """Write *fig* to *path*, then close it and report the file.
 
@@ -638,6 +898,28 @@ def cached_csv(path, compute, label=None, index=False, valid=None, **read_kwargs
     _save(path, lambda p: df.to_csv(p, index=index, sep=sep))
     print(f"Saved {what} to {path}")
     return df
+
+
+def cached_json(path, compute, label=None, valid=None):
+    """Result of compute(), cached as JSON in *path*.
+
+    Same contract as cached_pickle(), for a value a plain JSON object holds -
+    the state colour maps of the notebooks.
+    """
+    what = label or os.path.basename(path)
+    if os.path.exists(path):
+        with open(path) as f:
+            value = json.load(f)
+        if valid is None or valid(value):
+            print(f"Loaded cached {what} from {path}")
+            return value
+        print(f"Cached {what} in {path} no longer matches the inputs, recomputing...")
+    else:
+        print(f"Computing {what}...")
+    value = compute()
+    _save(path, lambda p: _dump_json(p, value))
+    print(f"Saved {what} to {path}")
+    return value
 
 
 def file_stamp(path):

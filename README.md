@@ -49,7 +49,9 @@ cd ~/data/2026_segmentations/encode
 # Add -n to dry run
 # Set REPO to the directory where you cloned omni-chromhmm
 REPO=~/work/omni-chromhmm
-for ds in imr90 monocytes monocytes_mint gm12878_mint spleen; do
+for ds in imr90 monocytes monocytes_mint gm12878_mint spleen \
+ heart_right_ventricle neurosphere sigmoid_colon adrenal_gland thyroid_gland \
+ uterus tibial_nerve heart_left_ventricle substantia_nigra temporal_lobe; do
   snakemake -p $ds/.done --use-conda --cores all --directory $(pwd) \
   --snakefile $REPO/Snakefile \
   --configfile $REPO/config_encode.yaml \

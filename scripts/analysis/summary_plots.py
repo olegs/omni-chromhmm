@@ -116,6 +116,56 @@ def sort_states(states):
     return sorted(states, key=key)
 
 
+def _hex_color(color):
+    """A hex string or a BED itemRgb triple as "#RRGGBB"; None when unset.
+
+    Black is read as unset: it is what a state carries in a segmentation whose
+    caller wrote no colour for it.
+    """
+    if not color:
+        return None
+    text = str(color).strip()
+    if "," in text:
+        try:
+            r, g, b = (int(v) for v in text.split(","))
+        except ValueError:
+            return None
+        text = f"#{r:02X}{g:02X}{b:02X}"
+    return None if text.upper() == "#000000" else text
+
+
+def _canonical_color(state):
+    """STATE_COLORS entry for a state name, matched without its number."""
+    name = state.split("_", 1)[1] if "_" in state else state
+    if name in STATE_COLORS:
+        matched = name
+    else:
+        # Longest prefix, so "TssAFlnk" keeps its own colour rather than
+        # borrowing the one of "TssA", which is also a prefix of it.
+        prefixes = [key for key in STATE_COLORS if name.startswith(key)]
+        if not prefixes:
+            return None
+        matched = max(prefixes, key=len)
+    r, g, b = STATE_COLORS[matched]
+    return "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
+
+
+def state_palette(states, *sources, default="#888888"):
+    """{state: "#RRGGBB"} for *states*, from *sources* then the canonical colors.
+
+    A source maps a state name to a hex colour or to a BED itemRgb triple, the
+    way analyze.segmentation_stats() and match.state_colors() return them; the
+    first source naming a state wins. What none of them names falls back to
+    STATE_COLORS by state name, and to *default* when that misses too.
+    """
+    palette = {}
+    for state in states:
+        color = next((c for c in (_hex_color(src.get(state))
+                                  for src in sources if src) if c), None)
+        palette[state] = color or _canonical_color(state) or default
+    return palette
+
+
 def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method):
     """Return Path for a single (dataset, method) {match_method}_matched BED."""
     root = Path(workdir) / ds
@@ -132,8 +182,12 @@ def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method):
     return mapping[method_key]
 
 
-def ref_beds(markups_dir):
-    """Sorted ENCODE reference BED paths from markups/15state/."""
+def ref_beds(markups_dir=None, ref_paths=None):
+    """Sorted ENCODE reference BED paths."""
+    if ref_paths:
+        return sorted(ref_paths, key=lambda p: Path(p).name)
+    if not markups_dir:
+        return []
     markups_path = Path(markups_dir) / "15state"
     files = sorted(markups_path.glob("*.bed.gz")) + sorted(markups_path.glob("*.bed"))
     if not files:
@@ -749,7 +803,7 @@ def _plot_peak_length(datasets, workdir, outpath, p_low=None, p_high=None, marks
               p_low=p_low, p_high=p_high, marks=marks)
 
 
-def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile, match_method):
+def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile, match_method, ref_paths=None):
     """Grouped bar chart: fraction of genome per state, method as hue, all
     datasets pooled.
     """
@@ -773,7 +827,7 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
     for key, label, _ in INTER_DS_METHODS:
         per_ds = []
         if key == "ref":
-            cov = _coverage(ref_beds(markups_dir))
+            cov = _coverage(ref_beds(markups_dir, ref_paths=ref_paths))
             if cov:
                 total = sum(cov.values())
                 per_ds.append({s: bp / total for s, bp in cov.items()})
@@ -917,25 +971,31 @@ def _stacked_composition_chart(coverages, labels, title, outfile, label_fontsize
     save_fig(fig, outfile)
 
 
-def _plot_reference_composition(markups_dir, outfile):
+def _plot_reference_composition(markups_dir, outfile, ref_paths=None, ref_labels=None):
     """Stacked bar chart: state fraction per ENCODE reference segmentation."""
-    beds = ref_beds(markups_dir)
-    # Sort by cell type label, the part after the ENCFF..._ prefix.
-    beds = sorted(beds, key=lambda p: "_".join(Path(p).name.replace(".bed.gz", "").replace(".bed", "").split("_")[1:]))
+    beds = ref_beds(markups_dir, ref_paths=ref_paths)
     if not beds:
         print(f"  skipping {outfile}: no reference beds", file=sys.stderr)
         return
 
     coverages = {}
     labels = []
-    for path in beds:
-        name = Path(path).name.replace(".bed.gz", "").replace(".bed", "")
-        label = "_".join(name.split("_")[1:]).replace("_", " ")
+    for i, path in enumerate(beds):
+        if ref_labels and i < len(ref_labels):
+            label = ref_labels[i]
+        else:
+            name = Path(path).name.replace(".bed.gz", "").replace(".bed", "")
+            label = "_".join(name.split("_")[1:]).replace("_", " ")
         df = load_bed_df(path)[["state", "length"]]
         totals = df.groupby("state")["length"].sum()
         total_bp = totals.sum()
         coverages[label] = (totals / total_bp).to_dict() if total_bp > 0 else {}
         labels.append(label)
+
+    # Sort by label
+    combined = sorted(zip(labels, [coverages[l] for l in labels]), key=lambda x: x[0])
+    labels = [x[0] for x in combined]
+    coverages = {x[0]: x[1] for x in combined}
 
     _stacked_composition_chart(
         coverages, labels,
@@ -944,7 +1004,7 @@ def _plot_reference_composition(markups_dir, outfile):
     )
 
 
-def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, outfile, match_method):
+def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, outfile, match_method, ref_paths=None):
     """Stacked bar chart: mean state fraction per method, averaged across datasets."""
 
     def _fracs_from_path(path):
@@ -960,7 +1020,7 @@ def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, out
     labels_out = []
     for key, label, _ in INTER_DS_METHODS:
         if key == "ref":
-            beds = ref_beds(markups_dir)
+            beds = ref_beds(markups_dir, ref_paths=ref_paths)
             per_ds = [_fracs_from_path(b) for b in beds]
         else:
             per_ds = [
@@ -1215,6 +1275,7 @@ def _plot_per_dataset_all_methods_composition(datasets, cells, workdir, nstates,
 def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       outdir=None, workdir=None, markups_dir=None, cells=None,
                       methods=None, marks=None, nstates=15, match_method='jaccard',
+                      ref_paths=None, ref_labels=None,
                       state_coverage_outfile=None,
                       peak_count_outfile=None, peak_length_outfile=None,
                       peak_stats_outfile=None,
@@ -1244,6 +1305,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         analysis_dirs=analysis_dirs or [], outdir=outdir, workdir=workdir,
         markups_dir=markups_dir, cells=cells or [], methods=methods or [],
         nstates=nstates, marks=marks, match_method=match_method,
+        ref_paths=ref_paths, ref_labels=ref_labels,
         state_coverage_outfile=state_coverage_outfile,
         peak_count_outfile=peak_count_outfile, peak_length_outfile=peak_length_outfile,
         peak_stats_outfile=peak_stats_outfile,
@@ -1504,14 +1566,15 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_per_state_metrics(ds, adirs, args.outdir, match_method=args.match_method)
 
     if args.state_coverage_outfile:
-        if not (args.workdir and args.markups_dir and args.cells):
-            raise ValueError("--workdir, --markups-dir and --cells are required for coverage plots")
+        if not (args.workdir and (args.markups_dir or args.ref_paths) and args.cells):
+            raise ValueError("--workdir, --markups-dir/--ref-paths and --cells are required for coverage plots")
         if len(args.datasets) != len(args.cells):
             raise ValueError("--datasets and --cells must have equal lengths")
 
         os.makedirs(os.path.dirname(os.path.abspath(args.state_coverage_outfile)), exist_ok=True)
         _plot_state_coverage(args.datasets, args.cells, args.workdir, args.markups_dir,
-                             args.nstates, args.state_coverage_outfile, args.match_method)
+                             args.nstates, args.state_coverage_outfile, args.match_method,
+                             ref_paths=args.ref_paths)
 
     if args.peak_count_outfile:
         if not args.workdir:
@@ -1538,10 +1601,11 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_peak_length(args.datasets, args.workdir, os.path.join(outdir, "peak_length.png"), marks=args.marks)
 
     if args.ref_composition_outfile:
-        if not args.markups_dir:
-            raise ValueError("--markups-dir is required for --ref-composition-outfile")
+        if not (args.markups_dir or args.ref_paths):
+            raise ValueError("--markups-dir or --ref-paths is required for --ref-composition-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_composition_outfile)), exist_ok=True)
-        _plot_reference_composition(args.markups_dir, args.ref_composition_outfile)
+        _plot_reference_composition(args.markups_dir, args.ref_composition_outfile, 
+                                     ref_paths=args.ref_paths, ref_labels=args.ref_labels)
 
     if args.ref_dist_outfile:
         if not (args.ref_comp_matrix and args.ref_kappa_matrix and args.ref_jaccard_matrix):
@@ -1623,11 +1687,12 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         _plot_rep_consistency_per_state(args.datasets, args.methods_dirs, args.rep_consistency_outdir)
 
     if args.method_composition_outfile:
-        if not args.markups_dir:
-            raise ValueError("--markups-dir is required for --method-composition-outfile")
+        if not (args.markups_dir or args.ref_paths):
+            raise ValueError("--markups-dir or --ref-paths is required for --method-composition-outfile")
         os.makedirs(os.path.dirname(os.path.abspath(args.method_composition_outfile)), exist_ok=True)
         _plot_method_composition(args.datasets, args.cells, args.workdir, args.markups_dir,
-                                 args.nstates, args.method_composition_outfile, args.match_method)
+                                 args.nstates, args.method_composition_outfile, args.match_method,
+                                 ref_paths=args.ref_paths)
 
     if args.method_ds_composition_outdir:
         if not (args.workdir and args.cells and args.datasets):

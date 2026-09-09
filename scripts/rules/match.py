@@ -139,6 +139,48 @@ def per_state_agreement(overlap, lengths1, lengths2, exclude=()):
     return out
 
 
+def per_state_diagonal(overlap, states, metric):
+    """Agreement of every state with itself, as {state: value}.
+
+    The diagonal of the state-by-state matrix of *metric* (utils.JACCARD,
+    utils.KAPPA or utils.COSINE) over *overlap*, a pair_overlap() result
+    restricted to *states*. Unlike per_state_agreement(), the marginals are
+    those of the restricted confusion matrix rather than the genomic extents,
+    so a state left out of *states* counts against nothing:
+
+      jaccard : same-state bp over the union of the two restricted extents
+      kappa   : two-class kappa of the state against every other state
+      cosine  : same-state bp over the geometric mean of the two extents
+
+    A state the restricted marginals leave empty is absent from the result,
+    and so is every state when the two sides never overlap.
+    """
+    total = sum(overlap.get((s1, s2), 0) for s1 in states for s2 in states)
+    if total == 0:
+        return {}
+    a1 = {s: sum(overlap.get((s, s2), 0) for s2 in states) for s in states}
+    a2 = {s: sum(overlap.get((s1, s), 0) for s1 in states) for s in states}
+
+    out = {}
+    for s in states:
+        shared = overlap.get((s, s), 0)
+        if metric == utils.JACCARD:
+            denom = a1[s] + a2[s] - shared
+            value = shared / denom if denom > 0 else None
+        elif metric == utils.KAPPA:
+            p1, p2, p12 = a1[s] / total, a2[s] / total, shared / total
+            denom = p1 + p2 - 2 * p1 * p2
+            value = 2 * (p12 - p1 * p2) / denom if denom > 0 else None
+        elif metric == utils.COSINE:
+            denom = np.sqrt(a1[s] * a2[s])
+            value = shared / denom if denom > 0 else None
+        else:
+            raise ValueError(f"unknown metric {metric}")
+        if value is not None:
+            out[s] = value
+    return out
+
+
 def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
     """Agreement of two segmentations of the same genome, as a dict.
 

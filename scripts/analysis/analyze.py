@@ -323,6 +323,27 @@ def transition_entropy(states, counts, state_bp):
     return np.dot(pi, H), H, A, pi
 
 
+def state_composition(segs):
+    """Genome share and segment lengths of every state of one segmentation.
+
+    [{State, Fraction, MeanLength, MedianLength}, ...] over the named segments
+    of *segs*, a load_bed() result; *Fraction* is of the covered genome, not of
+    its full length, so it sums to 1 whatever the segmentation leaves out.
+    """
+    lengths_by_state = defaultdict(list)
+    for row in segs:
+        name = row[3]
+        if not name or name == ".":
+            continue
+        lengths_by_state[name].append(row[2] - row[1])
+    total = sum(sum(ls) for ls in lengths_by_state.values())
+    return [{"State": state,
+             "Fraction": sum(ls) / total if total > 0 else 0,
+             "MeanLength": np.mean(ls),
+             "MedianLength": np.median(ls)}
+            for state, ls in lengths_by_state.items()]
+
+
 def segmentation_stats(segs, bin_size, background=()):
     """Composition, transition entropy and state colors of one segmentation.
 
@@ -337,19 +358,7 @@ def segmentation_stats(segs, bin_size, background=()):
     Lighter than run_analyze()'s on-disk report, which the notebooks tabulate
     over hundreds of segmentations.
     """
-    lengths_by_state = defaultdict(list)
-    for row in segs:
-        name = row[3]
-        if not name or name == ".":
-            continue
-        lengths_by_state[name].append(row[2] - row[1])
-    total = sum(sum(ls) for ls in lengths_by_state.values())
-
-    composition = [{"State": state,
-                    "Fraction": sum(ls) / total if total > 0 else 0,
-                    "MeanLength": np.mean(ls),
-                    "MedianLength": np.median(ls)}
-                   for state, ls in lengths_by_state.items()]
+    composition = state_composition(segs)
 
     entropy = {}
     segs4 = [(r[0], r[1], r[2], r[3]) for r in segs]
