@@ -102,6 +102,13 @@ def accs_of(ds, mark=None, rep=None):
 
 
 def bam_path(ds, acc):
+    """Downloaded BAM path for a signal accession.
+
+    An accession that also serves as somebody's control resolves to the control
+    copy instead of a second {acc}_{mark}.bam, so it is downloaded only once.
+    """
+    if acc in control_accs(ds):
+        return f"{ds}/downloaded/{acc}_control.bam"
     mark = DATASETS[ds]["bams"][acc]["mark"]
     return f"{ds}/downloaded/{acc}_{mark}.bam"
 
@@ -120,6 +127,11 @@ def bams_for_mark(ds, mark, rep=None):
 def has_controls(ds):
     """True if any BAM in the dataset has a non-empty control accession."""
     return any(meta.get("control") for meta in DATASETS[ds]["bams"].values())
+
+
+def control_accs(ds):
+    """Every accession referenced as a control anywhere in a dataset."""
+    return {meta["control"] for meta in DATASETS[ds]["bams"].values() if meta.get("control")}
 
 
 def control_accs_for_mark(ds, mark, rep=None):

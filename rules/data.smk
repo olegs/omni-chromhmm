@@ -2,6 +2,10 @@
 #
 # Downloads ENCODE BAMs to {ds}/downloaded/ (ENCODE BAMs are already
 # coordinate-sorted, so no re-sort step is needed).
+# Every accession resolves to exactly one downloaded path, so a file referenced
+# by several marks -- typically a shared input/control -- is fetched once rather
+# than once per reference.  wget runs with -c, so an interrupted download resumes
+# instead of restarting and a re-triggered job over a complete file is a no-op.
 # Pooled BAMs (per mark) are assembled at {ds}/bams/ — either a symlink when
 # there is a single source BAM or a merged file when multiple replicates exist.
 # Per-replicate BAMs are symlinked into {ds}/{rep}/bams/ for downstream rules
@@ -11,36 +15,48 @@
 ruleorder: download_control_bam > download_bam
 ruleorder: merge_control_bams > download_control_bam
 
+
+def encode_url(acc, ext):
+    """ENCODE download URL for an accession."""
+    return f"https://www.encodeproject.org/files/{acc}/@@download/{acc}.{ext}"
+
+
 rule download_bam:
+    """Download a signal BAM from ENCODE.
+
+    temp(): a signal BAM feeds a single pool_bams / rep_link_bam job, so it is
+    dropped once the per-mark BAM exists.  Controls are shared by every mark and
+    are kept instead, see download_control_bam.
+    """
     output: temp("{ds}/downloaded/{acc}_{mark}.bam")
     params:
-        url=lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.bam"
+        url=lambda w: encode_url(w.acc,"bam")
     shell:
-        "wget -q {params.url} -O {output}"
+        "wget -q -c {params.url} -O {output}"
 
 
 rule download_chromhmm_ref:
     output: protected("{ds}/{acc}_chromhmm.bed")
     params:
-        url=lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.bed.gz"
+        url=lambda w: encode_url(w.acc,"bed.gz")
     shell:
-        "wget -q {params.url} -O {output}.gz && gunzip -f {output}.gz"
+        "wget -q -c {params.url} -O {output}.gz && gunzip -f {output}.gz"
 
 
 rule download_rnaseq:
     output: protected("{ds}/rnaseq_{acc}.tsv")
     params:
-        url=lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.tsv"
+        url=lambda w: encode_url(w.acc,"tsv")
     shell:
-        "wget -q {params.url} -O {output}"
+        "wget -q -c {params.url} -O {output}"
 
 
 rule download_atac:
     output: protected("{ds}/atac_{acc}.bed.gz")
     params:
-        url=lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.bed.gz"
+        url=lambda w: encode_url(w.acc,"bed.gz")
     shell:
-        "wget -q {params.url} -O {output}"
+        "wget -q -c {params.url} -O {output}"
 
 
 rule download_gencode_gtf:
@@ -48,18 +64,26 @@ rule download_gencode_gtf:
     params:
         url="https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.basic.annotation.gtf.gz"
     shell:
-        "wget -q {params.url} -O {output}"
+        "wget -q -c {params.url} -O {output}"
 
 
 rule download_control_bam:
-    """Download a control/input BAM from ENCODE."""
-    output: temp("{ds}/downloaded/{acc}_control.bam")
+    """Download a control/input BAM from ENCODE, once per accession.
+
+    Not temp(): a control is referenced by every mark that was called against
+    it, in the pooled folder and in both replicate folders, and ENCODE controls
+    are multi-GB.  Keeping the download means a re-triggered downstream job --
+    another peak caller enabled, --rerun-incomplete after a crash, a rerun of
+    the same dataset -- relinks the cached file instead of fetching it again.
+    Delete {ds}/downloaded/ by hand to reclaim the space.
+    """
+    output: "{ds}/downloaded/{acc}_control.bam"
     wildcard_constraints:
         acc=r"ENCFF[A-Z0-9]+"
     params:
-        url=lambda w: f"https://www.encodeproject.org/files/{w.acc}/@@download/{w.acc}.bam"
+        url=lambda w: encode_url(w.acc,"bam")
     shell:
-        "wget -q {params.url} -O {output}"
+        "wget -q -c {params.url} -O {output}"
 
 
 rule merge_control_bams:
@@ -67,6 +91,9 @@ rule merge_control_bams:
 
     Output path encodes the sorted accession list joined by '+', so the same
     set of controls is merged only once regardless of how many marks reference it.
+
+    Stays temp(): its inputs are the kept control downloads, so rebuilding it is
+    a local merge and never a re-download.
     """
     input: lambda w: [ancient(f"{w.ds}/downloaded/{a}_control.bam") for a in w.accs.split("+")]
     output: temp("{ds}/downloaded/{accs}_merged_control.bam")
