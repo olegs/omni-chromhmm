@@ -464,6 +464,18 @@ def is_replicate(label):
     return label.endswith("_rep1") or label.endswith("_rep2")
 
 
+def is_rep_pair(label_i, label_j):
+    """True for the rep1-vs-rep2 pair of one method, whatever else is compared.
+
+    Such a pair is never rematched: both replicates of a dataset were matched
+    to the same reference markup and already share their state names, so
+    realigning one onto the other by maximum overlap would report the agreement
+    of the best relabelling of rep2 rather than the consistency of the method.
+    """
+    return (is_replicate(label_i) and is_replicate(label_j)
+            and label_i != label_j and label_i[:-5] == label_j[:-5])
+
+
 def should_compare(label_i, label_j):
     """True for pooled-vs-reference pairs and rep1-vs-rep2 of the same method."""
     ref_i = label_i.startswith("ENCFF")

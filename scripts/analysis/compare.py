@@ -29,7 +29,8 @@ if _rules_dir not in sys.path:
 import match
 import utils
 from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
-                   should_compare as _should_compare, display_name, \
+                   should_compare as _should_compare, \
+                   is_rep_pair as _is_rep_pair, display_name, \
                    method_color, save_fig, NOQH_STATES as _EXCLUDE_STATES, \
                    JACCARD, KAPPA, NOQH_SUFFIX, \
                    JACCARD_DISPLAY, KAPPA_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY
@@ -381,6 +382,13 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     By default only pooled-vs-reference and same-method rep1-vs-rep2 pairs are
     compared; all_pairs=True compares every pair. label_override is an optional
     {seg_path: label} dict replacing _seg_label().
+
+    rematch realigns the state space of the second side of a pair onto the
+    first by maximum overlap before the metrics are read, for a pair whose two
+    sides were matched to two different markups. It is never applied to a
+    rep1-vs-rep2 pair, which shares one markup already, so that the replicate
+    consistency of a method is the same number wherever it is read off -
+    see utils.is_rep_pair.
     """
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -433,7 +441,8 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                                 bin_emission_paths.get(i), bin_emission_paths.get(j),
                                 bw_emission_paths.get(i), bw_emission_paths.get(j),
                                 bin_sizes[i], bin_sizes[j], outdir,
-                                skip_noqh=skip_noqh, rematch=rematch): (i, j)
+                                skip_noqh=skip_noqh,
+                                rematch=rematch and not _is_rep_pair(labels[i], labels[j])): (i, j)
                 for i, j in pair_order
             }
             for fut in as_completed(futures):
