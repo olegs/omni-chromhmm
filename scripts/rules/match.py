@@ -448,14 +448,20 @@ def _save_match_matrices(out_prefix, work_states, ref_states, mapping,
             if r not in r_idx:
                 continue
             wi, ri = w_idx[w], r_idx[r]
-            row = [w, r, f"{scores[wi, ri]:.4f}"]
+            row = [str(w), str(r), f"{scores[wi, ri]:.4f}"]
             if jaccard is not None:
                 row.append(f"{jaccard[wi, ri]:.4f}")
             f.write("\t".join(row) + "\n")
 
     fig, ax = plt.subplots(figsize=(max(6, len(ref_states) * 0.5),
                                     max(6, len(work_states) * 0.4)))
-    im = ax.imshow(scores, cmap="Blues", vmin=0, aspect="auto")
+    # Row-normalize scores for the heatmap to make states with small coverage visible.
+    plot_scores = scores.copy()
+    row_max = plot_scores.max(axis=1, keepdims=True)
+    row_max[row_max == 0] = 1.0
+    plot_scores /= row_max
+
+    im = ax.imshow(plot_scores, cmap="Blues", vmin=0, vmax=1, aspect="auto")
     ax.set_xticks(range(len(ref_states)))
     ax.set_xticklabels(ref_states, rotation=90, fontsize=7)
     ax.set_yticks(range(len(work_states)))
