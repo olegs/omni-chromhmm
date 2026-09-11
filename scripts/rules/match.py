@@ -569,8 +569,8 @@ def main():
     ap.add_argument("--matrix-out",     default=None, dest="matrix_out",
                     help="Path prefix to persist the per-state matching matrices "
                          "(.score.tsv/.jaccard.tsv/.mapping.tsv/.png)")
-    ap.add_argument("--method",         default="jaccard", choices=["overlap", "jaccard"],
-                    help="Matching method: overlap or jaccard (default: jaccard)")
+    ap.add_argument("--method",         default="overlap", choices=["overlap", "jaccard"],
+                    help="Matching method: overlap or jaccard (default: overlap)")
 
     args = ap.parse_args()
 
@@ -627,6 +627,23 @@ def main():
             out_f.close()
 
     # Remap emissions
+    # Some bigwig emission files name their states "1.0" where the BED names
+    # them "1", so an exact lookup silently leaves them unmapped and the file
+    # keeps the model's own numbering while its other states carry reference
+    # names. Accept the numerically equal spelling, and say so on a real miss.
+    def _mapped(state):
+        if state in mapping:
+            return mapping[state]
+        try:
+            alt = str(int(float(state)))
+        except (TypeError, ValueError):
+            alt = None
+        if alt is not None and alt in mapping:
+            return mapping[alt]
+        print(f"Warning: emission state {state!r} is in no mapping, left as is",
+              file=sys.stderr)
+        return state
+
     def _remap_em_list(in_paths, out_paths):
         if not in_paths or not out_paths: return
         if len(in_paths) != len(out_paths):
@@ -634,7 +651,7 @@ def main():
             return
         for ip, op in zip(in_paths, out_paths):
             states, marks, mat = _load_emissions_npz(ip)
-            remapped = [normalize_state_name(mapping.get(s, s)) for s in states]
+            remapped = [normalize_state_name(_mapped(s)) for s in states]
             _save_emissions_npz(op, remapped, marks, mat)
 
     _remap_em_list(args.work_emissions, args.remap_emissions)

@@ -15,7 +15,7 @@ MARKS_LIST=(H3K4me3 H3K27ac H3K4me1 H3K36me3 H3K9me3 H3K27me3);
 MARKS=$(IFS=,; echo "${MARKS_LIST[*]}");
 REPS="rep1,rep2";
 # Datasets with two replicates, see config_encode.yaml
-DATASETS="imr90 monocytes spleen";
+DATASETS=(imr90 monocytes spleen);
 
 # ENCODE reference segmentation of a dataset, see config_encode.yaml
 ref_bed() {
