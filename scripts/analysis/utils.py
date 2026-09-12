@@ -599,11 +599,14 @@ TICK_FONTSIZE = 8
 
 
 def _bars(ax, data, x, y, order, hue, hue_order, palette, color, hatch, points,
-          bar_kwargs):
+          bar_kwargs, point_data=None):
     """One sns.barplot in the shared style, with its points and hatching.
 
     Bars are dodged when *hue* names a second variable; without it the colour
-    follows *x*, which seaborn wants spelled as an undodged hue.
+    follows *x*, which seaborn wants spelled as an undodged hue. *point_data*
+    replaces *data* for the points alone, for a bar of so many observations
+    that drawing all of them would bury it - the bar stays the mean over every
+    row of *data*.
     """
     dodge = hue is not None and hue != x
     plot_hue = hue if hue is not None else (x if palette is not None else None)
@@ -612,7 +615,7 @@ def _bars(ax, data, x, y, order, hue, hue_order, palette, color, hatch, points,
     sns.barplot(data=data, x=x, y=y, hue=plot_hue, order=order,
                 hue_order=plot_order, palette=palette if plot_hue else None,
                 color=color, dodge=dodge, legend=dodge, ax=ax, **style)
-    strip_points(ax, data=data, x=x, y=y,
+    strip_points(ax, data=data if point_data is None else point_data, x=x, y=y,
                  **({"hue": hue, "hue_order": hue_order} if dodge else {}),
                  order=order, dodge=dodge, **(points or {"size": 2}))
     if hatch == "joint":
@@ -663,7 +666,7 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
              ylabel=None, xticklabels=None, rotation=45, tick_fontsize=TICK_FONTSIZE,
              ylim=None, log=False, labels=None, label_fontsize=6, hatch="joint",
              legend=False, legend_title="Method", legend_kwargs=None, points=None,
-             path=None, **bar_kwargs):
+             point_data=None, path=None, **bar_kwargs):
     """Bar chart of *y* per *x* level, mean +- SE with the observations on top.
 
     *order* fixes the x levels (defaults to their order of appearance) and
@@ -673,7 +676,10 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
     string for the per-bar mean, which only makes sense without a *hue*, where
     one bar is one group of values. *hatch* is "joint" for hatch_joint(), "all"
     for hatch_all(), None for neither, and *points* overrides the
-    strip_points() keywords. Extra keywords go to sns.barplot().
+    strip_points() keywords. *point_data* draws the points off a frame of its
+    own - a subsample of *data*, where a bar holds too many observations to
+    show all of them; the bars stay the mean over *data*. Extra keywords go to
+    sns.barplot().
 
     Writes the figure to *path* and closes it, or returns the axes when *path*
     is None; pass *ax* to draw into an existing figure instead.
@@ -685,7 +691,7 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
         fig, ax = plt.subplots(figsize=figsize)
 
     _bars(ax, data, x, y, order, hue, hue_order, palette, color, hatch, points,
-          bar_kwargs)
+          bar_kwargs, point_data=point_data)
 
     if title:
         ax.set_title(title, **TITLE_STYLE)

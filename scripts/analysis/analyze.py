@@ -372,6 +372,23 @@ def segmentation_stats(segs, bin_size, background=()):
             "entropy": entropy, "colors": colors}
 
 
+def segmentation_entropy(seg_path, bin_size, exclude_states=None):
+    """(entropy, state count) of the transition matrix of one segmentation.
+
+    save_transition_entropy() below drops utils.NOQH_STATES by name for its
+    NOQH variant, which needs the states to carry the reference names; pass
+    *exclude_states* for a segmentation whose background is named some other
+    way - the SAGAconf states are numbers matched per dataset, so its NOQH
+    background comes from the interpreted state types instead (see
+    analysis_sagaconf.ipynb).
+    """
+    states, counts, state_bp = build_transition_matrix(
+        load_bed(seg_path), bin_size, exclude_states=exclude_states)
+    if not states:
+        return float("nan"), 0
+    return float(transition_entropy(states, counts, state_bp)[0]), len(states)
+
+
 def save_transition_entropy(segs, bin_size, outdir, skip_noqh=False):
     """Compute and save transition entropy + matrix for a single segmentation."""
     edir = os.path.join(outdir, "entropy")
