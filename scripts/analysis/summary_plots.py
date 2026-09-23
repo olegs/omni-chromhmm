@@ -25,8 +25,14 @@ import seaborn as sns
 sys.path.insert(0, os.path.dirname(__file__))
 from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
                    strip_points, method_color, save_fig,
+                   group_methods, group_bands, group_tick_labels, group_xticks,
+                   is_joint, JOINT_HATCH,
                    CHROMHMM_DEFAULT, CHROMHMM_HOMER, CHROMHMM_MACS2, CHROMHMM_OMNI,
-                   KMEANS_HOMER, KMEANS_MACS2, KMEANS_OMNI, display_name,
+                   KMEANS_HOMER, KMEANS_MACS2, KMEANS_OMNI,
+                   BMM3_HOMER, BMM3_MACS2, BMM3_OMNI,
+                   JOINT_CHROMHMM, JOINT_KMEANS_HOMER, JOINT_KMEANS_MACS2, JOINT_KMEANS_OMNI,
+                   JOINT_BMM3_HOMER, JOINT_BMM3_MACS2, JOINT_BMM3_OMNI,
+                   display_name,
                    COMPOSITION, JACCARD, KAPPA, FULL, NOQH, NOQH_SUFFIX,
                    COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY, COSINE_DISPLAY,
                    FULL_DISPLAY, NOQH_DISPLAY)
@@ -41,8 +47,12 @@ SIMILARITY_METRICS = [(COMPOSITION, COMPOSITION_DISPLAY, "#E8833A"),
 SIMILARITY_ORDER = [label for _, label, _ in SIMILARITY_METRICS]
 SIMILARITY_COLORS = {label: color for _, label, color in SIMILARITY_METRICS}
 
-METHODS_POOLED = [m for m in METHOD_ORDER
-                  if not m.endswith("_rep1") and not m.endswith("_rep2")]
+# Grouped by caller, so every plot that orders its methods by this list lays
+# its x axis out as ChromHMM, HOMER, MACS2, OmniPeak, each caller's models
+# together under one group label (utils.group_methods()).
+METHODS_POOLED = group_methods([m for m in METHOD_ORDER
+                                if not m.endswith("_rep1")
+                                and not m.endswith("_rep2")])
 
 
 # Canonical ENCODE 15-state order.
@@ -88,17 +98,28 @@ STATE_COLORS = {
     "Quies":    _RGB(220, 220, 220),
 }
 
-# (METHOD_ORDER key, display label, hex color)
-INTER_DS_METHODS = [
-    ("ref",              DISPLAY_NAMES["ref"],      BIN_COLORS["reference"]),
-    (CHROMHMM_DEFAULT, DISPLAY_NAMES[CHROMHMM_DEFAULT], BIN_COLORS["default"]),
-    (CHROMHMM_HOMER,   DISPLAY_NAMES[CHROMHMM_HOMER],     BIN_COLORS["homer"]),
-    (KMEANS_HOMER,     DISPLAY_NAMES[KMEANS_HOMER],       BIN_COLORS["homer"]),
-    (CHROMHMM_MACS2,   DISPLAY_NAMES[CHROMHMM_MACS2],     BIN_COLORS["macs2"]),
-    (KMEANS_MACS2,     DISPLAY_NAMES[KMEANS_MACS2],       BIN_COLORS["macs2"]),
-    (CHROMHMM_OMNI,    DISPLAY_NAMES[CHROMHMM_OMNI],    BIN_COLORS["omnipeak"]),
-    (KMEANS_OMNI,      DISPLAY_NAMES[KMEANS_OMNI],      BIN_COLORS["omnipeak"]),
-]
+# (METHOD_ORDER key, display label, hex color), grouped by caller like
+# METHODS_POOLED above.
+INTER_DS_METHODS = group_methods([
+    ("ref",              DISPLAY_NAMES["ref"],      method_color("ref")),
+    (CHROMHMM_DEFAULT, DISPLAY_NAMES[CHROMHMM_DEFAULT], method_color(CHROMHMM_DEFAULT)),
+    (CHROMHMM_HOMER,   DISPLAY_NAMES[CHROMHMM_HOMER],     method_color(CHROMHMM_HOMER)),
+    (KMEANS_HOMER,     DISPLAY_NAMES[KMEANS_HOMER],       method_color(KMEANS_HOMER)),
+    (CHROMHMM_MACS2,   DISPLAY_NAMES[CHROMHMM_MACS2],     method_color(CHROMHMM_MACS2)),
+    (KMEANS_MACS2,     DISPLAY_NAMES[KMEANS_MACS2],       method_color(KMEANS_MACS2)),
+    (CHROMHMM_OMNI,    DISPLAY_NAMES[CHROMHMM_OMNI],    method_color(CHROMHMM_OMNI)),
+    (KMEANS_OMNI,      DISPLAY_NAMES[KMEANS_OMNI],      method_color(KMEANS_OMNI)),
+    (BMM3_HOMER,        DISPLAY_NAMES[BMM3_HOMER],        method_color(BMM3_HOMER)),
+    (BMM3_MACS2,        DISPLAY_NAMES[BMM3_MACS2],        method_color(BMM3_MACS2)),
+    (BMM3_OMNI,         DISPLAY_NAMES[BMM3_OMNI],         method_color(BMM3_OMNI)),
+    (JOINT_CHROMHMM,   DISPLAY_NAMES[JOINT_CHROMHMM],   method_color(JOINT_CHROMHMM)),
+    (JOINT_KMEANS_HOMER, DISPLAY_NAMES[JOINT_KMEANS_HOMER], method_color(JOINT_KMEANS_HOMER)),
+    (JOINT_KMEANS_MACS2, DISPLAY_NAMES[JOINT_KMEANS_MACS2], method_color(JOINT_KMEANS_MACS2)),
+    (JOINT_KMEANS_OMNI,  DISPLAY_NAMES[JOINT_KMEANS_OMNI],  method_color(JOINT_KMEANS_OMNI)),
+    (JOINT_BMM3_HOMER,  DISPLAY_NAMES[JOINT_BMM3_HOMER],  method_color(JOINT_BMM3_HOMER)),
+    (JOINT_BMM3_MACS2,  DISPLAY_NAMES[JOINT_BMM3_MACS2],  method_color(JOINT_BMM3_MACS2)),
+    (JOINT_BMM3_OMNI,   DISPLAY_NAMES[JOINT_BMM3_OMNI],   method_color(JOINT_BMM3_OMNI)),
+], key=lambda item: item[0])
 METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
 
 
@@ -178,6 +199,16 @@ def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method):
         CHROMHMM_OMNI:    root / "omni"  / f"omni_chromhmm_states_{sfx}.bed",
         CHROMHMM_HOMER:   root / "homer" / f"homer_chromhmm_states_{sfx}.bed",
         CHROMHMM_MACS2:   root / "macs2" / f"macs2_chromhmm_states_{sfx}.bed",
+        BMM3_OMNI:         root / "omni"  / f"omni_bmm3_states_{sfx}.bed",
+        BMM3_HOMER:        root / "homer" / f"homer_bmm3_states_{sfx}.bed",
+        BMM3_MACS2:        root / "macs2" / f"macs2_bmm3_states_{sfx}.bed",
+        JOINT_CHROMHMM:   root / JOINT_CHROMHMM / f"rep1_{nstates}_dense_{sfx}.bed",
+        JOINT_KMEANS_OMNI:  root / "joint_kmeans" / "omni"  / f"rep1_kmeans_joint_states_{sfx}.bed",
+        JOINT_KMEANS_HOMER: root / "joint_kmeans" / "homer" / f"rep1_kmeans_joint_states_{sfx}.bed",
+        JOINT_KMEANS_MACS2: root / "joint_kmeans" / "macs2" / f"rep1_kmeans_joint_states_{sfx}.bed",
+        JOINT_BMM3_OMNI:     root / "joint_bmm3" / "omni"  / f"rep1_bmm3_joint_states_{sfx}.bed",
+        JOINT_BMM3_HOMER:    root / "joint_bmm3" / "homer" / f"rep1_bmm3_joint_states_{sfx}.bed",
+        JOINT_BMM3_MACS2:    root / "joint_bmm3" / "macs2" / f"rep1_bmm3_joint_states_{sfx}.bed",
     }
     return mapping[method_key]
 
@@ -243,6 +274,9 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
 
     methods = [m for m in methods
                if not data.loc[m].isna().all()]
+    # Grouped by caller, whatever order the caller asked for: one group of bars
+    # per caller, its name written under the group by group_xticks() below.
+    methods = group_methods(methods)
 
     display   = [DISPLAY_NAMES.get(m, m) for m in methods]
     means     = data.loc[methods].mean(axis=1, skipna=True).values
@@ -277,8 +311,7 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     strip_points(ax, data=df_melted, x="display_name", y="value",
                  order=display_order, dodge=False, size=2)
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(display, rotation=45, ha="right", fontsize=8)
+    group_xticks(ax, display, bands=False)
     ax.set_title(title, fontsize=11, fontweight="bold")
     ax.set_ylabel(ylabel, fontsize=9)
     ax.grid(axis="y", alpha=0.3)
@@ -302,28 +335,21 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
                 ha="center", va="bottom", fontsize=6)
 
     legend_elements = []
-    bin_labels = {
-        "reference": "ENCODE reference",
-        "default":   "Default binarization",
-        "omnipeak":  "OmniPeak binarization",
-        "homer":     "Homer binarization",
-        "macs2":     "MACS2 binarization",
-    }
-    plotted_bins = {METHOD_INFO.get(m, (None,))[0] for m in methods}
-    active_binarizations = [b for b in ["reference", "default", "omnipeak", "homer", "macs2"]
-                            if b in plotted_bins]
-
-    for b in active_binarizations:
-        legend_elements.append(Patch(facecolor=BIN_COLORS[b], label=bin_labels[b]))
+    for m in methods:
+        legend_elements.append(Patch(facecolor=method_color(m),
+                                     label=DISPLAY_NAMES.get(m, m),
+                                     hatch=JOINT_HATCH if is_joint(m) else None,
+                                     edgecolor="lightgrey", linewidth=0.5))
 
     if legend_elements:
         ax.legend(handles=legend_elements, fontsize=6,
                   bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
 
-    n_note = f"mean ± SE across {n_ds} datasets (points: individual datasets)"
-    if partial_note:
-        n_note += " (n = datasets with data)"
-    ax.set_xlabel(n_note, fontsize=7, color="grey")
+    # n_note = f"mean ± SE across {n_ds} datasets (points: individual datasets)"
+    # if partial_note:
+    #     n_note += " (n = datasets with data)"
+    # ax.set_xlabel(n_note, fontsize=7, color="grey")
+    ax.set_xlabel("", fontsize=7, color="grey")
 
     save_fig(fig, outpath)
 
@@ -579,7 +605,7 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
         f"({n_methods} methods, {n_ds} datasets with replicates)",
         fontsize=10, fontweight="bold",
     )
-    ax.tick_params(axis="x", rotation=30, labelsize=8)
+    group_xticks(ax, method_labels, rotation=30, bands=False)
     ax.legend(title="Metric", fontsize=8, title_fontsize=9,
               bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
     save_fig(fig, outfile)
@@ -670,10 +696,13 @@ _SAMPLE_TO_INFO = {
     CHROMHMM_DEFAULT: (DISPLAY_NAMES[CHROMHMM_DEFAULT],  "default"),
     CHROMHMM_OMNI:    (DISPLAY_NAMES[CHROMHMM_OMNI], "omnipeak"),
     KMEANS_OMNI:      (DISPLAY_NAMES[KMEANS_OMNI],   "omnipeak"),
+    BMM3_OMNI:         (DISPLAY_NAMES[BMM3_OMNI],      "omnipeak"),
     CHROMHMM_HOMER:   (DISPLAY_NAMES[CHROMHMM_HOMER],    "homer"),
     KMEANS_HOMER:     (DISPLAY_NAMES[KMEANS_HOMER],      "homer"),
+    BMM3_HOMER:        (DISPLAY_NAMES[BMM3_HOMER],       "homer"),
     CHROMHMM_MACS2:   (DISPLAY_NAMES[CHROMHMM_MACS2],    "macs2"),
     KMEANS_MACS2:     (DISPLAY_NAMES[KMEANS_MACS2],      "macs2"),
+    BMM3_MACS2:        (DISPLAY_NAMES[BMM3_MACS2],       "macs2"),
 }
 
 
@@ -685,7 +714,7 @@ _PEAK_METHOD_COLORS = {
     "HOMER":    BIN_COLORS["homer"],
     "MACS2":    BIN_COLORS["macs2"],
 }
-_PEAK_METHOD_ORDER = ["Default", "HOMER", "MACS2", "OmniPeak"]
+_PEAK_METHOD_ORDER = ["HOMER", "MACS2", "OmniPeak"]
 _MARK_ORDER = ["H3K4me3", "H3K27ac", "H3K4me1", "H3K36me3", "H3K9me3", "H3K27me3"]
 
 
@@ -925,12 +954,17 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
     save_fig(fig, outfile, tight=False)
 
 
-def _stacked_composition_chart(coverages, labels, title, outfile, label_fontsize=7):
+def _stacked_composition_chart(coverages, labels, title, outfile,
+                               label_fontsize=7, bands=False):
     """Stacked 100% bar chart from a {label: {state: fraction}} dict."""
     all_states = set()
     for fracs in coverages.values():
         all_states.update(fracs.keys())
-    all_states.discard("Unknown")
+    if "Unknown" in all_states:
+        # Find which labels have it.
+        culprits = [lbl for lbl, fracs in coverages.items() if "Unknown" in fracs]
+        raise ValueError(f"'Unknown' state detected in compositions for {culprits}. "
+                         "Fix state mapping upstream.")
     states = sort_states(all_states)
     cmap = plt.get_cmap("tab20")
     state_colors = {s: STATE_COLORS.get(s, cmap(i % 20)) for i, s in enumerate(states)}
@@ -961,7 +995,13 @@ def _stacked_composition_chart(coverages, labels, title, outfile, label_fontsize
            width=0.8, label='_nolegend_')
 
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontsize=label_fontsize, rotation=45, ha="right")
+    # Methods carry their caller under the group instead of on every label;
+    # a chart whose bars are datasets has no groups and keeps its labels.
+    tick_labels = group_tick_labels(labels) if bands else labels
+    ax.set_xticklabels(tick_labels, fontsize=label_fontsize,
+                       rotation=45, ha="right")
+    if bands:
+        group_bands(ax, labels)
     ax.set_ylabel("Fraction of genome", fontsize=9)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
@@ -1128,8 +1168,9 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
         return
 
     plot_df = pd.DataFrame(rows)
-    method_labels = [_SAMPLE_TO_INFO.get(m, (m,))[0] for m in methods
-                     if _SAMPLE_TO_INFO.get(m, (m,))[0] in plot_df["Method"].unique()]
+    method_labels = group_methods(
+        [_SAMPLE_TO_INFO.get(m, (m,))[0] for m in methods
+         if _SAMPLE_TO_INFO.get(m, (m,))[0] in plot_df["Method"].unique()])
     palette = SIMILARITY_COLORS
 
     n_methods = len(method_labels)
@@ -1159,7 +1200,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
         f"({n_methods} methods, n={n_ds} datasets, {n_pairs} pairs each)",
         fontsize=10, fontweight="bold",
     )
-    ax.tick_params(axis="x", rotation=30, labelsize=8)
+    group_xticks(ax, method_labels, rotation=30, bands=False)
     ax.legend(title="Metric", fontsize=8, title_fontsize=9,
               bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
     save_fig(fig, outfile)
@@ -1705,10 +1746,13 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
             (CHROMHMM_DEFAULT, DISPLAY_NAMES[CHROMHMM_DEFAULT]),
             (CHROMHMM_OMNI,    DISPLAY_NAMES[CHROMHMM_OMNI]),
             (KMEANS_OMNI,      DISPLAY_NAMES[KMEANS_OMNI]),
+            (BMM3_OMNI,        DISPLAY_NAMES[BMM3_OMNI]),
             (CHROMHMM_HOMER,   DISPLAY_NAMES[CHROMHMM_HOMER]),
             (KMEANS_HOMER,     DISPLAY_NAMES[KMEANS_HOMER]),
+            (BMM3_HOMER,       DISPLAY_NAMES[BMM3_HOMER]),
             (CHROMHMM_MACS2,   DISPLAY_NAMES[CHROMHMM_MACS2]),
             (KMEANS_MACS2,     DISPLAY_NAMES[KMEANS_MACS2]),
+            (BMM3_MACS2,       DISPLAY_NAMES[BMM3_MACS2]),
         ]
         for method_key, method_label in _supp_methods:
             outfile = os.path.join(args.method_ds_composition_outdir,

@@ -41,6 +41,7 @@ rule chromhmm_binarize_bam:
         # Kept (not temp) so binarized-emission information remains available for
         # per-state emission analysis after the pipeline finishes.
         bins=expand("{{folder}}/chromhmm_default/{{cell}}_{chr}_binary.txt",chr=CHROMS)
+    resources: mem_mb=5000
     params:
         bin=CHROMHMM_BIN,
         cs=TOOLS["chromsizes"],
@@ -67,6 +68,7 @@ rule chromhmm_learn_default:
         emissions="{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_emissions.txt",
         transitions="{folder}/chromhmm_default_result/{cell}_" + str(NSTATES) + "_transitions.txt",
     threads: 8
+    resources: mem_mb=5000
     params:
         indir="{folder}/chromhmm_default",
         outdir="{folder}/chromhmm_default_result",

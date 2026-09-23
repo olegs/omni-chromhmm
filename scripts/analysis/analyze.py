@@ -8,9 +8,10 @@ import gzip
 import os
 import re
 import sys
+import time
 from bisect import bisect_left
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -496,13 +497,11 @@ def compute_state_consistency(segs_list, bin_size=200, window=0, show_progress=F
                    for chrom in all_chroms]
 
         if show_progress:
-            try:
-                from tqdm.auto import tqdm
-                for f in tqdm(as_completed(futures), total=len(futures),
-                              desc=f"Consistency (w={window})", leave=False):
-                    results.append(f.result())
-            except ImportError:
-                results = [f.result() for f in futures]
+            print(f"  consistency (w={window}) over {len(futures)} chromosomes"
+                  " ... ", end="", flush=True)
+            started = time.perf_counter()
+            results = [f.result() for f in futures]
+            print(f"{time.perf_counter() - started:.1f}s", flush=True)
         else:
             results = [f.result() for f in futures]
 

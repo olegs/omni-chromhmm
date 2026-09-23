@@ -1,5 +1,12 @@
+#!/bin/bash
 # Project root directory
 ROOT=$(cd "$(dirname "$0")" && pwd)
+
+# Compatibility for Zsh
+if [ -n "$ZSH_VERSION" ]; then
+  emulate bash
+  setopt shwordsplit
+fi
 
 DIR=~/data/2026_segmentations/epi1000
 mkdir -p $DIR
@@ -15,7 +22,7 @@ for E in $(cat names.txt | sed -E 's/-.*//g' | sort --unique); do
  X=0;
  for m in H3K4me1 H3K4me3 H3K9me3 H3K27ac H3K27me3 H3K36me3 Input; do
   if [[ ! -z $(cat names.txt | grep "$E-$m.tagAlign.gz") ]]; then X=$((X+1)); fi
- done;
+ done
  if [ "$X" -eq 7 ]; then echo "$E" >> names.txt; fi
 done
 
@@ -26,14 +33,14 @@ done
 for E in $(cat names.txt); do
  echo $E;
  wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/jointModel/n15/reordered/${E}_15_coreMarks_dense.bed.gz -O ${E}_15_coreMarks_dense_joint_reodered.bed.gz
-done;
+done
 
 # Download individual segmentations
 for E in $(cat names.txt); do
  echo $E;
  wget https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/indivModels/default_init/$E/n15/${E}_15_coreMarks_dense.bed;
 gzip ${E}_15_coreMarks_dense.bed;
-done;
+done
 
 # Rematch to the joint model
 for E in $(cat marks.txt); do echo $E;
@@ -43,7 +50,7 @@ for E in $(cat marks.txt); do echo $E;
  if [[ -f $REF ]] && [[ -f $WORK ]]; then
 	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
  fi;
-done;
+done
 
 # Download joint 18 state extended models (core marks with H3K27ac)
 for E in $(cat names.txt); do
@@ -71,7 +78,7 @@ for E in $(cat names.txt); do echo $E; mkdir -p $E/omni;
   echo $m;
    java --add-modules=jdk.incubator.vector  -Xmx8G  -jar /home/oshpynov/omnipeak-1.4.6808.jar \
     analyze -t $E-$m.tagAlign.gz -c $E-Input.tagAlign.gz --cs hg19.chrom.sizes --peak $E/omni/$E-$m.peak –-bigwig;
- done;
+ done
 done
 
 # MACS2 processing
@@ -80,14 +87,14 @@ for E in $(cat names.txt); do echo $E; mkdir -p $E/macs2;
   t=$(mktemp -d);
   gunzip -c $E-$m.tagAlign.gz > $t/treatment.bed; gunzip -c $E-Input.tagAlign.gz > $t/control.bed;
   macs2 callpeak -f BED -t $t/treatment.bed -c $t/control.bed -n $E/macs2/$E-$m -g hs -q 0.05;
- done;
+ done
 
  for m in H3K4me1 H3K9me3 H3K27me3 H3K36me3; do echo $m;
   t=$(mktemp -d);
   gunzip -c $E-$m.tagAlign.gz > $t/treatment.bed; gunzip -c $E-Input.tagAlign.gz > $t/control.bed;
   macs2 callpeak -f BED -t $t/treatment.bed -c $t/control.bed -n $E/macs2/$E-$m -g hs --broad --broad-cutoff 0.1;
- done;
-done;
+ done
+done
 
 # Homer processing
 for E in $(cat names.txt); do echo $E; mkdir -p $E/homer;
@@ -97,37 +104,44 @@ for E in $(cat names.txt); do echo $E; mkdir -p $E/homer;
   makeTagDirectory $t/control_tags $E-Input.tagAlign.gz -format bed -single;
   findPeaks $t/treatment_tags -style histone -i $t/control_tags -o $E/homer/${E}-${m}_homer.txt;
   pos2bed.pl $E/homer/${E}-${m}_homer.txt > $E/homer/${E}-${m}_homer.bed; 
- done;
-done;
+ done
+done
 
 #KMeans states preprocessing
 CHROMSIZES=hg19.chrom.sizes;
 BIN=100;
 
-#Means states processing
+#KMeans states processing
 for E in $(cat names.txt); do echo "===================="; echo $E;
 for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
- STATES=$E/$PC/${E}_${PC}_kmeans_states.bed;
- if [[ -f $STATES ]]; then continue; fi;
- echo "States (KMeans peaks)";
- MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac";
- PEAKS=();
+ MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac"
+ PEAKS=()
  for M in H3K4me3 H3K4me1 H3K36me3 H3K9me3 H3K27me3 H3K27ac; do
   if [[ $PC == "omni" ]]; then
-    P=$(ls $E/$PC/*${M}*.peak 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+    P=$(ls $E/$PC/*${M}*.peak 2>/dev/null | tr '\n' ',' | sed 's/,$//')
   elif [[ $PC == "homer" ]]; then
-    P=$(ls $E/$PC/*${M}*_homer.bed 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+    P=$(ls $E/$PC/*${M}*_homer.bed 2>/dev/null | tr '\n' ',' | sed 's/,$//')
   elif [[ $PC == "macs2" ]]; then
-    P=$(ls $E/$PC/*${M}*Peak 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+    P=$(ls $E/$PC/*${M}*Peak 2>/dev/null | tr '\n' ',' | sed 's/,$//')
   else
-    echo "Unknown peak caller"; exit 1;
+    echo "Unknown peak caller"; exit 1
   fi
-  PEAKS+=("${P:-NONE}");
- done;
+  PEAKS+=("${P:-NONE}")
+ done
+ STATES=$E/$PC/${E}_${PC}_kmeans_states.bed;
+ if [[ ! -f $STATES ]]; then
+ echo "States (KMeans peaks)";
  python "$ROOT/scripts/rules/peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES --cell $E;
  echo "Done: $STATES";
-done;
-done;
+ fi;
+ STATES_BMM=$E/$PC/${E}_${PC}_bmm3_states.bed;
+ if [[ ! -f $STATES_BMM ]]; then
+  echo "States (BMM3 peaks)";
+  python "$ROOT/scripts/rules/peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES_BMM --cell $E --mixture --spatial-bins 3;
+  echo "Done: $STATES_BMM";
+ fi;
+done
+done
 
 
 # ChromHMM processing
@@ -138,32 +152,37 @@ for E in $(cat names.txt); do echo $E;
  for m in H3K4me3 H3K27ac H3K4me1 H3K9me3 H3K27me3 H3K36me3; do echo $m; 
   gunzip -c $E/$E-$m.tagAlign.gz > $t/$m.bed;
   echo "$E$TAB$m$TAB$m.bed${TAB}Input.bed" >> $t/cell_mark_table.txt; 
- done; 
+ done 
  mkdir -p $E/chromhmm_binary;
  java -mx4000M -jar ChromHMM/ChromHMM.jar BinarizeBed hg19.chrom.sizes $t  $t/cell_mark_table.txt $E/chromhmm_binary;
  java -mx4000M -jar ChromHMM/ChromHMM.jar LearnModel $E/chromhmm_binary $E/${E}_chromhmm 15 hg19; 
-done;
+done
 
 # Peaks from binarized files for ChromHMM
 for E in $(cat names.txt); do echo $E;
  python "$ROOT/scripts/rules/binarized_to_bed.py" --bin 200 --outdir $E/${E}_chromhmm  $E/chromhmm_binary/*_binary.txt;
-done;
+done
 
 
 ########## Matching ###################
 
 # Rematch peak caller states
 for E in $(cat names.txt); do echo $E;
-for PC in homer macs2 omni; do echo $PC;
+for PC in homer macs2 omni;   do echo $PC;
 # REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
  MATCHED=${WORK/.bed/_matched.bed};
- if [[ -f $REF ]] && [[ -f $WORK ]]; then
+ if [[ -f $REF ]] && [[ -f $WORK ]] && [[ ! -f $MATCHED ]]; then
 	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
  fi;
-done;
-done;
+ WORK_BMM=$E/$PC/${E}_${PC}_bmm3_states.bed;
+ MATCHED_BMM=${WORK_BMM/.bed/_matched.bed};
+ if [[ -f $REF ]] && [[ -f $WORK_BMM ]] && [[ ! -f $MATCHED_BMM ]]; then
+	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK_BMM > $MATCHED_BMM;
+ fi;
+done
+done
 
 # Rematch de-novo chromhmm
 for E in $(cat names.txt); do echo $E;
@@ -174,46 +193,73 @@ for E in $(cat names.txt); do echo $E;
  if [[ -f $REF ]] && [[ -f $WORK ]]; then
 	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
  fi;
-done;
+done
 
 ########## Joint models ###################
 
 # Joint KMeans states processing
 for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
- mkdir -p joint_kmeans/$PC;
- MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac";
- CELLS=$(cat names.txt | tr '\n' ',' | sed 's/,$//');
- ALL_PEAKS=();
+ MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac"
+ CELLS=$(cat names.txt | tr '\n' ',' | sed 's/,$//')
+ ALL_PEAKS=()
  for E in $(cat names.txt); do
   for M in H3K4me3 H3K4me1 H3K36me3 H3K9me3 H3K27me3 H3K27ac; do
    if [[ $PC == "omni" ]]; then
-     P=$(ls $E/$PC/*${M}*.peak 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+     P=$(ls $E/$PC/*${M}*.peak 2>/dev/null | tr '\n' ',' | sed 's/,$//')
    elif [[ $PC == "homer" ]]; then
-     P=$(ls $E/$PC/*${M}*_homer.bed 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+     P=$(ls $E/$PC/*${M}*_homer.bed 2>/dev/null | tr '\n' ',' | sed 's/,$//')
    elif [[ $PC == "macs2" ]]; then
-     P=$(ls $E/$PC/*${M}*Peak 2>/dev/null | tr '\n' ',' | sed 's/,$//');
+     P=$(ls $E/$PC/*${M}*Peak 2>/dev/null | tr '\n' ',' | sed 's/,$//')
    fi
-   ALL_PEAKS+=("${P:-NONE}");
-  done;
- done;
- python "$ROOT/scripts/rules/joint_peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --cells "$CELLS" --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_kmeans/$PC;
-done;
+   ALL_PEAKS+=("${P:-NONE}")
+  done
+ done
+ mkdir -p joint_kmeans/$PC;
+ if [[ -z $(ls -A "joint_kmeans/$PC") ]]; then
+  python "$ROOT/scripts/rules/joint_peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS \
+   --cells "$CELLS" --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_kmeans/$PC;
+ fi
+ mkdir -p joint_bmm3/$PC;
+ if [[ -z $(ls -A "joint_bmm3/$PC") ]]; then
+  python "$ROOT/scripts/rules/joint_peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS \
+   --cells "$CELLS" --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_bmm3/$PC --mixture --spatial-bins 3;
+ fi;
+done
 
 
 # Rematch joint peak caller states
 for PC in homer macs2 omni; do echo $PC;
- REFS=(); WORKS=(); MATCHEDS=();
+ REFS=()
+ WORKS=()
+ MATCHEDS=()
  for E in $(cat names.txt); do
-#  REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
-  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
-  WORK=joint_kmeans/$PC/${E}_kmeans_joint_states.bed;
-  MATCHED=${WORK/.bed/_matched.bed};
+  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz
+  WORK=joint_kmeans/$PC/${E}_kmeans_joint_states.bed
+  MATCHED=${WORK/.bed/_matched.bed}
   if [[ -f $REF ]] && [[ -f $WORK ]]; then
-    REFS+=($REF); WORKS+=($WORK); MATCHEDS+=($MATCHED);
-  fi;
- done;
+    REFS+=($REF)
+    WORKS+=($WORK)
+    MATCHEDS+=($MATCHED)
+  fi
+ done
  if [ ${#WORKS[@]} -gt 0 ]; then
-  python "$ROOT/scripts/rules/match.py" --ref "${REFS[@]}" --work "${WORKS[@]}" --out "${MATCHEDS[@]}";
- fi;
-done;
+  python "$ROOT/scripts/rules/match.py" --ref "${REFS[@]}" --work "${WORKS[@]}" --out "${MATCHEDS[@]}"
+ fi
+ REFS=()
+ WORKS=()
+ MATCHEDS=()
+ for E in $(cat names.txt); do
+  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz
+  WORK=joint_bmm3/$PC/${E}_bmm3_joint_states.bed
+  MATCHED=${WORK/.bed/_matched.bed}
+  if [[ -f $REF ]] && [[ -f $WORK ]]; then
+    REFS+=($REF)
+    WORKS+=($WORK)
+    MATCHEDS+=($MATCHED)
+  fi
+ done
+ if [ ${#WORKS[@]} -gt 0 ]; then
+  python "$ROOT/scripts/rules/match.py" --ref "${REFS[@]}" --work "${WORKS[@]}" --out "${MATCHEDS[@]}"
+ fi
+done
 

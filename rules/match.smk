@@ -50,25 +50,26 @@ rule match_segmentation:
     input:
         ref=lambda w: ancient(_ref_bed(ds_of(_emissions_folder(w.bedpath)))),
         work="{bedpath}.bed",
-        work_bw_em="{bedpath}.bw_emissions.npz",
-        work_bin_em="{bedpath}.bin_emissions.npz",
+        work_bw_em=lambda w: ["{bedpath}.bw_emissions.npz".format(**w)] if DO_BW_EMISSIONS else [],
+        work_bin_em=lambda w: ["{bedpath}.bin_emissions.npz".format(**w)] if DO_BIN_EMISSIONS else [],
     output:
         bed="{bedpath}_matched.bed",
-        bw_em="{bedpath}_matched.bw_emissions.npz",
-        bin_em="{bedpath}_matched.bin_emissions.npz",
+        bw_em="{bedpath}_matched.bw_emissions.npz" if DO_BW_EMISSIONS else [],
+        bin_em="{bedpath}_matched.bin_emissions.npz" if DO_BIN_EMISSIONS else [],
         matrix_png="{bedpath}_matched.match.png",
         matrix_map="{bedpath}_matched.match.mapping.tsv",
     params:
         mprefix="{bedpath}_matched.match",
         method=MATCH_METHOD,
+        bw_flags=lambda w, input, output: f"--work-bw-emissions {input.work_bw_em} --remap-bw-emissions {output.bw_em}" if DO_BW_EMISSIONS else "",
+        bin_flags=lambda w, input, output: f"--work-bin-emissions {input.work_bin_em} --remap-bin-emissions {output.bin_em}" if DO_BIN_EMISSIONS else ""
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/python.yaml"
     shell:
         "python {SCRIPTS_DIR}/match.py "
         "--ref {input.ref} --work {input.work} "
-        "--work-bw-emissions {input.work_bw_em} --remap-bw-emissions {output.bw_em} "
-        "--work-bin-emissions {input.work_bin_em} --remap-bin-emissions {output.bin_em} "
+        "{params.bw_flags} {params.bin_flags} "
         "--matrix-out {params.mprefix} --method {params.method} > {output.bed}"
 
 

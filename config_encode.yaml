@@ -22,7 +22,17 @@ params:
   homer: false            # run HOMER-based binarization and segmentation
   macs2: false            # run MACS2-based binarization and segmentation
   omnipeak: false         # run OmniPeak-based binarization and segmentation
+  bw_emissions: false     # process bigwig emissions or not
+  bin_emissions: false    # process binarized emissions or not
   match_method: overlap   # possible options: overlap | jaccard
+
+# Datasets excluded from every analysis: the broad marks of these two are not
+# usable (uterus H3K36me3 is called with 19 peaks), see the H3K27me3/H3K36me3/
+# H3K9me3 tracks in outliers.yaml. They are still processed by the pipeline.
+# analysis_encode.ipynb carries its own copy of this list as OUTLIERS.
+outliers:
+  - uterus
+  - thyroid_gland
 
 datasets:
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Match work segmentation to reference using overlap."""
+"""Match work segmentation to reference by Hungarian assignment."""
 
 import argparse
 import os
@@ -266,14 +266,56 @@ def normalize_state_name(name):
     return re.sub(r'^\d+_', '', name)
 
 
-def best_mapping(overlap, work_states, ref_states):
-    """One-to-one mapping work→ref via Hungarian algorithm on raw overlap length."""
-    n_r = len(ref_states)
-    cost = np.zeros((len(work_states), n_r))
+OVERLAP_COST = "overlap"
+JACCARD_COST = "jaccard"
+
+
+def _marginals(overlap, index):
+    """Each state's extent, summed off the overlap dict on one of its sides."""
+    totals = defaultdict(float)
+    for pair, bp in overlap.items():
+        totals[pair[index]] += bp
+    return totals
+
+
+def best_mapping(overlap, work_states, ref_states, cost=OVERLAP_COST,
+                 work_lengths=None, ref_lengths=None):
+    """One-to-one mapping work→ref via the Hungarian algorithm.
+
+    *cost* is what the assignment maximises over the matched pairs:
+
+      overlap : raw overlapping bp, so the pair is worth what it shares in
+                absolute terms and the largest states decide the whole match -
+                a background state that merely touches a small reference state
+                outbids that state's own counterpart on size alone
+      jaccard : intersection over union of the two states' extents, the same
+                Jaccard per_state_agreement() reports, so a pair is worth what
+                it shares relative to how big the two states are
+
+    The mapping is a bijection either way: every reference state is spoken for,
+    and a work state that matches nothing still takes one.
+
+    *work_lengths* and *ref_lengths* are the two sides' state_lengths(); they
+    default to the overlap's own marginals, which is exact when *overlap* is a
+    full confusion table of the two sides and an undercount of whatever either
+    side calls where the other calls nothing.
+    """
+    if cost not in (OVERLAP_COST, JACCARD_COST):
+        raise ValueError(f"unknown cost {cost!r}")
+    if cost == JACCARD_COST:
+        work_lengths = _marginals(overlap, 0) if work_lengths is None else work_lengths
+        ref_lengths = _marginals(overlap, 1) if ref_lengths is None else ref_lengths
+
+    matrix = np.zeros((len(work_states), len(ref_states)))
     for i, w in enumerate(work_states):
         for j, r in enumerate(ref_states):
-            cost[i, j] = -overlap.get((w, r), 0)
-    row_ind, col_ind = linear_sum_assignment(cost)
+            shared = overlap.get((w, r), 0)
+            if cost == OVERLAP_COST:
+                matrix[i, j] = -shared
+                continue
+            union = work_lengths.get(w, 0) + ref_lengths.get(r, 0) - shared
+            matrix[i, j] = -shared / union if union > 0 else 0.0
+    row_ind, col_ind = linear_sum_assignment(matrix)
     mapping = {work_states[i]: ref_states[j] for i, j in zip(row_ind, col_ind)}
     for w in work_states:
         if w not in mapping:

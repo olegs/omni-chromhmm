@@ -217,7 +217,8 @@ def plot_gini_per_dataset(df_ds, dataset, outpath):
         ylabel="Mean Gini index (across states)",
         title_metric="State emission Gini index",
         title_note="higher = signal concentrated in fewer marks = more specific state",
-        xlabel_note="mean ± std of per-state Gini coefficients (points: states)",
+        # xlabel_note="mean ± std of per-state Gini coefficients (points: states)",
+        xlabel_note="",
         outpath=outpath,
     )
 

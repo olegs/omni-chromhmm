@@ -9,10 +9,13 @@ import json
 import os
 import pickle
 import random
+import re
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+from matplotlib.transforms import blended_transform_factory, offset_copy
 import seaborn as sns
 
 # Metrics, plus the two comparison domains every agreement is measured in: full
@@ -131,6 +134,11 @@ HOMER_DISPLAY = "HOMER"
 MACS2_DISPLAY = "MACS2"
 OMNI_DISPLAY = "OmniPeak"
 
+# Display spelling of a caller, which is also the label its group of bars
+# carries in a grouped bar chart (group_methods() below).
+CALLER_DISPLAY = {CHROMHMM: CHROMHMM_DISPLAY, HOMER: HOMER_DISPLAY,
+                  MACS2: MACS2_DISPLAY, OMNI: OMNI_DISPLAY}
+
 # Interpreted state types
 QUIESCENT = "Quiescent"
 FACULTATIVE_HET = "FacultativeHet"
@@ -144,45 +152,77 @@ CHROMHMM_OMNI = "chromhmm_omni"
 KMEANS_HOMER = "kmeans_homer"
 KMEANS_MACS2 = "kmeans_macs2"
 KMEANS_OMNI = "kmeans_omni"
+KMEANS3_OMNI = "kmeans3_omni"
+
+# The mixture arm of the pipeline: BMM3, the Bernoulli mixture over a bin, its
+# predecessor and its successor. No segmentation on disk is fitted with the
+# plain window (a bin's own marks) or the 2-bin one.
+BMM3_HOMER = "bmm3_homer"
+BMM3_MACS2 = "bmm3_macs2"
+BMM3_OMNI = "bmm3_omni"
+BMM_HOMER = "bmm_homer"
+BMM_MACS2 = "bmm_macs2"
+BMM_OMNI = "bmm_omni"
+
 JOINT_CHROMHMM = "joint_chromhmm"
 JOINT_KMEANS_HOMER = "joint_kmeans_homer"
 JOINT_KMEANS_MACS2 = "joint_kmeans_macs2"
 JOINT_KMEANS_OMNI = "joint_kmeans_omni"
+JOINT_BMM3_HOMER = "joint_bmm3_homer"
+JOINT_BMM3_MACS2 = "joint_bmm3_macs2"
+JOINT_BMM3_OMNI = "joint_bmm3_omni"
 
 CALLER_KEYS = {
-    CHROMHMM: (CHROMHMM_DEFAULT, JOINT_CHROMHMM),
-    HOMER:    (KMEANS_HOMER,    JOINT_KMEANS_HOMER),
-    MACS2:    (KMEANS_MACS2,    JOINT_KMEANS_MACS2),
-    OMNI:     (KMEANS_OMNI,     JOINT_KMEANS_OMNI),
+    CHROMHMM: (CHROMHMM_DEFAULT, JOINT_CHROMHMM, CHROMHMM_DEFAULT, JOINT_CHROMHMM),
+    HOMER:    (KMEANS_HOMER,    JOINT_KMEANS_HOMER, BMM3_HOMER, JOINT_BMM3_HOMER),
+    MACS2:    (KMEANS_MACS2,    JOINT_KMEANS_MACS2, BMM3_MACS2, JOINT_BMM3_MACS2),
+    OMNI:     (KMEANS_OMNI,     JOINT_KMEANS_OMNI,  BMM3_OMNI,  JOINT_BMM3_OMNI),
 }
 
 
-def method_key(caller, joint=False):
+def method_key(caller, joint=False, mixture=False):
     """Canonical key of a caller's model: its individual one, or its joint one."""
-    return CALLER_KEYS[caller][1 if joint else 0]
+    idx = (2 if mixture else 0) + (1 if joint else 0)
+    return CALLER_KEYS[caller][idx]
 
 
 METHOD_ORDER = [
     "ref",
     CHROMHMM_DEFAULT,
     KMEANS_HOMER,
-    KMEANS_MACS2,
-    KMEANS_OMNI,
+    BMM3_HOMER,
     CHROMHMM_HOMER,
+    KMEANS_MACS2,
+    BMM3_MACS2,
     CHROMHMM_MACS2,
+    KMEANS_OMNI,
+    BMM3_OMNI,
     CHROMHMM_OMNI,
+    BMM_OMNI,
+    BMM_HOMER,
+    BMM_MACS2,
+    KMEANS3_OMNI,
     JOINT_CHROMHMM,
     JOINT_KMEANS_HOMER,
+    JOINT_BMM3_HOMER,
     JOINT_KMEANS_MACS2,
+    JOINT_BMM3_MACS2,
     JOINT_KMEANS_OMNI,
+    JOINT_BMM3_OMNI,
     f"{CHROMHMM_DEFAULT}_rep1",
     f"{KMEANS_HOMER}_rep1",
+    f"{BMM3_HOMER}_rep1",
     f"{KMEANS_MACS2}_rep1",
+    f"{BMM3_MACS2}_rep1",
     f"{KMEANS_OMNI}_rep1",
+    f"{BMM3_OMNI}_rep1",
     f"{CHROMHMM_DEFAULT}_rep2",
     f"{KMEANS_HOMER}_rep2",
+    f"{BMM3_HOMER}_rep2",
     f"{KMEANS_MACS2}_rep2",
+    f"{BMM3_MACS2}_rep2",
     f"{KMEANS_OMNI}_rep2",
+    f"{BMM3_OMNI}_rep2",
 ]
 
 METHOD_IDX = {m: i for i, m in enumerate(METHOD_ORDER)}
@@ -196,19 +236,42 @@ DISPLAY_NAMES = {
     KMEANS_OMNI:           "OmniPeak KMeans",
     KMEANS_HOMER:          "Homer KMeans",
     KMEANS_MACS2:          "MACS2 KMeans",
+    BMM3_OMNI:             "OmniPeak BMM3",
+    BMM3_HOMER:            "Homer BMM3",
+    BMM3_MACS2:            "MACS2 BMM3",
+    BMM_OMNI:              "OmniPeak BMM (current)",
+    BMM_HOMER:             "Homer BMM (current)",
+    BMM_MACS2:             "MACS2 BMM (current)",
+    KMEANS3_OMNI:          "OmniPeak KMeans3 (prev, current, next)",
     JOINT_CHROMHMM:        "Joint ChromHMM",
     JOINT_KMEANS_OMNI:     "Joint OmniPeak KMeans",
     JOINT_KMEANS_HOMER:    "Joint Homer KMeans",
     JOINT_KMEANS_MACS2:    "Joint MACS2 KMeans",
+    JOINT_BMM3_OMNI:       "Joint OmniPeak BMM3",
+    JOINT_BMM3_HOMER:      "Joint Homer BMM3",
+    JOINT_BMM3_MACS2:      "Joint MACS2 BMM3",
     f"{CHROMHMM_DEFAULT}_rep1": "Default ChromHMM (rep1)",
     f"{KMEANS_OMNI}_rep1":      "OmniPeak KMeans (rep1)",
     f"{KMEANS_HOMER}_rep1":     "Homer KMeans (rep1)",
     f"{KMEANS_MACS2}_rep1":     "MACS2 KMeans (rep1)",
+    f"{BMM3_OMNI}_rep1":        "OmniPeak BMM3 (rep1)",
+    f"{BMM3_HOMER}_rep1":       "Homer BMM3 (rep1)",
+    f"{BMM3_MACS2}_rep1":       "MACS2 BMM3 (rep1)",
     f"{CHROMHMM_DEFAULT}_rep2": "Default ChromHMM (rep2)",
     f"{KMEANS_OMNI}_rep2":      "OmniPeak KMeans (rep2)",
     f"{KMEANS_HOMER}_rep2":     "Homer KMeans (rep2)",
     f"{KMEANS_MACS2}_rep2":     "MACS2 KMeans (rep2)",
+    f"{BMM3_OMNI}_rep2":        "OmniPeak BMM3 (rep2)",
+    f"{BMM3_HOMER}_rep2":       "Homer BMM3 (rep2)",
+    f"{BMM3_MACS2}_rep2":       "MACS2 BMM3 (rep2)",
+    "ref_15":                   "Ref 15",
+    "joint_ref_15":             "Joint Ref 15",
 }
+
+# Display name back to the key it spells, for the helpers that are handed the
+# labels of a plot rather than the methods behind them.
+_KEY_BY_DISPLAY = {label: key for key, label in DISPLAY_NAMES.items()}
+
 
 def normalize_method(name):
     """Normalize a method name to its canonical key, or None when unknown."""
@@ -220,17 +283,30 @@ def normalize_method(name):
     is_joint = name.startswith("joint_")
     if is_joint:
         name = name[len("joint_"):]
-    if name.startswith("kmeans_"):
+    is_mixture = False
+    if name.startswith("kmeans3_"):
+        name = name[len("kmeans3_"):]
+    elif name.startswith("kmeans_"):
         name = name[len("kmeans_"):]
+    elif name.endswith("_kmeans3"):
+        name = name[:-len("_kmeans3")]
     elif name.endswith("_kmeans"):
         name = name[:-len("_kmeans")]
+    elif name.startswith("bmm3_"):
+        name = name[len("bmm3_"):]
+        is_mixture = True
+    elif name.endswith("_bmm3"):
+        name = name[:-len("_bmm3")]
+        is_mixture = True
+    elif name.startswith("bmm_"):
+        name = name[len("bmm_"):]
+        is_mixture = True
+    elif name.endswith("_bmm"):
+        name = name[:-len("_bmm")]
+        is_mixture = True
+
     if name in (HOMER, MACS2, OMNI):
-        if name == HOMER: canonical = KMEANS_HOMER
-        elif name == MACS2: canonical = KMEANS_MACS2
-        else: canonical = KMEANS_OMNI
-        if is_joint:
-            return "joint_" + canonical
-        return canonical
+        return method_key(name, joint=is_joint, mixture=is_mixture)
     return None
 
 # The Quies/Het bulk of the genome, dropped by the NOQH variant of every metric,
@@ -248,6 +324,23 @@ NOQH_STATES = {
 # whose references name their states differently has to go through the types,
 # because the name-based metrics count every one-sided name as a disagreement.
 NOQH_TYPES = (QUIESCENT, FACULTATIVE_HET, CONSTITUTIVE_HET)
+
+
+def is_quiescent(name):
+    """True for the quiescent state, under any spelling a markup gives it.
+
+    The reference name is "Quies", the interpreted type of interpretation.py
+    is "Quiescent", both appear numbered ("15_Quies") wherever match.py has
+    not relabelled the states, and a model that splits the background names
+    the halves "Quies2", "Quies3".
+
+    Narrower than NOQH_STATES on purpose: Het and ZNF/Rpts do carry marks, the
+    NOQH domain only drops them alongside the quiescent bulk because together
+    they are what dominates a placement metric.
+    """
+    name = re.sub(r"^\d+_", "", str(name).strip())
+    return name.lower().startswith("quies")
+
 
 # The state families the functional validations score, over the names the
 # 15-state markups use: the promoter family is Tss with its flanking states,
@@ -383,6 +476,10 @@ def parse_method(name):
         binarization = core[2] if len(core) > 2 else "default"
         if binarization == "omni": binarization = "omnipeak"
         return binarization, "joint_kmeans", rep
+    if name.startswith("joint_bmm"):
+        binarization = core[2] if len(core) > 2 else "default"
+        if binarization == "omni": binarization = "omnipeak"
+        return binarization, "joint_bmm", rep
 
     state_model = core[0]
     binarization_key = core[1] if len(core) > 1 else ""
@@ -423,7 +520,12 @@ def bin_color(binarization):
 
 
 def method_color(method):
-    return bin_color(parse_method(method)[0])
+    binarization, state_model, _ = parse_method(method)
+    color = bin_color(binarization)
+    if state_model and "kmeans" in state_model.lower():
+        rgb = mcolors.to_rgb(color)
+        return mcolors.to_hex([c * 0.7 for c in rgb])
+    return color
 
 
 def seg_label(path):
@@ -446,8 +548,16 @@ def seg_label(path):
 
     if "kmeans_states" in basename:
         model = f"kmeans_{caller}" if caller else "kmeans"
+    elif "bmm3_states" in basename:
+        model = f"bmm3_{caller}" if caller else "bmm3"
+    elif "bmm_states" in basename:
+        model = f"bmm_{caller}" if caller else "bmm"
     elif "joint_kmeans" in parts or "joint_kmeans" in basename:
         model = f"joint_kmeans_{caller}" if caller else "joint_kmeans"
+    elif "joint_bmm3" in parts or "joint_bmm3" in basename:
+        model = f"joint_bmm3_{caller}" if caller else "joint_bmm3"
+    elif "joint_bmm" in parts or "joint_bmm" in basename:
+        model = f"joint_bmm_{caller}" if caller else "joint_bmm"
     elif "joint_chromhmm" in parts or "joint_chromhmm" in basename:
         model = "joint_chromhmm"
     elif "chromhmm_default_result" in parts:
@@ -552,12 +662,12 @@ def strip_points(ax, jitter=0.15, size=STRIP_SIZE, dodge=True, **kwargs):
 JOINT_HATCH = "//"
 
 
-def _is_joint(method):
+def is_joint(method):
     """True for a joint model, by key (joint_omni) or display name (Joint ...)."""
-    return str(method).lower().startswith("joint")
+    return "joint" in str(method).lower()
 
 
-def hatch_joint(ax, order, joint=_is_joint):
+def hatch_joint(ax, order, joint=is_joint):
     """Hatch the bars of the joint models, which share their caller's colour.
 
     sns.barplot draws one bar container per hue level, in hue_order order, so
@@ -584,6 +694,173 @@ def hatch_all(ax):
     for container in ax.containers:
         for bar in container:
             bar.set_hatch(JOINT_HATCH)
+
+
+# A bar chart of many methods repeats the caller on every tick - "OmniPeak
+# KMeans", "OmniPeak BMM3", "Joint OmniPeak KMeans" - which is most of the
+# label and all of the width. The helpers below lay such an axis out by caller
+# instead: group_methods() puts the models of one caller next to each other,
+# group_tick_labels() drops the caller from their labels and group_bands()
+# writes it once under the group. A chart whose bars are not methods - datasets,
+# states - has no groups, and every one of them leaves it untouched.
+GROUP_BAND_COLOR = "0.35"
+
+# Gap in points between the tick labels and the bracket, and between the
+# bracket and the caller under it.
+GROUP_BAND_PAD = 4
+
+
+def _group_of(item):
+    """Item as a method name: a bare key or display name, or the first field of
+    a (key, label, ...) tuple."""
+    if isinstance(item, (tuple, list)):
+        item = item[0] if len(item) else ""
+    return item
+
+
+def _method_key_of(name):
+    """The method key *name* stands for - a key, a display name or a spelling
+    normalize_method() knows - or None when it names no method at all.
+
+    parse_method() reads an unknown name as the default binarization, so a
+    dataset or a state would come back as a ChromHMM model; only a name the
+    project actually spells a method with is resolved here.
+    """
+    name = str(name).strip()
+    if name in DISPLAY_NAMES or name in METHOD_IDX:
+        return name
+    return _KEY_BY_DISPLAY.get(name, normalize_method(name))
+
+
+def method_group(method):
+    """Display name of the caller *method* belongs with, or None when it has no
+    caller - a dataset, a state, the ENCODE reference segmentation."""
+    key = _method_key_of(_group_of(method))
+    return None if key is None else CALLER_DISPLAY.get(caller_key(key))
+
+
+def group_methods(items, key=None):
+    """*items* reordered so the models of one caller stand together.
+
+    The callers keep the order in which they first appear, and so do the models
+    within a caller, so a list written as ChromHMM, HOMER, MACS2, OmniPeak
+    comes back laid out that way however its models are interleaved. An item
+    with no caller - "ref" - stays where it is, on its own. *items* are method
+    keys, display names, or tuples whose first field is one of those; pass
+    *key* to read the method off an item of any other shape.
+    """
+    get = _group_of if key is None else key
+    buckets, index = [], {}
+    for item in items:
+        group = method_group(get(item))
+        if group is not None and group in index:
+            buckets[index[group]].append(item)
+            continue
+        if group is not None:
+            index[group] = len(buckets)
+        buckets.append([item])
+    return [item for bucket in buckets for item in bucket]
+
+
+def group_tick_labels(labels, key=None):
+    """*labels* with the caller dropped from each, for group_bands() to write.
+
+    A label of a method with no caller, and one that is nothing but its caller,
+    is left as it is - there would be nothing left of it otherwise.
+    """
+    get = _group_of if key is None else key
+    ticks = []
+    for label in labels:
+        text = str(display_name(get(label)))
+        group = method_group(get(label))
+        short = text if group is None else re.sub(
+            rf"\s*{re.escape(group)}\s*", " ", text, flags=re.IGNORECASE).strip()
+        ticks.append(short or text)
+    return ticks
+
+
+def group_runs(labels, key=None):
+    """(caller, first, last) of every run of neighbouring labels of one caller.
+
+    Labels with no caller break a run and start none of their own, so a chart
+    of datasets or states comes back with no runs at all.
+    """
+    runs = []
+    get = _group_of if key is None else key
+    for i, label in enumerate(labels):
+        group = method_group(get(label))
+        if group is None:
+            continue
+        if runs and runs[-1][0] == group and runs[-1][2] == i - 1:
+            runs[-1][2] = i
+        else:
+            runs.append([group, i, i])
+    return [tuple(run) for run in runs]
+
+
+def _xticklabel_drop(ax):
+    """How far the x tick labels of *ax* reach below it, in points.
+
+    None when it carries no visible tick label - a shared axis. Measured
+    rather than guessed: the drop is what the rotation, the length and the
+    padding of the labels make it, and the bracket below them has to clear it.
+    """
+    fig = ax.figure
+    fig.canvas.draw()   # a tick label has no extent before the figure is drawn
+    bottoms = [label.get_window_extent().y0 for label in ax.get_xticklabels()
+               if label.get_text() and label.get_visible()]
+    if not bottoms:
+        return None
+    return (ax.get_window_extent().y0 - min(bottoms)) / fig.dpi * 72
+
+
+def group_bands(ax, labels, key=None, fontsize=None, color=GROUP_BAND_COLOR):
+    """Write the caller of every group of bars under the group.
+
+    One bracket per run of neighbouring bars of the same caller, with its name
+    below, under the tick labels group_tick_labels() has taken that name out
+    of. Nothing is drawn for a chart whose bars are not methods, or one whose
+    tick labels are hidden - the name belongs where the labels are.
+    """
+    runs = group_runs(labels, key=key)
+    drop = _xticklabel_drop(ax)
+    if not runs or drop is None:
+        return
+    if fontsize is None:
+        fontsize = TICK_FONTSIZE
+    axes_x = blended_transform_factory(ax.transData, ax.transAxes)
+    bracket = offset_copy(axes_x, fig=ax.figure, y=-(drop + GROUP_BAND_PAD),
+                          units="points")
+    name = offset_copy(axes_x, fig=ax.figure,
+                       y=-(drop + 2 * GROUP_BAND_PAD), units="points")
+    for group, first, last in runs:
+        ax.plot([first - 0.4, last + 0.4], [0, 0], transform=bracket, color=color,
+                linewidth=0.8, clip_on=False)
+        ax.text((first + last) / 2, 0, group, transform=name, color=color,
+                ha="center", va="top", fontsize=fontsize, clip_on=False)
+
+
+def group_xticks(ax, order, labels=None, key=None, rotation=45, fontsize=None,
+                 bands=True, **kwargs):
+    """Tick the x axis of *ax* by caller: the model on every tick, the caller
+    under the group.
+
+    The x axis group_methods() asks for, on a plot drawn by hand - *order* is
+    the x levels of the bars, as they were drawn. *labels* replaces the tick
+    text group_tick_labels() would write, for a tick carrying something of its
+    own as well: a per-bar count. Extra keywords go to group_bands().
+    """
+    if fontsize is None:
+        fontsize = TICK_FONTSIZE
+    if labels is None:
+        labels = group_tick_labels(order, key=key) if bands else \
+            [display_name(level) for level in order]
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels(labels, rotation=rotation,
+                       ha="right" if rotation not in (0, 90) else "center",
+                       fontsize=fontsize)
+    if bands:
+        group_bands(ax, order, key=key, fontsize=fontsize, **kwargs)
 
 
 # Every bar chart of the notebooks is the same figure: mean +- SE bars in the
@@ -643,10 +920,14 @@ def _bar_legend(ax, levels, legend, title, kwargs):
         ax.legend(labels=labels, **opts)
 
 
-def _xticklabels(order, xticklabels):
-    """Tick labels for *order*: as given, display names, or the levels."""
+def _xticklabels(order, xticklabels, bands=True):
+    """Tick labels for *order*: as given, display names, the model of a method
+    with its caller left to group_bands(), or the levels."""
     if xticklabels == "display":
         return [display_name(level) for level in order]
+    if xticklabels == "group":
+        return group_tick_labels(order) if bands else \
+            [display_name(level) for level in order]
     return order if xticklabels is None else xticklabels
 
 
@@ -666,13 +947,15 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
              ylabel=None, xticklabels=None, rotation=45, tick_fontsize=TICK_FONTSIZE,
              ylim=None, log=False, labels=None, label_fontsize=6, hatch="joint",
              legend=False, legend_title="Method", legend_kwargs=None, points=None,
-             point_data=None, path=None, **bar_kwargs):
+             point_data=None, path=None, bands=True, **bar_kwargs):
     """Bar chart of *y* per *x* level, mean +- SE with the observations on top.
 
     *order* fixes the x levels (defaults to their order of appearance) and
     *palette* colours them; pass *hue* / *hue_order* instead for grouped bars,
     or *color* for a single-colour chart. *xticklabels* replaces the tick
-    labels - "display" for display_name() of *order*. *labels* is a format
+    labels - "display" for display_name() of *order*, "group" for the models
+    of *order* with their caller written once under each group of bars
+    (group_methods()). *labels* is a format
     string for the per-bar mean, which only makes sense without a *hue*, where
     one bar is one group of values. *hatch* is "joint" for hatch_joint(), "all"
     for hatch_all(), None for neither, and *points* overrides the
@@ -699,8 +982,10 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
     if ylabel is not None:
         ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
     ax.set_xticks(range(len(order)))
-    ax.set_xticklabels(_xticklabels(order, xticklabels), rotation=rotation,
+    ax.set_xticklabels(_xticklabels(order, xticklabels, bands=bands), rotation=rotation,
                        ha="right" if rotation else "center", fontsize=tick_fontsize)
+    if xticklabels == "group" and bands:
+        group_bands(ax, order, fontsize=tick_fontsize)
     ax.tick_params(axis="y", labelsize=tick_fontsize)
     if log and (pd.to_numeric(data[y], errors="coerce") > 0).any():
         ax.set_yscale("log")
@@ -725,7 +1010,7 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
 def broken_bar_plot(data, x, y, order, break_low=0.20, break_high=0.40, top=1.02,
                     height_ratios=(1, 4), figsize=(12, 6), title=None, xlabel=None,
                     ylabel=None, xticklabels=None, rotation=45,
-                    tick_fontsize=TICK_FONTSIZE, path=None, **kwargs):
+                    tick_fontsize=TICK_FONTSIZE, path=None, bands=True, **kwargs):
     """bar_plot() with the y axis broken between *break_low* and *break_high*.
 
     What the state composition plots need: the Quiescent state covers more than
@@ -739,6 +1024,7 @@ def broken_bar_plot(data, x, y, order, break_low=0.20, break_high=0.40, top=1.02
     for ax in (ax_top, ax_bot):
         bar_plot(data, x, y, order=order, ax=ax, rotation=rotation,
                  tick_fontsize=tick_fontsize, xticklabels=xticklabels,
+                 bands=bands,
                  legend=kwargs.get("legend", False) and ax is ax_top, **{
                      k: v for k, v in kwargs.items() if k != "legend"})
     # The break is what carries the scale, so the ranges come after the bars.
@@ -774,13 +1060,14 @@ def broken_bar_plot(data, x, y, order, break_low=0.20, break_high=0.40, top=1.02
 def stacked_bar_plot(pivot, colors=None, figsize=(15, 6), width=0.8, title=None,
                      xlabel=None, ylabel=None, xticklabels=None, rotation=90,
                      tick_fontsize=6, legend_title="State",
-                     legend_fontsize="x-small", path=None):
+                     legend_fontsize="x-small", path=None, bands=True):
     """Stacked bars of a fraction table, with the row totals outlined.
 
     *pivot* is indexed by the bars (dataset or method) and its columns are the
     components, stacked in column order and coloured by *colors*. The outline
     of the row sums is what shows how much of the genome a segmentation covers
-    at all, which the stack alone hides.
+    at all, which the stack alone hides. *xticklabels* takes the same forms as
+    in bar_plot(), "group" included.
     """
     fig, ax = plt.subplots(figsize=figsize)
     pivot.plot(kind="bar", stacked=True, ax=ax, width=width, color=colors, linewidth=0)
@@ -794,10 +1081,13 @@ def stacked_bar_plot(pivot, colors=None, figsize=(15, 6), width=0.8, title=None,
     ax.set_xlabel(xlabel or "", fontsize=AXIS_FONTSIZE)
     ax.set_ylabel(ylabel or "", fontsize=AXIS_FONTSIZE)
     if xticklabels is not None:
-        ax.set_xticks(range(len(pivot.index)))
-        ax.set_xticklabels(xticklabels, rotation=rotation,
+        levels = list(pivot.index)
+        ax.set_xticks(range(len(levels)))
+        ax.set_xticklabels(_xticklabels(levels, xticklabels), rotation=rotation,
                            ha="right" if rotation not in (0, 90) else "center",
                            fontsize=tick_fontsize)
+        if xticklabels == "group" and bands:
+            group_bands(ax, levels, fontsize=tick_fontsize)
     else:
         ax.tick_params(axis="x", rotation=rotation, labelsize=tick_fontsize)
     ax.grid(axis="y", alpha=0.3)
@@ -860,6 +1150,7 @@ def save_fig(fig, path, tight=True, note=None, **kwargs):
     if tight:
         fig.tight_layout()
     kwargs.setdefault("bbox_inches", "tight")
+    kwargs.setdefault("dpi", 200)
     _save(path, lambda p: fig.savefig(p, **kwargs))
     plt.close(fig)
     print(f"  saved {path}{' ' + note if note else ''}")

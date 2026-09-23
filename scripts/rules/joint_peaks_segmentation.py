@@ -7,8 +7,12 @@ import numpy as np
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 
-# Sample size to reduce memory usage
-SAMPLE = 100_000_000
+# Add analysis dir to path to import bernoulli
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "analysis"))
+from bernoulli import (BernoulliMixture, DEFAULT_SPATIAL_BINS,
+                       sparse_spatial_histogram, spatial_pattern_labels,
+                       to_pattern_codes, pattern_rows)
+
 
 # Add current directory to path to import peaks_segmentation
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -25,9 +29,13 @@ def main():
                         help="Peak files for all cells. Expected order: all marks for cell 1, then all marks for cell 2, etc. Use commas for multiple files per mark.")
     parser.add_argument("--states", type=int, default=15, help="Number of KMeans states")
     parser.add_argument("--outdir", required=True, help="Output directory for BED files")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for KMeans")
-    parser.add_argument("--stacked", action="store_true", help="Use stacked model (marks from all cells combined for each bin)")
-    
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for KMeans/BMM")
+    parser.add_argument("--mixture", action="store_true", help="Use the Bernoulli Mixture Model instead of KMeans; it reads --spatial-bins bins per observation")
+    parser.add_argument("--spatial-bins", type=int, default=DEFAULT_SPATIAL_BINS,
+                        choices=(1, 2, 3),
+                        help="Bins a mixture observation spans: 1 the bin itself, "
+                             "2 the previous bin and itself, "
+                             "3 (default, BMM3) also the next one")
     args = parser.parse_args()
     
     marks = args.marks.split(",")
@@ -47,22 +55,14 @@ def main():
     chrom_info_dict = chrom_info.set_index('chrom').to_dict('index')
     total_bins_per_cell = chrom_info['bins'].sum()
     
-    if args.stacked:
-        print(f"Pre-allocating stacked joint data matrix: {total_bins_per_cell} bins x {num_marks * num_cells} marks", file=sys.stderr)
-        X = np.zeros((total_bins_per_cell, num_marks * num_cells), dtype=np.uint8)
-    else:
-        print(f"Pre-allocating joint data matrix: {total_bins_per_cell * num_cells} bins x {num_marks} marks", file=sys.stderr)
-        # Using uint8 for memory efficiency
-        X = np.zeros((total_bins_per_cell * num_cells, num_marks), dtype=np.uint8)
+    print(f"Pre-allocating joint data matrix: {total_bins_per_cell * num_cells} bins x {num_marks} marks", file=sys.stderr)
+    # Using uint8 for memory efficiency
+    X = np.zeros((total_bins_per_cell * num_cells, num_marks), dtype=np.uint8)
     
     for i, cell in enumerate(cells):
         print(f"Binarizing peaks for cell {cell}...", file=sys.stderr)
-        if args.stacked:
-            cell_offset = 0
-            mark_offset = i * num_marks
-        else:
-            cell_offset = i * total_bins_per_cell
-            mark_offset = 0
+        cell_offset = i * total_bins_per_cell
+        mark_offset = 0
         
         cell_peaks = args.peaks[i * num_marks : (i + 1) * num_marks]
         
@@ -97,18 +97,58 @@ def main():
         
     print(f"Total joint data size: {X.nbytes / 1024**2:.2f} MB", file=sys.stderr)
     
-    print(f"Fitting joint KMeans with {args.states} states...", file=sys.stderr)
-    model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
+    # Calculate slices for chromosome-by-chromosome processing
+    slices = []
+    for i in range(num_cells):
+        block_offset = i * total_bins_per_cell
+        for chrom in chroms:
+            c_info = chrom_info_dict[chrom]
+            off = block_offset + c_info['offset']
+            slices.append((chrom, off, off + c_info['bins']))
+
+    if args.mixture:
+        bins = args.spatial_bins
+        window = "" if bins == 1 else f"{bins}-bin spatial "
+        print(f"Fitting joint {window}Bernoulli Mixture with {args.states} states...",
+              file=sys.stderr)
+        # The mixture reads a bin together with its neighbours, so it is fitted
+        # on the spatial patterns of the track rather than on its rows: the
+        # vocabulary is 2^(bins * marks) wide - 2^26 at the 13 marks of a
+        # SAGAconf dataset - so only the patterns the tracks show are counted
+        # and scored.  One slice per chromosome, and per cell when the cells
+        # are concatenated rows: no bin of a cell ever neighbours another's,
+        # and counting the slices together is the sum over the cells.
+
+        patterns, counts = sparse_spatial_histogram(X, slices, num_marks, bins=bins)
+        print(f"  {len(patterns)} distinct spatial patterns", file=sys.stderr)
+        means, weights, _ = BernoulliMixture(
+            n_components=args.states, random_state=args.seed, n_init=10
+        ).fit_patterns(patterns, counts, bins * num_marks)
+
+        # One int8 per bin, and the annotation is blocked, so the whole joint
+        # track is labelled at once and every cell reads its own rows off it.
+        print("Generating labels...", file=sys.stderr)
+        joint_labels = spatial_pattern_labels(means, weights, X, slices,
+                                              num_marks, bins=bins)
+    else:
+        print(f"Fitting joint KMeans with {args.states} states...", file=sys.stderr)
+        # Binarized data has at most 2^num_marks unique rows. Collapsing them
+        # into a weighted pattern table makes the fit independent of the
+        # number of bins.
+        patterns, counts = sparse_spatial_histogram(X, slices, num_marks, bins=1)
+        x_collapsed = pattern_rows(num_marks, patterns)
+        model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
+        model.fit(x_collapsed, sample_weight=counts)
     
-    # Subsampling for training to save memory
-    subsample_size = min(X.shape[0], SAMPLE)
-    print(f"Subsampling {subsample_size} bins for training...", file=sys.stderr)
-    np.random.seed(args.seed)
-    indices = np.random.choice(X.shape[0], subsample_size, replace=False)
-    model.fit(X[indices])
-    
-    print("Generating BED outputs...", file=sys.stderr)
+    print(f"Generating BED outputs {args.outdir}...", file=sys.stderr)
     os.makedirs(args.outdir, exist_ok=True)
+
+    # The model the file names carry: bmm3 for the 3-bin spatial mixture the
+    # pipeline fits, bmm for a bin's own marks.
+    if args.mixture:
+        suffix = "bmm" if args.spatial_bins == 1 else f"bmm{args.spatial_bins}"
+    else:
+        suffix = "kmeans"
     
     # Prepare colors (consistent with an individual script)
     cmap = plt.get_cmap("tab20")
@@ -118,42 +158,27 @@ def main():
         colors.append(",".join([str(int(c * 255)) for c in rgb]))
 
     offset = 0
-    if args.stacked:
-        # In the stacked model marks of all cells form a single feature vector per bin,
-        # so there is exactly one label per bin, i.e. one segmentation shared by all cells.
-        # Write it once - emitting it per cell would produce identical per-cell files.
-        print("Predicting labels for stacked joint data...", file=sys.stderr)
-        labels = model.predict(X)
-        out_path = os.path.join(args.outdir, "stacked_kmeans_joint_states.bed")
+    for cell in cells:
+        out_path = os.path.join(args.outdir, f"{cell}_{suffix}_joint_states.bed")
         print(f"Writing {out_path}...", file=sys.stderr)
+
+        # The mixture labelled every cell already; KMeans predicts one
+        # cell at a time to save memory.
+        if args.mixture:
+            cell_labels = joint_labels[offset : offset + total_bins_per_cell]
+        else:
+            cell_labels = model.predict(X[offset : offset + total_bins_per_cell])
+            
         with open(out_path, "w") as out_f:
             cell_offset = 0
             for chrom in chroms:
                 n = chrom_info_dict[chrom]['bins']
-                chrom_labels = labels[cell_offset : cell_offset + n]
+                chrom_labels = cell_labels[cell_offset : cell_offset + n]
                 for chrom_, s, e, sid in segments_from_labels(chrom, chrom_labels, args.bin):
                     color = colors[sid - 1]
                     out_f.write(f"{chrom_}\t{s}\t{e}\tE{sid}\t0\t.\t{s}\t{e}\t{color}\n")
                 cell_offset += n
-    else:
-        for cell in cells:
-            out_path = os.path.join(args.outdir, f"{cell}_kmeans_joint_states.bed")
-            print(f"Writing {out_path}...", file=sys.stderr)
-            
-            # Predict labels for one cell at a time to save memory
-            cell_data = X[offset : offset + total_bins_per_cell]
-            cell_labels = model.predict(cell_data)
-            
-            with open(out_path, "w") as out_f:
-                cell_offset = 0
-                for chrom in chroms:
-                    n = chrom_info_dict[chrom]['bins']
-                    chrom_labels = cell_labels[cell_offset : cell_offset + n]
-                    for chrom_, s, e, sid in segments_from_labels(chrom, chrom_labels, args.bin):
-                        color = colors[sid - 1]
-                        out_f.write(f"{chrom_}\t{s}\t{e}\tE{sid}\t0\t.\t{s}\t{e}\t{color}\n")
-                    cell_offset += n
-            offset += total_bins_per_cell
+        offset += total_bins_per_cell
                 
     print("Done.", file=sys.stderr)
 

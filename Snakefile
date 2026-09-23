@@ -2,7 +2,7 @@
 
 import os
 
-configfile: "config.yaml" # TODO: change to a real config file
+configfile: "config_encode.yaml"
 
 workdir: os.path.expanduser(config.get("workdir","."))
 
@@ -54,6 +54,8 @@ DO_REPLICATES_ONLY = _flag("replicates_only", default=False)
 DO_OMNIPEAK = _flag("omnipeak")
 DO_HOMER = _flag("homer")
 DO_MACS2 = _flag("macs2")
+DO_BW_EMISSIONS = _flag("bw_emissions", default=False)
+DO_BIN_EMISSIONS = _flag("bin_emissions", default=False)
 
 # Callers enabled by the config flags above.
 CALLERS = (
@@ -233,8 +235,9 @@ def all_results(ds):
     t = []
     marks = get_marks(ds)
     if cfg.get("ref_chromhmm"):
-        t.extend([f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bed",
-                  f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bw_emissions.npz"])
+        t.append(f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bed")
+        if DO_BW_EMISSIONS:
+            t.append(f"{ds}/{cfg['ref_chromhmm']}_chromhmm.bw_emissions.npz")
 
     if cfg.get("rnaseq"):
         t.append(f"{ds}/rnaseq_{cfg['rnaseq']}.tsv")
@@ -251,16 +254,20 @@ def all_results(ds):
         for caller in CALLERS:
             if cfg.get("ref_chromhmm"):
                 t.append(f"{folder}/{caller}/{caller}_kmeans_states_matched.bed")
+                t.append(f"{folder}/{caller}/{caller}_bmm3_states_matched.bed")
             else:
                 t.append(f"{folder}/{caller}/{caller}_kmeans_states.bed")
+                t.append(f"{folder}/{caller}/{caller}_bmm3_states.bed")
 
     # Per-state matching matrix (heatmap) produced alongside every matched BED.
     t += [f.replace("_matched.bed", "_matched.match.png")
           for f in list(t) if f.endswith("_matched.bed")]
-    t += [f.replace(".bed", ".bw_emissions.npz")
-          for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed") or f.endswith("_states.bed")]
-    t += [f.replace(".bed", ".bin_emissions.npz")
-          for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed") or f.endswith("_states.bed")]
+    if DO_BW_EMISSIONS:
+        t += [f.replace(".bed", ".bw_emissions.npz")
+              for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed") or f.endswith("_states.bed")]
+    if DO_BIN_EMISSIONS:
+        t += [f.replace(".bed", ".bin_emissions.npz")
+              for f in list(t) if f.endswith("_matched.bed") or f.endswith("_dense.bed") or f.endswith("_states.bed")]
 
     return t
 

@@ -22,6 +22,8 @@ params:
   homer: false          # run HOMER-based binarization and segmentation
   macs2: false          # run MACS2-based binarization and segmentation
   omnipeak: false       # run OmniPeak-based binarization and segmentation
+  bw_emissions: false   # process bigwig emissions or not
+  bin_emissions: false  # process binarized emissions or not
   match_method: overlap # possible options: overlap | jaccard
 
 datasets:

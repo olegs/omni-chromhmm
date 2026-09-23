@@ -153,9 +153,9 @@ PALETTE = {
     "OmniPeak": BIN_COLORS["omnipeak"],
     "HOMER":    BIN_COLORS["homer"],
     "MACS2":    BIN_COLORS["macs2"],
-    "Default":  BIN_COLORS["default"],
+    "ChromHMM": BIN_COLORS["default"],
 }
-METHOD_ORDER = ["Default", "HOMER", "MACS2", "OmniPeak"]
+METHOD_ORDER = ["HOMER", "MACS2", "ChromHMM", "OmniPeak"]
 
 
 def _bar_plot(df, value_col, ylabel, title, outpath):
@@ -178,11 +178,15 @@ def _bar_plot(df, value_col, ylabel, title, outpath):
     save_fig(fig, outpath)
 
 
-def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
+def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=None):
     """Per-mark peak statistics and replicate Jaccard for all callers.
 
     Writes peak_stats.tsv and bar plots under *outdir*; called from analysis.ipynb.
     """
+    if chromhmm_bin is None:
+        from utils import load_config
+        chromhmm_bin = load_config()["params"]["chromhmm_bin"]
+
     args = SimpleNamespace(ds=ds, cell=cell, marks=marks, outdir=outdir,
                            omni_bin=omni_bin, chromhmm_bin=chromhmm_bin)
 
@@ -192,7 +196,7 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
     has_replicates = os.path.isdir(os.path.join(args.ds, "rep1")) or os.path.isdir(os.path.join(args.ds, "replicate1"))
 
     # regions[method][mark][folder_key] = [(chrom, s, e), ...]
-    regions = {m: {mk: {} for mk in marks} for m in ["OmniPeak", "HOMER", "MACS2", "Default"]}
+    regions = {m: {mk: {} for mk in marks} for m in ["OmniPeak", "HOMER", "MACS2", "ChromHMM"]}
 
     folders = {"pooled": args.ds}
     if has_replicates:
@@ -245,33 +249,19 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=200):
             else:
                 print(f"  missing: {path}", file=sys.stderr)
 
-        # ChromHMM default — binary files, or the per-mark result BEDs when absent.
-        binary_dir = os.path.join(folder_path, "chromhmm_default")
-        result_dir = os.path.join(folder_path, "chromhmm_default_result")
-        cell_chromhmm_dir = os.path.join(folder_path, f"{args.cell}_chromhmm")
-        chrom_peaks = {}
-        if os.path.isdir(binary_dir):
-            chrom_peaks = load_chromhmm_binary_peaks(binary_dir, args.cell,
-                                                     bin_size=args.chromhmm_bin)
+        # ChromHMM
         for mark in marks:
-            if chrom_peaks.get(mark):
-                regions["Default"][mark][folder_key] = chrom_peaks[mark]
-                continue
-            bed = os.path.join(result_dir, f"{mark}.bed")
-            if not os.path.exists(bed):
-                bed = os.path.join(cell_chromhmm_dir, f"{mark}.bed")
-            if not os.path.exists(bed):
-                cand = glob.glob(os.path.join(folder_path, "*_chromhmm", f"{mark}.bed"))
-                if cand:
-                    bed = cand[0]
-            if os.path.exists(bed):
-                regions["Default"][mark][folder_key] = load_bed_regions(bed)
+            pattern = os.path.join(folder_path, "chromhmm_default", f"{args.cell}_*_binary.txt*")
+            binary_files = glob.glob(pattern)
+            if binary_files:
+                regions["ChromHMM"][mark][folder_key] = load_chromhmm_binary_peaks(
+                    binary_files, mark, bin_size=args.chromhmm_bin)
             else:
-                print(f"  missing chromhmm default peaks for {mark} in {folder_path}",
-                      file=sys.stderr)
+                print(f"  missing binary files: {pattern}", file=sys.stderr)
+
 
     rows = []
-    for method in ["OmniPeak", "HOMER", "MACS2", "Default"]:
+    for method in ["OmniPeak", "HOMER", "MACS2", "ChromHMM"]:
         for mark in marks:
             row = {"method": method, "mark": mark}
 

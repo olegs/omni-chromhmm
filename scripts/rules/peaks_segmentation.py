@@ -8,6 +8,12 @@ import gzip
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 
+# Add analysis dir to path to import bernoulli
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "analysis"))
+from bernoulli import (BernoulliMixture, DEFAULT_SPATIAL_BINS,
+                       sparse_spatial_histogram, spatial_pattern_labels,
+                       to_pattern_codes)
+
 def read_chrom_sizes(path):
     df = pd.read_csv(path, sep='\t', header=None, names=['chrom', 'size'])
     df = df[~df['chrom'].str.contains('_')]
@@ -94,8 +100,14 @@ def main():
     parser.add_argument("--cell", default="cell", help="Cell name for binary files")
     parser.add_argument("--out", help="Output BED file (stdout if omitted)")
     parser.add_argument("--save-binary", help="Optional directory to save ChromHMM binary files")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for KMeans")
-    
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for KMeans/BMM")
+    parser.add_argument("--mixture", action="store_true", help="Use the Bernoulli Mixture Model instead of KMeans; it reads --spatial-bins bins per observation")
+    parser.add_argument("--spatial-bins", type=int, default=DEFAULT_SPATIAL_BINS,
+                        choices=(1, 2, 3),
+                        help="Bins a mixture observation spans: 1 the bin itself, "
+                             "2 the previous bin and itself, "
+                             "3 (default, BMM3) also the next one")
+
     args = parser.parse_args()
     
     marks = args.marks.split(",")
@@ -113,19 +125,45 @@ def main():
     
     if args.save_binary:
         write_binary_files(per_chrom, marks, args.cell, args.save_binary)
+
+    if args.states <= 0:
+        print("States <= 0, skipping clustering.", file=sys.stderr)
+        return
         
-    print(f"Fitting KMeans with {args.states} states...", file=sys.stderr)
-    model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
-    
-    # Subsampling for training to save memory
-    subsample_size = min(data_matrix.shape[0], 1000000)
-    print(f"  Subsampling {subsample_size} bins for training...", file=sys.stderr)
-    np.random.seed(args.seed)
-    indices = np.random.choice(data_matrix.shape[0], subsample_size, replace=False)
-    model.fit(data_matrix[indices])
-    
-    print("Generating labels...", file=sys.stderr)
-    labels = model.predict(data_matrix)
+    if args.mixture:
+        bins = args.spatial_bins
+        window = "" if bins == 1 else f"{bins}-bin spatial "
+        print(f"Fitting {window}Bernoulli Mixture with {args.states} states...",
+              file=sys.stderr)
+        # The mixture reads a bin together with its neighbours, so it is fitted
+        # on the spatial patterns of the track rather than on its rows: the
+        # vocabulary is 2^(bins * marks) wide - 2^26 at the 13 marks of a
+        # SAGAconf dataset - so only the patterns the track shows are counted
+        # and scored.  Neighbours never cross a chromosome boundary, hence one
+        # slice per chromosome.
+        n_marks = len(marks)
+        slices = []
+        offset = 0
+        for chrom, data in per_chrom:
+            slices.append((chrom, offset, offset + data.shape[0]))
+            offset += data.shape[0]
+
+        codes = to_pattern_codes(data_matrix)
+        patterns, counts = sparse_spatial_histogram(codes, slices, n_marks, bins=bins)
+        print(f"  {len(patterns)} distinct spatial patterns", file=sys.stderr)
+        means, weights, _ = BernoulliMixture(
+            n_components=args.states, random_state=args.seed, n_init=10
+        ).fit_patterns(patterns, counts, bins * n_marks)
+
+        print("Generating labels...", file=sys.stderr)
+        labels = spatial_pattern_labels(means, weights, codes, slices, n_marks,
+                                        bins=bins)
+    else:
+        print(f"Fitting KMeans with {args.states} states...", file=sys.stderr)
+        model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
+        model.fit(data_matrix)
+        print("Generating labels...", file=sys.stderr)
+        labels = model.predict(data_matrix)
     
     print("Generating BED output...", file=sys.stderr)
     out_f = open(args.out, "w") if args.out else sys.stdout

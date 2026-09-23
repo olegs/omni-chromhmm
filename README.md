@@ -1,8 +1,9 @@
 # Omni ChromHMM
 
 Snakemake pipeline comparing default ChromHMM against peak-caller-based
-binarization (HOMER, MACS2, Omnipeak), with both ChromHMM LearnModel and KMeans 
-clustering applied on top of each peak-caller binarization.
+binarization (HOMER, MACS2, Omnipeak), with ChromHMM LearnModel, KMeans
+clustering and a Bernoulli mixture (BMM2, which reads a bin together with its
+predecessor) applied on top of each peak-caller binarization.
 All peak callers support both with control and without control settings, 
 so the pipeline works on datasets that lack matched input BAMs.
 
@@ -18,7 +19,7 @@ to produce 15-state segmentation. Per-mark BED files are extracted from the bina
 Repeated per replicate when available.
 
 4. **Omnipeak** (`rules/omni.smk`) -- control-free peak calling in pooled/per-replicate modes;
-peaks converted to ChromHMM binary matrices. Two segmentations per mode: ChromHMM LearnModel and KMeans.
+peaks converted to ChromHMM binary matrices. Three segmentations per mode: ChromHMM LearnModel, KMeans and BMM2.
 
 5. **Homer** (`rules/homer.smk`) -- parallel control-free peak caller via `makeTagDirectory` +
 `findPeaks -style histone`. Feeds the same downstream binarization / segmentation machinery
@@ -52,10 +53,12 @@ REPO=~/work/omni-chromhmm
 for ds in imr90 monocytes monocytes_mint gm12878_mint spleen \
  heart_right_ventricle neurosphere sigmoid_colon adrenal_gland thyroid_gland \
  uterus tibial_nerve heart_left_ventricle substantia_nigra temporal_lobe; do
+  rm $ds/.done;
   snakemake -p $ds/.done --use-conda --cores all --directory $(pwd) \
   --snakefile $REPO/Snakefile \
   --configfile $REPO/config_encode.yaml \
   --config homer=True macs2=True omnipeak=True \
+  bw_emissions=True bin_emissions=True \
   --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
   --rerun-incomplete --rerun-trigger mtime;
 done
@@ -105,11 +108,12 @@ cd ~/data/2026_segmentations/sagaconf
 # Set REPO to the directory where you cloned omni-chromhmm
 REPO=~/work/omni-chromhmm
 for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
+  rm $ds/.done;
   snakemake -p $ds/.done --use-conda --cores all --directory $(pwd) \
   --snakefile $REPO/Snakefile \
   --configfile $REPO/config_sagaconf.yaml \
   --config homer=True macs2=True omnipeak=True \
-  --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
+  --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 mem_mb=32000 \
   --rerun-incomplete --rerun-trigger mtime;
 done
 ```
@@ -120,6 +124,10 @@ bash process_sagaconf.sh
 
 ## Analysis
 
+0. Launch `transfer.ipynb` for the Init/updated/refitted transfer experiments
+   (see the section below): it runs the integrated comparison - or reads back its
+   tables when the ones on disk were produced by the same settings, recomputing
+   and saying why when they were not - and shows every panel as its own figure.
 1. Launch `analysis_encode.ipynb` for ENCODE analysis, cross-segmentation comparison and inter-dataset summary plots.
 2. Launch `analysis_epi1000.ipynb` for analysis of the 1000 epigenomes dataset.
 3. Launch `analysis_sagaconf.ipynb` for analysis of the SAGAconf dataset.
@@ -129,6 +137,12 @@ bash process_sagaconf.sh
    complexity, functional correspondence, state-space fidelity, segment-count stability) and
    writes the summary ranking and the score profiles to `out/summary`, along with
    the evidence table behind them.
+
+## Init vs updated vs jointly refitted model (ENCODE)
+
+Does a model trained on an initial collection annotate new samples as well as one
+refitted on everything?
+Launch `transfer.ipynb` to analyze the results.
 
 ## Questions?
 Contact Oleg Shpynov (oleg.shpynov@jetbrains.com).
