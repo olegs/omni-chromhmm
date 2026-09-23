@@ -188,27 +188,32 @@ def method_key(caller, joint=False, mixture=False):
 
 METHOD_ORDER = [
     "ref",
+    # ChromHMM
     CHROMHMM_DEFAULT,
+    CHROMHMM_HOMER,
+    CHROMHMM_MACS2,
+    CHROMHMM_OMNI,
+    JOINT_CHROMHMM,
+    # HOMER
     KMEANS_HOMER,
     BMM3_HOMER,
-    CHROMHMM_HOMER,
-    KMEANS_MACS2,
-    BMM3_MACS2,
-    CHROMHMM_MACS2,
-    KMEANS_OMNI,
-    BMM3_OMNI,
-    CHROMHMM_OMNI,
-    BMM_OMNI,
     BMM_HOMER,
-    BMM_MACS2,
-    KMEANS3_OMNI,
-    JOINT_CHROMHMM,
     JOINT_KMEANS_HOMER,
     JOINT_BMM3_HOMER,
+    # MACS2
+    KMEANS_MACS2,
+    BMM3_MACS2,
+    BMM_MACS2,
     JOINT_KMEANS_MACS2,
     JOINT_BMM3_MACS2,
+    # OmniPeak
+    KMEANS_OMNI,
+    BMM3_OMNI,
+    BMM_OMNI,
+    KMEANS3_OMNI,
     JOINT_KMEANS_OMNI,
     JOINT_BMM3_OMNI,
+    # Replicates
     f"{CHROMHMM_DEFAULT}_rep1",
     f"{KMEANS_HOMER}_rep1",
     f"{BMM3_HOMER}_rep1",
