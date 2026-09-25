@@ -371,6 +371,8 @@ FUNCTIONAL_TARGETS = (
      ACTIVE_STATES, "atac_"),
     ("functional_tss", "Tss states vs expressed TSS \u00b12 kb",
      PROMOTER_STATES, "ExpressedTSS2kb"),
+    ("functional_refseq_tss", "Tss states vs RefSeq TSS \u00b12 kb",
+     PROMOTER_STATES, "RefSeqTSS2kb"),
     ("functional_tx", "Tx states vs expressed gene bodies",
      TX_STATES, "ExpressedGeneBodies"),
 )
