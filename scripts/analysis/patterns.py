@@ -420,22 +420,6 @@ def reference_mapping(labels_by_sample, reference, samples, states=N_STATES):
     return state_mapping(pooled)
 
 
-def reference_families(mapping):
-    """The states of each functional family, by what the reference matched.
-
-    `mapping` is a reference_mapping() result: the reference state every state
-    of a fit was assigned to.  Membership follows that assignment rather than
-    the fit's own emissions, so a family means the same thing in every arm -
-    the same convention the per-state agreement is already read in.  The
-    matching is a bijection, so each family holds a fixed number of states and
-    an arm short of, say, a second promoter still fills all four promoter
-    slots; how well it fills them is what the endpoint then measures.
-    """
-    names = [REFERENCE_STATES[i] for i in mapping]
-    return {key: [j for j, name in enumerate(names) if name in members]
-            for key, members in FAMILIES.items()}
-
-
 def reference_state_rows(labels_a, labels_b, map_a, map_b, sample, comparison):
     """Per-state Jaccard and Kappa of two annotations, both relabelled to the reference."""
     left, right = map_a[labels_a], map_b[labels_b]
@@ -508,22 +492,6 @@ def cross_sample_metrics(table, names, exclude=()):
             "states": len(keep)}
 
 
-# --- spatial structure -----------------------------------------------------
-
-def segment_stats(labels, mask):
-    """Segments and mean segment length of a labelling - how fragmented it is."""
-    changes = 0
-    covered = 0
-    for _, lo, hi in mask.slices():
-        piece = labels[lo:hi]
-        if piece.size == 0:
-            continue
-        changes += int((piece[1:] != piece[:-1]).sum()) + 1
-        covered += piece.size
-    return {"segments": changes,
-            "mean_segment_bp": covered * mask.bin / changes if changes else float("nan")}
-
-
 # --- cost accounting -------------------------------------------------------
 
 _RSS_UNIT = 1 if sys.platform == "darwin" else 1024   # ru_maxrss: bytes vs KiB
@@ -584,27 +552,3 @@ def fit_kmeans_op(counts, init=None, seed=SEED, n_init=KMEANS_N_INIT):
     return fit_kmeans(counts, init=init, seed=seed, n_init=n_init)
 
 
-# --- genomic annotations ---------------------------------------------------
-
-def add_intervals(target, mask, chrom, starts, ends):
-    """Mark every bin an interval touches, in place."""
-    if chrom not in mask.nbins:
-        return target
-    n, off = mask.nbins[chrom], mask.offset[chrom]
-    starts = np.clip(np.asarray(starts) // mask.bin, 0, n)
-    ends = np.clip(-(-np.asarray(ends) // mask.bin), 0, n)
-    for s, e in zip(starts, ends):
-        if e > s:
-            target[off + s:off + e] = True
-    return target
-
-
-def static_annotation(mask, path):
-    """Bin mask of a ChromHMM COORDS bed.gz (sample-independent)."""
-    frame = pd.read_csv(path, sep="\t", header=None, usecols=[0, 1, 2],
-                        names=["chrom", "start", "end"], dtype={"chrom": str})
-    out = np.zeros(mask.total_bins, dtype=bool)
-    for chrom, group in frame.groupby("chrom", sort=False):
-        add_intervals(out, mask, chrom, group["start"].to_numpy(),
-                      group["end"].to_numpy())
-    return out
