@@ -24,3 +24,64 @@ def test_state_palette_numbered_states_tab20():
     assert palette["12"] != palette["1"]
     assert palette["E11"] != palette["E1"]
     assert palette["E12"] != palette["E1"]
+
+
+def test_unknown_state_handling(tmp_path):
+    states = ["Tss", "Tx", "Quies", "Unknown"]
+    sorted_states = summary_plots.sort_states(states)
+    assert sorted_states[-1] == "Unknown"
+    assert sorted_states[0] == "Tss"
+
+    palette = summary_plots.state_palette(states)
+    assert "Unknown" in palette
+    assert palette["Unknown"] == "#000000"
+
+    coverages = {
+        "dataset_a": {"Tss": 0.2, "Tx": 0.3, "Quies": 0.5},
+        "dataset_b": {"Tss": 0.1, "Tx": 0.2, "Quies": 0.6, "Unknown": 0.1},
+    }
+    outfile = str(tmp_path / "composition_test.png")
+    summary_plots._stacked_composition_chart(
+        coverages, ["dataset_a", "dataset_b"], "Test Composition", outfile
+    )
+    assert os.path.exists(outfile)
+
+
+def test_plot_method_composition_with_custom_title(tmp_path):
+    # Mock reference bed file
+    bed_path = tmp_path / "ref_chromhmm.bed"
+    with open(bed_path, "w") as f:
+        f.write("chr1\t0\t1000\tTss\t0\t.\t0\t1000\t255,0,0\n")
+        f.write("chr1\t1000\t5000\tQuies\t0\t.\t1000\t5000\t220,220,220\n")
+
+    outfile = str(tmp_path / "method_composition.png")
+    summary_plots.run_summary_plots(
+        datasets=["test_ds"],
+        cells=["test_cell"],
+        workdir=str(tmp_path),
+        ref_paths=[str(bed_path)],
+        methods=["ref"],
+        method_composition_outfile=outfile,
+        method_composition_title="State composition per method — mean across datasets (ChIP-seq)",
+    )
+    assert os.path.exists(outfile)
+
+
+def test_plot_per_dataset_method_composition_reference(tmp_path):
+    ds_dir = tmp_path / "ds1"
+    ds_dir.mkdir()
+    bed_path = ds_dir / "ENCFF123_chromhmm.bed"
+    with open(bed_path, "w") as f:
+        f.write("chr1\t0\t1000\tTss\t0\t.\t0\t1000\t255,0,0\n")
+        f.write("chr1\t1000\t5000\tQuies\t0\t.\t1000\t5000\t220,220,220\n")
+
+    outdir = str(tmp_path / "out")
+    summary_plots.run_summary_plots(
+        datasets=["ds1"],
+        cells=["Cell1"],
+        workdir=str(tmp_path),
+        ref_paths=[str(bed_path)],
+        method_ds_composition_outdir=outdir,
+    )
+    ref_file = os.path.join(outdir, "method_ds_composition_reference.png")
+    assert os.path.exists(ref_file)

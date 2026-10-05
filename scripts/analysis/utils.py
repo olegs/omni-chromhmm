@@ -235,6 +235,7 @@ METHOD_IDX = {m: i for i, m in enumerate(METHOD_ORDER)}
 
 DISPLAY_NAMES = {
     "ref":                   "ENCODE Ref",
+    "reference":             "ENCODE Reference",
     CHROMHMM_DEFAULT:      "Default ChromHMM",
     CHROMHMM_OMNI:         "OmniPeak ChromHMM",
     CHROMHMM_HOMER:        "Homer ChromHMM",

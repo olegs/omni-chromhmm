@@ -68,6 +68,7 @@ STATE_ORDER = [
     "TssBiv", "BivFlnk", "EnhBiv", "Biv",
     "ReprPC", "ReprPCWk",
     "Quies",
+    "Unknown",
 ]
 STATE_IDX = {s: i for i, s in enumerate(STATE_ORDER)}
 
@@ -99,6 +100,7 @@ STATE_COLORS = {
     "ReprPC":   _RGB(137,  55, 223),
     "ReprPCWk": _RGB(137,  55, 223),
     "Quies":    _RGB(220, 220, 220),
+    "Unknown":  _RGB(  0,   0,   0),
 }
 
 # Numbered unannotated states (E1..E20 / 1..20), consistent with peaks_segmentation.py
@@ -1013,11 +1015,6 @@ def _stacked_composition_chart(coverages, labels, title, outfile,
     all_states = set()
     for fracs in coverages.values():
         all_states.update(fracs.keys())
-    if "Unknown" in all_states:
-        # Find which labels have it.
-        culprits = [lbl for lbl, fracs in coverages.items() if "Unknown" in fracs]
-        raise ValueError(f"'Unknown' state detected in compositions for {culprits}. "
-                         "Fix state mapping upstream.")
     states = sort_states(all_states)
     state_colors = state_palette(states)
 
@@ -1026,7 +1023,7 @@ def _stacked_composition_chart(coverages, labels, title, outfile,
     x = np.arange(len(labels))
     bottom = np.zeros(len(labels))
 
-    # Renormalize so the fractions still sum to 1.0 after discarding "Unknown".
+    # Renormalize so the fractions sum to 1.0.
     norm_coverages = {}
     for lbl in labels:
         fracs = coverages[lbl]
@@ -1092,7 +1089,7 @@ def _plot_reference_composition(markups_dir, outfile, ref_paths=None, ref_labels
     )
 
 
-def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, outfile, match_method, ref_paths=None):
+def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, outfile, match_method, ref_paths=None, title=None):
     """Stacked bar chart: mean state fraction per method, averaged across datasets."""
 
     def _fracs_from_path(path):
@@ -1128,13 +1125,14 @@ def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, out
 
     _stacked_composition_chart(
         coverages, labels_out,
-        "State composition per method — mean across datasets",
+        title or "State composition per method — mean across datasets",
         outfile, label_fontsize=TICK_FONTSIZE,
     )
 
 
 def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
-                                         method_key, method_label, outfile, match_method):
+                                         method_key, method_label, outfile, match_method,
+                                         ref_paths=None, markups_dir=None):
     """Stacked bar chart: state fraction per dataset for a single method."""
 
     def _fracs_from_path(path):
@@ -1148,12 +1146,43 @@ def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
 
     coverages = {}
     labels_out = []
-    for ds, cell in zip(datasets, cells):
-        bed = ds_method_bed(workdir, ds, cell, nstates, method_key, match_method)
-        fracs = _fracs_from_path(bed)
-        if fracs:
-            coverages[ds] = fracs
-            labels_out.append(ds)
+    if method_key in ("ref", "reference"):
+        for ds, cell in zip(datasets, cells):
+            bed = None
+            if ref_paths:
+                for rp in ref_paths:
+                    rp_path = Path(rp)
+                    if ds in rp_path.parts or rp == f"{ds}/{rp_path.name}" or f"/{ds}/" in str(rp) or str(rp).startswith(f"{ds}/"):
+                        bed = rp
+                        break
+            if bed is None and workdir:
+                ds_dir = Path(workdir) / ds
+                if ds_dir.exists():
+                    matches = sorted(ds_dir.glob("*_chromhmm.bed")) + sorted(ds_dir.glob("*_chromhmm.bed.gz"))
+                    if matches:
+                        bed = str(matches[0])
+            if bed is None and markups_dir:
+                markups_path = Path(markups_dir) / "15state"
+                if markups_path.exists():
+                    matches = [f for f in sorted(markups_path.glob("*.bed.gz")) + sorted(markups_path.glob("*.bed"))
+                               if ds.lower() in f.name.lower() or cell.lower() in f.name.lower()]
+                    if matches:
+                        bed = str(matches[0])
+            if bed:
+                fracs = _fracs_from_path(bed)
+                if fracs:
+                    coverages[ds] = fracs
+                    labels_out.append(ds)
+    else:
+        for ds, cell in zip(datasets, cells):
+            try:
+                bed = ds_method_bed(workdir, ds, cell, nstates, method_key, match_method)
+            except KeyError:
+                continue
+            fracs = _fracs_from_path(bed)
+            if fracs:
+                coverages[ds] = fracs
+                labels_out.append(ds)
 
     if not coverages:
         print(f"  skipping {outfile}: no data for method {method_key}", file=sys.stderr)
@@ -1385,6 +1414,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       ref_kappa_noqh_matrix=None, ref_jaccard_noqh_matrix=None,
                       ref_dist_noqh_outfile=None,
                       method_composition_outfile=None,
+                      method_composition_title=None,
                       method_ds_composition_outdir=None,
                       all_methods_composition_outdir=None,
                       rep_consistency_outdir=None,
@@ -1422,6 +1452,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         ref_jaccard_noqh_matrix=ref_jaccard_noqh_matrix,
         ref_dist_noqh_outfile=ref_dist_noqh_outfile,
         method_composition_outfile=method_composition_outfile,
+        method_composition_title=method_composition_title,
         method_ds_composition_outdir=method_ds_composition_outdir,
         all_methods_composition_outdir=all_methods_composition_outdir,
         rep_consistency_outdir=rep_consistency_outdir,
@@ -1781,7 +1812,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         os.makedirs(os.path.dirname(os.path.abspath(args.method_composition_outfile)), exist_ok=True)
         _plot_method_composition(args.datasets, args.cells, args.workdir, args.markups_dir,
                                  args.nstates, args.method_composition_outfile, args.match_method,
-                                 ref_paths=args.ref_paths)
+                                 ref_paths=args.ref_paths, title=getattr(args, 'method_composition_title', None))
 
     if args.method_ds_composition_outdir:
         if not (args.workdir and args.cells and args.datasets):
@@ -1791,6 +1822,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
             raise ValueError("--datasets and --cells must have equal lengths")
         os.makedirs(args.method_ds_composition_outdir, exist_ok=True)
         _supp_methods = [
+            ("reference",      DISPLAY_NAMES.get("reference", "ENCODE Reference")),
             (CHROMHMM_DEFAULT, DISPLAY_NAMES[CHROMHMM_DEFAULT]),
             (CHROMHMM_OMNI,    DISPLAY_NAMES[CHROMHMM_OMNI]),
             (KMEANS_OMNI,      DISPLAY_NAMES[KMEANS_OMNI]),
@@ -1808,6 +1840,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
             _plot_per_dataset_method_composition(
                 args.datasets, args.cells, args.workdir, args.nstates,
                 method_key, method_label, outfile, args.match_method,
+                ref_paths=args.ref_paths, markups_dir=args.markups_dir,
             )
 
     if args.all_methods_composition_outdir:
