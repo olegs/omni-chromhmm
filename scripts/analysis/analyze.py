@@ -23,7 +23,9 @@ import seaborn as sns
 
 sys.path.insert(0, os.path.dirname(__file__))
 import utils
-from utils import save_fig
+from utils import (save_fig, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE,
+                   LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE,
+                   ANNOTATION_FONTSIZE)
 
 
 def expand_globs(paths):
@@ -471,11 +473,13 @@ def save_transition_entropy(segs, bin_size, outdir, skip_noqh=False):
         sns.heatmap(A, xticklabels=states, yticklabels=states,
                     cmap="Blues", vmin=0, vmax=1, ax=ax,
                     linewidths=0.3, annot=True, fmt=".2f",
-                    annot_kws={"fontsize": 6})
+                    annot_kws={"fontsize": ANNOTATION_FONTSIZE})
         ax.set_title(f"Transition matrix — {label}{excl_label}\n"
-                     f"(total entropy = {total_H:.4f})")
-        ax.set_xlabel("To state")
-        ax.set_ylabel("From state")
+                     f"(total entropy = {total_H:.4f})", **TITLE_STYLE)
+        ax.set_xlabel("To state", fontsize=AXIS_FONTSIZE)
+        ax.set_ylabel("From state", fontsize=AXIS_FONTSIZE)
+        ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
         save_fig(fig, os.path.join(edir, f"transition_matrix{suffix}.png"),
                  bbox_inches=None)
 
@@ -602,10 +606,12 @@ def plot_state_consistency(state_depth_counts, title, out_path, colors=None):
 
         plt.plot(x, y, label=state, marker='.', markersize=2, color=color, alpha=0.8)
 
-    plt.title(f"State consistency ({title})", fontsize=11, fontweight="bold")
-    plt.xlabel("Supported by <= N segmentations", fontsize=9)
-    plt.ylabel("% of state coverage", fontsize=9)
-    plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize='x-small')
+    plt.title(f"State consistency ({title})", **TITLE_STYLE)
+    plt.xlabel("Supported by <= N segmentations", fontsize=AXIS_FONTSIZE)
+    plt.ylabel("% of state coverage", fontsize=AXIS_FONTSIZE)
+    plt.xticks(fontsize=TICK_FONTSIZE)
+    plt.yticks(fontsize=TICK_FONTSIZE)
+    plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=LEGEND_FONTSIZE)
     plt.grid(True, alpha=0.3)
     save_fig(fig, out_path)
 
@@ -642,10 +648,11 @@ def plot_segment_lengths(segs, outdir):
                 edgecolor="lightgrey", linewidth=1)
     
     ax.set_xticks(range(len(states)))
-    ax.set_xticklabels(states, rotation=90, fontsize=8)
-    ax.set_title("Average segment length per state", fontsize=11, fontweight="bold")
-    ax.set_xlabel("State", fontsize=9)
-    ax.set_ylabel("Length (bp)", fontsize=9)
+    ax.set_xticklabels(states, rotation=90, fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.set_title("Average segment length per state", **TITLE_STYLE)
+    ax.set_xlabel("State", fontsize=AXIS_FONTSIZE)
+    ax.set_ylabel("Length (bp)", fontsize=AXIS_FONTSIZE)
     ax.grid(axis="y", alpha=0.3)
     
     save_fig(fig, os.path.join(outdir, "segment_length.png"))
@@ -722,11 +729,13 @@ def plot_emissions(states, marks, mat, outdir, subdir="bin_emissions"):
     
     sns.heatmap(mat, annot=True, fmt=".2f", cmap="Blues", 
                 xticklabels=marks, yticklabels=states, 
-                vmin=0, vmax=1, ax=ax, cbar_kws={"label": "Emission probability"})
+                vmin=0, vmax=1, ax=ax,
+                annot_kws={"fontsize": ANNOTATION_FONTSIZE},
+                cbar_kws={"label": "Emission probability"})
     
-    ax.set_title("State emissions", fontsize=11, fontweight="bold")
-    plt.xticks(rotation=90, fontsize=9)
-    plt.yticks(rotation=0, fontsize=9)
+    ax.set_title("State emissions", **TITLE_STYLE)
+    plt.xticks(rotation=90, fontsize=TICK_FONTSIZE)
+    plt.yticks(rotation=0, fontsize=TICK_FONTSIZE)
     
     save_fig(fig, os.path.join(edir, "state_emissions.png"))
 
@@ -987,11 +996,13 @@ def plot_enrichment(enrich_df, segs, outdir):
                                     max(5, 0.4 * len(scaled))))
     
     sns.heatmap(scaled, annot=True, fmt=".2f", cmap="Blues", 
-                vmin=0, vmax=1, ax=ax, cbar_kws={"label": "Min-max scaled enrichment"})
+                vmin=0, vmax=1, ax=ax,
+                annot_kws={"fontsize": ANNOTATION_FONTSIZE},
+                cbar_kws={"label": "Min-max scaled enrichment"})
     
-    ax.set_title("Functional enrichment", fontsize=11, fontweight="bold")
-    plt.xticks(rotation=90, fontsize=9)
-    plt.yticks(rotation=0, fontsize=9)
+    ax.set_title("Functional enrichment", **TITLE_STYLE)
+    plt.xticks(rotation=90, fontsize=TICK_FONTSIZE)
+    plt.yticks(rotation=0, fontsize=TICK_FONTSIZE)
     
     save_fig(fig, os.path.join(edir, "enrichment.png"))
 

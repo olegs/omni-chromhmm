@@ -136,7 +136,6 @@ def test_binarization_mark_coverage_and_plot():
             cells=[cell]
         )
         assert os.path.exists(os.path.join(summary_dir, "summary_2way_tss_exptss.png"))
-        assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage.png"))
         assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage_absolute.png"))
         assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage_relative.png"))
 

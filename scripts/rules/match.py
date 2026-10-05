@@ -357,17 +357,17 @@ def compare(ref_segs, work_segs, overlap, mapping, outdir):
                                     max(6, len(work_states) * 0.4)))
     im = ax.imshow(mat, cmap="Blues", vmin=0, vmax=1, aspect="auto")
     ax.set_xticks(range(len(ref_states)))
-    ax.set_xticklabels(ref_states, rotation=90)
+    ax.set_xticklabels(ref_states, rotation=90, fontsize=utils.TICK_FONTSIZE)
     ax.set_yticks(range(len(work_states)))
-    ax.set_yticklabels(work_states)
-    ax.set_title("Jaccard similarity")
+    ax.set_yticklabels(work_states, fontsize=utils.TICK_FONTSIZE)
+    ax.set_title("Jaccard similarity", **utils.TITLE_STYLE)
     for i in range(mat.shape[0]):
         for j in range(mat.shape[1]):
             ax.text(j, i, f"{mat[i, j]:.2f}", ha="center", va="center",
-                    fontsize=6, color="black" if mat[i, j] < 0.5 else "white")
+                    fontsize=utils.ANNOTATION_FONTSIZE, color="black" if mat[i, j] < 0.5 else "white")
     fig.colorbar(im, ax=ax)
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "jaccard.png"), dpi=120)
+    fig.savefig(os.path.join(outdir, "jaccard.png"), dpi=300)
     plt.close(fig)
 
     total_hit = sum(overlap.get((w, mapping[w]), 0) for w in work_states)
@@ -450,14 +450,15 @@ def _save_match_matrices(out_prefix, work_states, ref_states, mapping,
 
     im = ax.imshow(plot_scores, cmap="Blues", vmin=0, vmax=1, aspect="auto")
     ax.set_xticks(range(len(ref_states)))
-    ax.set_xticklabels(ref_states, rotation=90, fontsize=7)
+    ax.set_xticklabels(ref_states, rotation=90, fontsize=utils.TICK_FONTSIZE)
     ax.set_yticks(range(len(work_states)))
-    ax.set_yticklabels(work_states, fontsize=7)
-    ax.set_xlabel("Reference state")
-    ax.set_ylabel("Work state")
+    ax.set_yticklabels(work_states, fontsize=utils.TICK_FONTSIZE)
+    ax.set_xlabel("Reference state", fontsize=utils.AXIS_FONTSIZE)
+    ax.set_ylabel("Work state", fontsize=utils.AXIS_FONTSIZE)
     ax.set_title("Per-state matching score (work → reference)"
                  if quality is None else
-                 "Per-state match quality: composite utility (work → reference)")
+                 "Per-state match quality: composite utility (work → reference)",
+                 **utils.TITLE_STYLE)
     for w in work_states:
         r = mapping.get(w, w)
         if r in r_idx:

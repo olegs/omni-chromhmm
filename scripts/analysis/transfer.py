@@ -1243,7 +1243,7 @@ def _arm_axis(ax):
     positions = _arm_positions()
     ax.set_xticks(positions)
     ax.set_xticklabels([SHORT_LABEL[a] for a in arms], rotation=45, ha="right",
-                       fontsize=5.5)
+                       fontsize=utils.TICK_FONTSIZE)
     # Twenty-one ticks on one axis: each is tinted its method's colour, so the
     # three scenarios of a method read as a group without reading the text.
     for tick, arm in zip(ax.get_xticklabels(), arms):
@@ -1257,7 +1257,7 @@ def _legend(ax, scenarios=("init", "updated", "refit")):
                        + [Patch(facecolor="#DDDDDD", edgecolor="white",
                                 hatch=SCENARIO_HATCH[s], label=SCENARIO_LABEL[s])
                           for s in scenarios],
-               loc="upper left", ncol=5, frameon=False, fontsize=6.5,
+               loc="upper left", ncol=5, frameon=False, fontsize=utils.LEGEND_FONTSIZE,
                handlelength=1.4, columnspacing=0.8)
 
 
@@ -1274,7 +1274,7 @@ def _cross_sample_panel(ax, cross_sample, metric, domain):
         utils.scatter_points(ax, x, values, jitter=0.08, size=5, alpha=0.6)
         ax.annotate(f"{values.mean():.2f}", (x, float(values.mean())),
                     textcoords="offset points", xytext=(0, 3), ha="center",
-                    fontsize=6)
+                    fontsize=utils.LABEL_FONTSIZE)
     _arm_axis(ax)
     low, high = ax.get_ylim()
     ax.set_ylim(0, high * 1.35)
@@ -1302,7 +1302,7 @@ def _cost_panel(ax, cost):
                                  alpha=0.75)
             ax.annotate(f"{value:,.3g}", (x + offset, value),
                         textcoords="offset points", xytext=(0, 3), ha="center",
-                        fontsize=5.5, rotation=90)
+                        fontsize=utils.LABEL_FONTSIZE, rotation=90)
     ax.set_yscale("log")
     low, high = ax.get_ylim()
     ax.set_ylim(low, high * 8)
@@ -1340,10 +1340,10 @@ def _state_agreement_summary_panel(ax, state_jaccard, metric=utils.KAPPA,
             utils.scatter_points(ax, x + offset, values, jitter=0.08, size=9)
             ax.annotate(f"{values.mean():.3f}", (x + offset, float(values.mean())),
                         textcoords="offset points", xytext=(0, 3), ha="center",
-                        fontsize=6)
+                        fontsize=utils.LABEL_FONTSIZE)
     first_series = comparison_series(scenarios[0])
     ax.set_xticks(range(len(first_series)))
-    ax.set_xticklabels([label for _, _, label in first_series], rotation=45, ha="right", fontsize=7)
+    ax.set_xticklabels([label for _, _, label in first_series], rotation=45, ha="right", fontsize=utils.TICK_FONTSIZE)
     _style(ax, "Stability against its own refit",
            f"Mean per-state {utils.METRIC_DISPLAY.get(metric, metric.capitalize())}")
     ax.set_ylim(0, 1.2)
@@ -1366,10 +1366,10 @@ def _stability_panel(ax, stability, metric, domain, scenarios=("init", "updated"
             utils.scatter_points(ax, x + offset, values, jitter=0.08, size=9)
             ax.annotate(f"{values.mean():.3f}", (x + offset, float(values.mean())),
                         textcoords="offset points", xytext=(0, 3), ha="center",
-                        fontsize=6)
+                        fontsize=utils.LABEL_FONTSIZE)
     first_series = comparison_series(scenarios[0])
     ax.set_xticks(range(len(first_series)))
-    ax.set_xticklabels([label for _, _, label in first_series], rotation=45, ha="right", fontsize=7)
+    ax.set_xticklabels([label for _, _, label in first_series], rotation=45, ha="right", fontsize=utils.TICK_FONTSIZE)
     domain_label = "FULL" if domain == utils.FULL else "NOQH"
     _style(ax, f"Stability against its own refit ({domain_label})",
            f"{utils.METRIC_DISPLAY.get(metric, metric.capitalize())}, mean over splits")
@@ -1396,7 +1396,7 @@ def _state_groups(ax, order, labels=True, label_y=-0.30):
         if labels:
             ax.annotate(label, (edge - width / 2 - 0.5, label_y),
                         xycoords=("data", "axes fraction"), ha="center",
-                        va="top", fontsize=7, color="#777777")
+                        va="top", fontsize=utils.LABEL_FONTSIZE, color="#777777")
 
 
 def _state_panel(ax, state_jaccard, scenario="init", metric=utils.KAPPA, xlabels=True):
@@ -1427,7 +1427,7 @@ def _state_panel(ax, state_jaccard, scenario="init", metric=utils.KAPPA, xlabels
                         solid_capstyle="butt")
             elif len(sample) < full:
                 ax.annotate(f"{len(sample)}/{full}", (x + offset, 0.06),
-                            ha="center", fontsize=4.5, color="#555555",
+                            ha="center", fontsize=utils.LABEL_FONTSIZE, color="#555555",
                             rotation=90)
     drawn = pd.concat(subsets.values()) if subsets else state_jaccard
     missing = drawn.groupby("state")["recovered"].any()
@@ -1439,10 +1439,10 @@ def _state_panel(ax, state_jaccard, scenario="init", metric=utils.KAPPA, xlabels
         x = order.index(state)
         ax.axvspan(x - 0.45, x + 0.45, color="#B00020", alpha=0.06, zorder=0)
         ax.text(x, 1.22 + 0.16 * (index % 2), "no arm puts\nany bin here",
-                ha="center", va="top", fontsize=6, color="#B00020")
+                ha="center", va="top", fontsize=utils.LABEL_FONTSIZE, color="#B00020")
     ax.set_xticks(range(len(order)))
     if xlabels:
-        ax.set_xticklabels(order, rotation=45, ha="right", fontsize=6.5)
+        ax.set_xticklabels(order, rotation=45, ha="right", fontsize=utils.TICK_FONTSIZE)
     else:
         ax.set_xticklabels([])
     _state_groups(ax, order, labels=xlabels)
@@ -1475,7 +1475,7 @@ def _state_figure(fig, state_jaccard, metric=utils.KAPPA, scenarios=None):
                  "ENCODE reference vocabulary (every arm matched onto it)",
                  y=0.985, **utils.TITLE_STYLE)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, fontsize=8, frameon=False, loc="upper center",
+    fig.legend(handles, labels, fontsize=utils.LEGEND_FONTSIZE, frameon=False, loc="upper center",
                bbox_to_anchor=(0.5, 0.955 if len(scenarios) > 1 else 0.91),
                ncol=len(labels), handlelength=1.6, columnspacing=1.2)
 

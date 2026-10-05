@@ -26,7 +26,7 @@ import seaborn as sns
 sys.path.insert(0, os.path.dirname(__file__))
 from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
                    strip_points, method_color, save_fig,
-                   group_methods, group_bands, group_tick_labels, group_xticks,
+                   group_methods, group_xticks,
                    is_joint, JOINT_HATCH,
                    CHROMHMM_DEFAULT, CHROMHMM_HOMER, CHROMHMM_MACS2, CHROMHMM_OMNI,
                    KMEANS_HOMER, KMEANS_MACS2, KMEANS_OMNI,
@@ -36,7 +36,9 @@ from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
                    display_name,
                    COMPOSITION, JACCARD, KAPPA, FULL, NOQH, NOQH_SUFFIX,
                    COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY, COSINE_DISPLAY,
-                   FULL_DISPLAY, NOQH_DISPLAY)
+                   FULL_DISPLAY, NOQH_DISPLAY,
+                   TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE,
+                   LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE, ANNOTATION_FONTSIZE)
 from analyze import load_bed_df
 
 # The three similarity series every distribution plot shows, in bar order, as
@@ -99,6 +101,13 @@ STATE_COLORS = {
     "Quies":    _RGB(220, 220, 220),
 }
 
+# Numbered unannotated states (E1..E20 / 1..20), consistent with peaks_segmentation.py
+_tab20_cmap = plt.get_cmap("tab20")
+for _i in range(1, 21):
+    _rgb_tab20 = _tab20_cmap((_i - 1) % 20)[:3]
+    STATE_COLORS[f"E{_i}"] = _rgb_tab20
+    STATE_COLORS[f"{_i}"] = _rgb_tab20
+
 # (METHOD_ORDER key, display label, hex color), grouped by caller like
 # METHODS_POOLED above.
 INTER_DS_METHODS = group_methods([
@@ -127,14 +136,18 @@ METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
 def sort_states(states):
     """Sort chromatin state names in canonical ENCODE order.
 
-    Numbered names ("1_TssA", "10_TssBiv") are not in STATE_IDX and fall to the
+    Numbered names ("1_TssA", "10_TssBiv", "E1", "E15") are not in STATE_IDX and fall to the
     end, ordered by state number rather than alphabetically.
     """
     def key(s):
         prefix = s.split("_")[0]
-        return (STATE_IDX.get(s, 999),
-                int(prefix) if prefix.isdigit() else 999,
-                s)
+        if prefix.isdigit():
+            num = int(prefix)
+        elif prefix.startswith("E") and prefix[1:].isdigit():
+            num = int(prefix[1:])
+        else:
+            num = 999
+        return (STATE_IDX.get(s, 999), num, s)
     return sorted(states, key=key)
 
 
@@ -166,6 +179,14 @@ def _canonical_color(state):
         # borrowing the one of "TssA", which is also a prefix of it.
         prefixes = [key for key in STATE_COLORS if name.startswith(key)]
         if not prefixes:
+            if name.startswith("E") and name[1:].isdigit():
+                num = int(name[1:])
+                r, g, b = plt.get_cmap("tab20")((num - 1) % 20)[:3]
+                return "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
+            if name.isdigit():
+                num = int(name)
+                r, g, b = plt.get_cmap("tab20")((num - 1) % 20)[:3]
+                return "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
             return None
         matched = max(prefixes, key=len)
     r, g, b = STATE_COLORS[matched]
@@ -289,9 +310,9 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     if np.all(np.isnan(means)):
         fig, ax = plt.subplots(figsize=(5, 4))
         ax.text(0.5, 0.5, "No data available", ha="center", va="center",
-                transform=ax.transAxes, fontsize=12, color="grey")
+                transform=ax.transAxes, fontsize=11, color="grey")
         ax.set_axis_off()
-        ax.set_title(title, fontsize=11, fontweight="bold")
+        ax.set_title(title, **TITLE_STYLE)
         save_fig(fig, outpath, tight=False, note="(no data)")
         return
 
@@ -307,14 +328,15 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     sns.barplot(data=df_melted, x="display_name", y="value", order=display_order,
                 palette=palette, hue="display_name", dodge=False,
                 capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
-                ax=ax, edgecolor="lightgrey", linewidth=1)
+                ax=ax, edgecolor="lightgrey", linewidth=1, legend=False)
 
     strip_points(ax, data=df_melted, x="display_name", y="value",
                  order=display_order, dodge=False, size=2)
 
-    group_xticks(ax, display, bands=False)
-    ax.set_title(title, fontsize=11, fontweight="bold")
-    ax.set_ylabel(ylabel, fontsize=9)
+    group_xticks(ax, display, fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.set_title(title, **TITLE_STYLE)
+    ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
     ax.grid(axis="y", alpha=0.3)
 
     yrange = ax.get_ylim()[1] - ax.get_ylim()[0]
@@ -333,24 +355,9 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
         if partial_note and c < n_ds:
             lbl += f"\n(n={c})"
         ax.text(x[i], top + yrange * 0.01, lbl,
-                ha="center", va="bottom", fontsize=6)
+                ha="center", va="bottom", fontsize=LABEL_FONTSIZE)
 
-    legend_elements = []
-    for m in methods:
-        legend_elements.append(Patch(facecolor=method_color(m),
-                                     label=DISPLAY_NAMES.get(m, m),
-                                     hatch=JOINT_HATCH if is_joint(m) else None,
-                                     edgecolor="lightgrey", linewidth=0.5))
-
-    if legend_elements:
-        ax.legend(handles=legend_elements, fontsize=6,
-                  bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
-
-    # n_note = f"mean ± SE across {n_ds} datasets (points: individual datasets)"
-    # if partial_note:
-    #     n_note += " (n = datasets with data)"
-    # ax.set_xlabel(n_note, fontsize=7, color="grey")
-    ax.set_xlabel("", fontsize=7, color="grey")
+    ax.set_xlabel("", fontsize=AXIS_FONTSIZE, color="grey")
 
     save_fig(fig, outpath)
 
@@ -408,11 +415,13 @@ def _plot_2way_scatter(x_data, y_data, title, xlabel, ylabel, outpath, order=Non
                     color=color, label=label, markersize=msize, 
                     markeredgecolor='white', markeredgewidth=1)
 
-    ax.set_title(title, fontsize=11, fontweight="bold")
-    ax.set_xlabel(xlabel, fontsize=9)
-    ax.set_ylabel(ylabel, fontsize=9)
+    ax.set_title(title, **TITLE_STYLE)
+    ax.set_xlabel(xlabel, fontsize=AXIS_FONTSIZE)
+    ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
+    ax.tick_params(labelsize=TICK_FONTSIZE)
     ax.grid(alpha=0.3)
-    ax.legend(fontsize=7, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
+    ax.legend(fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
+              bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
 
     save_fig(fig, outpath, tight=False)
 
@@ -485,14 +494,14 @@ def _save_metric_heatmap(df, title, outfile, metric_label):
     sns.heatmap(df, cmap="RdYlGn" if is_kappa else "YlGnBu",
                 vmin=-vmax if is_kappa else 0, vmax=vmax, center=0 if is_kappa else None,
                 linewidths=0.5, annot=True, fmt=".2f",
-                annot_kws={"fontsize": 7},
+                annot_kws={"fontsize": ANNOTATION_FONTSIZE},
                 cbar_kws={"label": metric_label},
                 ax=ax, mask=df.isna().values)
-    ax.set_title(title, fontsize=9)
-    ax.tick_params(axis="x", rotation=45, labelsize=7)
+    ax.set_title(title, **TITLE_STYLE)
+    ax.tick_params(axis="x", rotation=45, labelsize=TICK_FONTSIZE)
     for label in ax.get_xticklabels():
         label.set_ha("right")
-    ax.tick_params(axis="y", rotation=0, labelsize=7)
+    ax.tick_params(axis="y", rotation=0, labelsize=TICK_FONTSIZE)
     save_fig(fig, outfile, bbox_inches=None)
 
 
@@ -537,12 +546,13 @@ def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
                      order=states_order,
                      size=1.5, alpha=0.4, jitter=0.2)
         
-        ax.set_title(f"Average Per-state {label} vs Reference", fontsize=11, fontweight="bold")
-        ax.set_ylabel(label, fontsize=9)
-        ax.set_xlabel("State", fontsize=9)
+        ax.set_title(f"Average Per-state {label} vs Reference", **TITLE_STYLE)
+        ax.set_ylabel(label, fontsize=AXIS_FONTSIZE)
+        ax.set_xlabel("State", fontsize=AXIS_FONTSIZE)
         ax.set_ylim(0 if metric == JACCARD else None, 1.05)
         ax.grid(axis='y', alpha=0.3)
-        ax.tick_params(axis='x', rotation=45)
+        ax.tick_params(axis='x', rotation=45, labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis='y', labelsize=TICK_FONTSIZE)
         
         save_fig(fig, os.path.join(outdir, f"per_state_{metric}_bar.png"))
 
@@ -605,7 +615,7 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
     strip_points(ax, data=plot_df, x="Method", y="value", hue="Metric",
                  order=method_labels, hue_order=[m[0] for m in metric_configs])
     ax.set_xlabel("")
-    ax.set_ylabel("Replicate similarity", fontsize=9)
+    ax.set_ylabel("Replicate similarity", fontsize=AXIS_FONTSIZE)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     mode = NOQH_DISPLAY if noqh else FULL_DISPLAY
@@ -613,10 +623,11 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
     ax.set_title(
         f"Replicate consistency by method — {mode}\n"
         f"({n_methods} methods, {n_ds} datasets with replicates)",
-        fontsize=10, fontweight="bold",
+        **TITLE_STYLE
     )
-    group_xticks(ax, method_labels, rotation=30, bands=False)
-    ax.legend(title="Metric", fontsize=8, title_fontsize=9,
+    group_xticks(ax, method_labels, rotation=30, fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.legend(title="Metric", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
               bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
     save_fig(fig, outfile)
 
@@ -651,13 +662,14 @@ def _plot_rep_consistency_per_state(datasets, methods_dirs, outdir):
         strip_points(ax, data=df, x="state", y=metric, hue="Method",
                      order=states, hue_order=method_labels)
 
-        ax.set_xlabel("Chromatin State")
-        ax.set_ylabel(f"Replicate {title}")
+        ax.set_xlabel("Chromatin State", fontsize=AXIS_FONTSIZE)
+        ax.set_ylabel(f"Replicate {title}", fontsize=AXIS_FONTSIZE)
         ax.set_ylim(0, 1.05)
         ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-        ax.set_title(f"Replicate consistency by state: {title}", fontsize=10, fontweight="bold")
-        ax.tick_params(axis="x", rotation=45)
-        ax.legend(title="Method", fontsize=8, title_fontsize=9,
+        ax.set_title(f"Replicate consistency by state: {title}", **TITLE_STYLE)
+        ax.tick_params(axis="x", rotation=45, labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+        ax.legend(title="Method", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
                   bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
 
         save_fig(fig, outpath)
@@ -761,12 +773,13 @@ def _peak_bar(data, col, ylabel, title, outpath, p_low=None, p_high=None, marks=
                  order=marks, hue_order=methods, dodge=True, size=2)
 
     ax.set_xticks(x)
-    ax.set_xticklabels(marks, fontsize=9)
-    ax.set_ylabel(ylabel, fontsize=9)
+    ax.set_xticklabels(marks, fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.legend(title="Method", fontsize=7, title_fontsize=8,
+    ax.legend(title="Method", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
               bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
-    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.set_title(title, **TITLE_STYLE)
     save_fig(fig, outpath)
 
 
@@ -973,13 +986,13 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
 
     for ax in (ax_top, ax_bot):
         ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-        ax.tick_params(axis="y", labelsize=8)
+        ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
 
-    ax_bot.tick_params(axis="x", labelsize=8, rotation=45)
-    ax_bot.set_xlabel("Chromatin state", fontsize=9)
+    ax_bot.tick_params(axis="x", labelsize=TICK_FONTSIZE, rotation=45)
+    ax_bot.set_xlabel("Chromatin state", fontsize=AXIS_FONTSIZE)
     ax_top.set_xlabel("")
 
-    ax_top.legend(title="Method", fontsize=8, title_fontsize=9,
+    ax_top.legend(title="Method", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
                   bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
     if ax_bot.get_legend():
         ax_bot.get_legend().remove()
@@ -987,15 +1000,15 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
     ax_top.set_title(
         "Genomic coverage per chromatin state — ENCODE reference vs de-novo methods\n"
         f"(datasets: {', '.join(datasets)})",
-        fontsize=10, fontweight="bold",
+        **TITLE_STYLE
     )
     ax_top.set_ylabel("")
-    ax_bot.set_ylabel("Fraction of genome", fontsize=9)
+    ax_bot.set_ylabel("Fraction of genome", fontsize=AXIS_FONTSIZE)
     save_fig(fig, outfile, tight=False)
 
 
 def _stacked_composition_chart(coverages, labels, title, outfile,
-                               label_fontsize=7, bands=False):
+                               label_fontsize=TICK_FONTSIZE):
     """Stacked 100% bar chart from a {label: {state: fraction}} dict."""
     all_states = set()
     for fracs in coverages.values():
@@ -1006,8 +1019,7 @@ def _stacked_composition_chart(coverages, labels, title, outfile,
         raise ValueError(f"'Unknown' state detected in compositions for {culprits}. "
                          "Fix state mapping upstream.")
     states = sort_states(all_states)
-    cmap = plt.get_cmap("tab20")
-    state_colors = {s: STATE_COLORS.get(s, cmap(i % 20)) for i, s in enumerate(states)}
+    state_colors = state_palette(states)
 
     figw = max(8, len(labels) * 0.8)
     fig, ax = plt.subplots(figsize=(figw, 5))
@@ -1035,19 +1047,15 @@ def _stacked_composition_chart(coverages, labels, title, outfile,
            width=0.8, label='_nolegend_')
 
     ax.set_xticks(x)
-    # Methods carry their caller under the group instead of on every label;
-    # a chart whose bars are datasets has no groups and keeps its labels.
-    tick_labels = group_tick_labels(labels) if bands else labels
-    ax.set_xticklabels(tick_labels, fontsize=label_fontsize,
+    ax.set_xticklabels(labels, fontsize=label_fontsize,
                        rotation=45, ha="right")
-    if bands:
-        group_bands(ax, labels)
-    ax.set_ylabel("Fraction of genome", fontsize=9)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.set_ylabel("Fraction of genome", fontsize=AXIS_FONTSIZE)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.legend(title="State", fontsize=7, title_fontsize=8,
+    ax.legend(title="State", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
               bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0, ncol=1)
-    ax.set_title(title, fontsize=10, fontweight="bold")
+    ax.set_title(title, **TITLE_STYLE)
     save_fig(fig, outfile)
 
 
@@ -1080,7 +1088,7 @@ def _plot_reference_composition(markups_dir, outfile, ref_paths=None, ref_labels
     _stacked_composition_chart(
         coverages, labels,
         f"State composition across ENCODE reference segmentations ({len(labels)} cell types)",
-        outfile, label_fontsize=7,
+        outfile, label_fontsize=TICK_FONTSIZE,
     )
 
 
@@ -1121,7 +1129,7 @@ def _plot_method_composition(datasets, cells, workdir, markups_dir, nstates, out
     _stacked_composition_chart(
         coverages, labels_out,
         "State composition per method — mean across datasets",
-        outfile, label_fontsize=9,
+        outfile, label_fontsize=TICK_FONTSIZE,
     )
 
 
@@ -1154,7 +1162,7 @@ def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
     _stacked_composition_chart(
         coverages, labels_out,
         f"State composition — {method_label} (per dataset)",
-        outfile, label_fontsize=9,
+        outfile, label_fontsize=TICK_FONTSIZE,
     )
 
 
@@ -1228,7 +1236,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
                  order=method_labels,
                  hue_order=SIMILARITY_ORDER, size=2)
     ax.set_xlabel("")
-    ax.set_ylabel("Pairwise similarity", fontsize=9)
+    ax.set_ylabel("Pairwise similarity", fontsize=AXIS_FONTSIZE)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     mode = NOQH_DISPLAY if noqh else FULL_DISPLAY
@@ -1238,10 +1246,11 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     ax.set_title(
         f"Inter-dataset similarity by method — {mode}{pair_desc}\n"
         f"({n_methods} methods, n={n_ds} datasets, {n_pairs} pairs each)",
-        fontsize=10, fontweight="bold",
+        **TITLE_STYLE
     )
-    group_xticks(ax, method_labels, rotation=30, bands=False)
-    ax.legend(title="Metric", fontsize=8, title_fontsize=9,
+    group_xticks(ax, method_labels, rotation=30, fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.legend(title="Metric", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
               bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
     save_fig(fig, outfile)
 
@@ -1268,7 +1277,9 @@ def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
     strip_points(ax, data=plot_df, x="Metric", y="value",
                  order=SIMILARITY_ORDER, dodge=False)
     ax.set_xlabel("")
-    ax.set_ylabel("Pairwise similarity", fontsize=9)
+    ax.set_ylabel("Pairwise similarity", fontsize=AXIS_FONTSIZE)
+    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     n_refs_pairs = plot_df[plot_df["Metric"] == COMPOSITION_DISPLAY]["value"].count()
@@ -1276,7 +1287,7 @@ def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
         f"Inter-reference similarity distribution{title_suffix}\n"
         f"({int((-1 + (1 + 8 * n_refs_pairs) ** 0.5) / 2 + 1)} ENCODE references, {n_refs_pairs} pairs each metric)"
     )
-    ax.set_title(title, fontsize=10, fontweight="bold")
+    ax.set_title(title, **TITLE_STYLE)
     save_fig(fig, outfile)
 
 
@@ -1297,20 +1308,21 @@ def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
             labs.append(lab)
         except (TypeError, ValueError):
             continue
-    if not vals:
-        print(f"  skipping {outfile}: no reference data")
-        return
+        if not vals:
+            print(f"  skipping {outfile}: no reference data")
+            return
     fig, ax = plt.subplots(figsize=(max(5, len(labs) * 1.2), 4.2))
     x = np.arange(len(labs))
     ax.bar(x, vals, color=BIN_COLORS["reference"], edgecolor="lightgrey", linewidth=1)
     ax.set_xticks(x)
-    ax.set_xticklabels(labs, rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Segments (×10³)", fontsize=9)
-    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.set_xticklabels(labs, rotation=45, ha="right", fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.set_ylabel("Segments (×10³)", fontsize=AXIS_FONTSIZE)
+    ax.set_title(title, **TITLE_STYLE)
     ax.grid(axis="y", alpha=0.3)
     yr = ax.get_ylim()[1] - ax.get_ylim()[0]
     for i, v in enumerate(vals):
-        ax.text(i, v + yr * 0.01, f"{v:.0f}", ha="center", va="bottom", fontsize=7)
+        ax.text(i, v + yr * 0.01, f"{v:.0f}", ha="center", va="bottom", fontsize=LABEL_FONTSIZE)
     save_fig(fig, outfile)
 
 
@@ -1349,7 +1361,7 @@ def _plot_per_dataset_all_methods_composition(datasets, cells, workdir, nstates,
         _stacked_composition_chart(
             coverages, labels_out,
             f"State composition — {ds} (all de-novo methods)",
-            outfile, label_fontsize=9,
+            outfile, label_fontsize=TICK_FONTSIZE,
         )
 
 
@@ -1626,7 +1638,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
 
         _plot_mark_coverage(ds, args.workdir or ".", os.path.join(args.outdir, "binarization_mark_coverage_absolute.png"), cells=args.cells, relative=False)
         _plot_mark_coverage(ds, args.workdir or ".", os.path.join(args.outdir, "binarization_mark_coverage_relative.png"), cells=args.cells, relative=True)
-        _plot_mark_coverage(ds, args.workdir or ".", os.path.join(args.outdir, "binarization_mark_coverage.png"), cells=args.cells, relative=True)
 
     if args.state_coverage_outfile:
         if not (args.workdir and (args.markups_dir or args.ref_paths) and args.cells):

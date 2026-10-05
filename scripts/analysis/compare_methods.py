@@ -19,7 +19,9 @@ import utils
 from utils import (METHOD_IDX, BIN_COLORS, METHOD_INFO, display_name,
                    bin_color, load_matrix, save_fig,
                    COMPOSITION, JACCARD, KAPPA, NOQH_SUFFIX,
-                   COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY)
+                   COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY,
+                   TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE,
+                   LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE)
 
 
 def _build_analysis_to_seg_map(analysis_dirs, seg_names):
@@ -412,15 +414,16 @@ def _bar_panel(ax, df, col, title, ylabel=None):
     x = np.arange(len(df))
     ax.bar(x, vals, color=[bin_color(b) for b in df["binarization"]], edgecolor="white", linewidth=0.5)
     ax.set_xticks(x)
-    ax.set_xticklabels(df["display_name"], rotation=55, ha="right", fontsize=7)
-    ax.set_title(title, fontsize=10, fontweight="bold")
+    ax.set_xticklabels(df["display_name"], rotation=55, ha="right", fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.set_title(title, **TITLE_STYLE)
     if ylabel:
-        ax.set_ylabel(ylabel, fontsize=8)
+        ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
     ax.grid(axis="y", alpha=0.3)
     for i, v in enumerate(vals):
         if not np.isnan(v):
             ax.text(i, v + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.01,
-                    f"{v:.2f}", ha="center", va="bottom", fontsize=6)
+                    f"{v:.2f}", ha="center", va="bottom", fontsize=LABEL_FONTSIZE)
 
 
 def plot_comparison(df, outdir):
@@ -440,7 +443,7 @@ def plot_comparison(df, outdir):
 
     def _make_fig():
         fig, ax = plt.subplots(figsize=(w, 3.5))
-        ax.legend(handles=legend_elements, fontsize=6,
+        ax.legend(handles=legend_elements, fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
                   bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
         return fig, ax
 

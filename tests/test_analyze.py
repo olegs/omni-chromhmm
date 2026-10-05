@@ -345,3 +345,30 @@ def test_compute_enrichment_50_percent_overlap():
     assert by_state.loc["POOL:Tss", "sensitivity_50"] == pytest.approx(1.0)
     # Family segments: Seg1, Seg2, Seg3, Seg4 (3 hits out of 4 segs) -> coverage_50 = 3/4 = 0.75
     assert by_state.loc["POOL:Tss", "coverage_50"] == pytest.approx(0.75)
+
+
+def test_stacked_bar_plot_xticklabels():
+    import pandas as pd
+    df = pd.DataFrame({
+        "State1": [0.3, 0.4],
+        "State2": [0.7, 0.6],
+    }, index=["kmeans_homer", "bmm3_macs2"])
+
+    ax = utils.stacked_bar_plot(df, xticklabels="group")
+    labels = [t.get_text() for t in ax.get_xticklabels()]
+    assert labels == ["Homer KMeans", "MACS2 BMM3"]
+
+
+def test_plot_summary_no_legend():
+    import pandas as pd
+    import summary_plots
+
+    df = pd.DataFrame({
+        "ds1": [1.0, 2.0],
+        "ds2": [1.5, 2.5]
+    }, index=["kmeans_homer", "bmm3_macs2"])
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        outpath = os.path.join(tmpdir, "test_summary.png")
+        summary_plots._plot_summary(df, "Test Title", "Y Label", outpath)
+        assert os.path.exists(outpath)

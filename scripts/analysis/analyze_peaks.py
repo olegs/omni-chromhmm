@@ -23,7 +23,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from utils import BIN_COLORS, save_fig
+from utils import (BIN_COLORS, save_fig, TITLE_STYLE, AXIS_FONTSIZE,
+                   TICK_FONTSIZE, LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE)
 
 
 def load_bed_regions(path):
@@ -169,11 +170,12 @@ def _bar_plot(df, value_col, ylabel, title, outpath):
                 ax=ax, edgecolor="lightgrey", linewidth=1)
 
     ax.set_xticks(range(len(marks)))
-    ax.set_xticklabels(marks, rotation=30, ha="right", fontsize=9)
-    ax.set_ylabel(ylabel, fontsize=9)
-    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.set_xticklabels(marks, rotation=30, ha="right", fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
+    ax.set_title(title, **TITLE_STYLE)
     ax.grid(axis="y", alpha=0.3)
-    ax.legend(title="Method", fontsize=8, title_fontsize=9)
+    ax.legend(title="Method", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE)
 
     save_fig(fig, outpath)
 
@@ -501,22 +503,23 @@ def plot_mark_coverage(df, outfile=None, title=None, ax=None, relative=True):
                  palette=PALETTE, marker="o", markersize=6, errorbar="se",
                  err_kws={"alpha": 0.2}, ax=ax)
 
-    ax.set_xlabel("Number of marks (N)", fontsize=10)
-    ax.set_ylabel(y_label, fontsize=10)
+    ax.set_xlabel("Number of marks (N)", fontsize=AXIS_FONTSIZE)
+    ax.set_ylabel(y_label, fontsize=AXIS_FONTSIZE)
+    ax.tick_params(labelsize=TICK_FONTSIZE)
     n_ds = df["dataset"].nunique()
     if title:
         plot_title = title
     else:
         type_str = "Relative" if relative else "Absolute"
         plot_title = f"Binarization Mark Coverage — {type_str} (n={n_ds})" if n_ds > 1 else f"Binarization Mark Coverage — {type_str}"
-    ax.set_title(plot_title, fontsize=11, fontweight="bold")
+    ax.set_title(plot_title, **TITLE_STYLE)
     ax.set_xticks(sorted(df["N"].unique()))
     if relative:
         ax.set_ylim(-0.02, 1.05)
     else:
         ax.set_yscale("log")
     ax.grid(True, alpha=0.3)
-    ax.legend(title="Method", fontsize=9, title_fontsize=9)
+    ax.legend(title="Method", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE)
 
     if outfile:
         save_fig(fig, outfile)

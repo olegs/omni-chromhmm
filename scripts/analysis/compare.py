@@ -33,7 +33,9 @@ from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
                    is_rep_pair as _is_rep_pair, display_name, \
                    method_color, save_fig, NOQH_STATES as _EXCLUDE_STATES, \
                    JACCARD, KAPPA, NOQH_SUFFIX, \
-                   JACCARD_DISPLAY, KAPPA_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY
+                   JACCARD_DISPLAY, KAPPA_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY, \
+                   TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE, \
+                   LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE, ANNOTATION_FONTSIZE
 
 
 def _build_seg_to_analysis_map(seg_paths, analysis_dir):
@@ -119,14 +121,15 @@ def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
                 edgecolor="lightgrey", linewidth=1)
     
     ax.set_xticks(range(len(df)))
-    ax.set_xticklabels(display_names, rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Total transition matrix entropy (bits)", fontsize=9)
-    ax.set_title(f"Transition matrix entropy comparison{title_extra}", fontsize=11, fontweight="bold")
+    ax.set_xticklabels(display_names, rotation=45, ha="right", fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.set_ylabel("Total transition matrix entropy (bits)", fontsize=AXIS_FONTSIZE)
+    ax.set_title(f"Transition matrix entropy comparison{title_extra}", **TITLE_STYLE)
     ax.grid(axis="y", alpha=0.3)
     
     yrange = ax.get_ylim()[1] - ax.get_ylim()[0]
     for i, v in enumerate(df["total_entropy"]):
-        ax.text(i, v + yrange * 0.01, f"{v:.3f}", ha="center", va="bottom", fontsize=6)
+        ax.text(i, v + yrange * 0.01, f"{v:.3f}", ha="center", va="bottom", fontsize=LABEL_FONTSIZE)
     
     save_fig(fig, os.path.join(outdir, f"entropy_summary{suffix}.png"))
 
@@ -152,10 +155,11 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
     
     display_names = [_get_method_style(l)[0] for l in df_full["segmentation"]]
     ax.set_xticks(range(len(df_full)))
-    ax.set_xticklabels(display_names, rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Total transition matrix entropy (bits)", fontsize=9)
-    ax.set_title("Transition matrix entropy comparison", fontsize=11, fontweight="bold")
-    ax.legend(fontsize=8, title_fontsize=9)
+    ax.set_xticklabels(display_names, rotation=45, ha="right", fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.set_ylabel("Total transition matrix entropy (bits)", fontsize=AXIS_FONTSIZE)
+    ax.set_title("Transition matrix entropy comparison", **TITLE_STYLE)
+    ax.legend(fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE)
     ax.grid(axis="y", alpha=0.3)
     
     save_fig(fig, os.path.join(outdir, "entropy_summary_combined.png"))
@@ -506,14 +510,14 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                             vmin=-vmax if is_kappa else 0, vmax=vmax,
                             center=0 if is_kappa else None,
                             linewidths=0.5, annot=True, fmt=".2f",
-                            annot_kws={"fontsize": 7},
+                            annot_kws={"fontsize": ANNOTATION_FONTSIZE},
                             cbar_kws={"label": f"Per-state {label}"},
                             ax=ax, mask=wide.isna().values)
-                ax.set_title(f"Per-state {label} vs {ref_label}", fontsize=9)
-                ax.tick_params(axis="x", rotation=45, labelsize=7)
+                ax.set_title(f"Per-state {label} vs {ref_label}", **TITLE_STYLE)
+                ax.tick_params(axis="x", rotation=45, labelsize=TICK_FONTSIZE)
                 for label in ax.get_xticklabels():
                     label.set_ha("right")
-                ax.tick_params(axis="y", rotation=0, labelsize=7)
+                ax.tick_params(axis="y", rotation=0, labelsize=TICK_FONTSIZE)
                 save_fig(fig, os.path.join(outdir, f"per_state_{metric}_vs_{ref_label}.png"),
                          bbox_inches=None)
 
@@ -603,14 +607,15 @@ def _plot_segment_stats(df, outdir, suffix=""):
         vals = df[col].values
         ax.bar(x, vals, color="#4878CF", edgecolor="white", linewidth=0.5)
         ax.set_xticks(x)
-        ax.set_xticklabels(xlabels, rotation=55, ha="right", fontsize=7)
-        ax.set_title(title + title_extra, fontsize=10, fontweight="bold")
-        ax.set_ylabel(ylabel, fontsize=8)
+        ax.set_xticklabels(xlabels, rotation=55, ha="right", fontsize=TICK_FONTSIZE)
+        ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+        ax.set_title(title + title_extra, **TITLE_STYLE)
+        ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
         ax.grid(axis="y", alpha=0.3)
         for i, v in enumerate(vals):
             fmt = f"{v:.0f}" if v == int(v) else f"{v:.1f}"
             ax.text(i, v + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.01,
-                    fmt, ha="center", va="bottom", fontsize=6)
+                    fmt, ha="center", va="bottom", fontsize=LABEL_FONTSIZE)
         save_fig(fig, os.path.join(outdir, f"{col}{suffix}.png"), bbox_inches=None)
 
 

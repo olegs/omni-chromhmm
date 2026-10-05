@@ -786,20 +786,6 @@ def hatch_all(ax):
             bar.set_hatch(JOINT_HATCH)
 
 
-# A bar chart of many methods repeats the caller on every tick - "OmniPeak
-# KMeans", "OmniPeak BMM3", "Joint OmniPeak KMeans" - which is most of the
-# label and all of the width. The helpers below lay such an axis out by caller
-# instead: group_methods() puts the models of one caller next to each other,
-# group_tick_labels() drops the caller from their labels and group_bands()
-# writes it once under the group. A chart whose bars are not methods - datasets,
-# states - has no groups, and every one of them leaves it untouched.
-GROUP_BAND_COLOR = "0.35"
-
-# Gap in points between the tick labels and the bracket, and between the
-# bracket and the caller under it.
-GROUP_BAND_PAD = 4
-
-
 def _group_of(item):
     """Item as a method name: a bare key or display name, or the first field of
     a (key, label, ...) tuple."""
@@ -852,105 +838,17 @@ def group_methods(items, key=None):
     return [item for bucket in buckets for item in bucket]
 
 
-def group_tick_labels(labels, key=None):
-    """*labels* with the caller dropped from each, for group_bands() to write.
-
-    A label of a method with no caller, and one that is nothing but its caller,
-    is left as it is - there would be nothing left of it otherwise.
-    """
-    get = _group_of if key is None else key
-    ticks = []
-    for label in labels:
-        text = str(display_name(get(label)))
-        group = method_group(get(label))
-        short = text if group is None else re.sub(
-            rf"\s*{re.escape(group)}\s*", " ", text, flags=re.IGNORECASE).strip()
-        ticks.append(short or text)
-    return ticks
-
-
-def group_runs(labels, key=None):
-    """(caller, first, last) of every run of neighbouring labels of one caller.
-
-    Labels with no caller break a run and start none of their own, so a chart
-    of datasets or states comes back with no runs at all.
-    """
-    runs = []
-    get = _group_of if key is None else key
-    for i, label in enumerate(labels):
-        group = method_group(get(label))
-        if group is None:
-            continue
-        if runs and runs[-1][0] == group and runs[-1][2] == i - 1:
-            runs[-1][2] = i
-        else:
-            runs.append([group, i, i])
-    return [tuple(run) for run in runs]
-
-
-def _xticklabel_drop(ax):
-    """How far the x tick labels of *ax* reach below it, in points.
-
-    None when it carries no visible tick label - a shared axis. Measured
-    rather than guessed: the drop is what the rotation, the length and the
-    padding of the labels make it, and the bracket below them has to clear it.
-    """
-    fig = ax.figure
-    fig.canvas.draw()   # a tick label has no extent before the figure is drawn
-    bottoms = [label.get_window_extent().y0 for label in ax.get_xticklabels()
-               if label.get_text() and label.get_visible()]
-    if not bottoms:
-        return None
-    return (ax.get_window_extent().y0 - min(bottoms)) / fig.dpi * 72
-
-
-def group_bands(ax, labels, key=None, fontsize=None, color=GROUP_BAND_COLOR):
-    """Write the caller of every group of bars under the group.
-
-    One bracket per run of neighbouring bars of the same caller, with its name
-    below, under the tick labels group_tick_labels() has taken that name out
-    of. Nothing is drawn for a chart whose bars are not methods, or one whose
-    tick labels are hidden - the name belongs where the labels are.
-    """
-    runs = group_runs(labels, key=key)
-    drop = _xticklabel_drop(ax)
-    if not runs or drop is None:
-        return
-    if fontsize is None:
-        fontsize = TICK_FONTSIZE
-    axes_x = blended_transform_factory(ax.transData, ax.transAxes)
-    bracket = offset_copy(axes_x, fig=ax.figure, y=-(drop + GROUP_BAND_PAD),
-                          units="points")
-    name = offset_copy(axes_x, fig=ax.figure,
-                       y=-(drop + 2 * GROUP_BAND_PAD), units="points")
-    for group, first, last in runs:
-        ax.plot([first - 0.4, last + 0.4], [0, 0], transform=bracket, color=color,
-                linewidth=0.8, clip_on=False)
-        ax.text((first + last) / 2, 0, group, transform=name, color=color,
-                ha="center", va="top", fontsize=fontsize, clip_on=False)
-
-
 def group_xticks(ax, order, labels=None, key=None, rotation=45, fontsize=None,
-                 bands=True, **kwargs):
-    """Tick the x axis of *ax* by caller: the model on every tick, the caller
-    under the group.
-
-    The x axis group_methods() asks for, on a plot drawn by hand - *order* is
-    the x levels of the bars, as they were drawn. *labels* replaces the tick
-    text group_tick_labels() would write, for a tick carrying something of its
-    own as well: a per-bar count. Extra keywords go to group_bands().
-    """
+                 **kwargs):
+    """Tick the x axis of *ax*: display name on every tick."""
     if fontsize is None:
         fontsize = TICK_FONTSIZE
     if labels is None:
-        labels = group_tick_labels(order, key=key) if bands else \
-            [display_name(level) for level in order]
+        labels = [display_name(level) for level in order]
     ax.set_xticks(range(len(order)))
     ax.set_xticklabels(labels, rotation=rotation,
                        ha="right" if rotation not in (0, 90) else "center",
                        fontsize=fontsize)
-    if bands:
-        group_bands(ax, order, key=key, fontsize=fontsize, **kwargs)
 
 
 # Every bar chart of the notebooks is the same figure: mean +- SE bars in the
@@ -963,6 +861,10 @@ BAR_STYLE = dict(capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
 TITLE_STYLE = dict(fontsize=11, fontweight="bold")
 AXIS_FONTSIZE = 9
 TICK_FONTSIZE = 8
+LEGEND_FONTSIZE = 8
+LEGEND_TITLE_FONTSIZE = 9
+LABEL_FONTSIZE = 7
+ANNOTATION_FONTSIZE = 7
 
 
 def _bars(ax, data, x, y, order, hue, hue_order, palette, color, hatch, points,
@@ -997,7 +899,7 @@ def _bar_legend(ax, levels, legend, title, kwargs):
         if ax.get_legend() is not None:
             ax.get_legend().remove()
         return
-    opts = dict(title=title, fontsize=8, title_fontsize=9,
+    opts = dict(title=title, fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
                 bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
     opts.update(kwargs or {})
     labels = [display_name(level) for level in levels]
@@ -1010,18 +912,14 @@ def _bar_legend(ax, levels, legend, title, kwargs):
         ax.legend(labels=labels, **opts)
 
 
-def _xticklabels(order, xticklabels, bands=True):
-    """Tick labels for *order*: as given, display names, the model of a method
-    with its caller left to group_bands(), or the levels."""
-    if xticklabels == "display":
+def _xticklabels(order, xticklabels):
+    """Tick labels for *order*: as given, display names, or the levels."""
+    if xticklabels in ("display", "group"):
         return [display_name(level) for level in order]
-    if xticklabels == "group":
-        return group_tick_labels(order) if bands else \
-            [display_name(level) for level in order]
     return order if xticklabels is None else xticklabels
 
 
-def bar_labels(ax, data, x, y, order, fmt="{:.2f}", fontsize=6):
+def bar_labels(ax, data, x, y, order, fmt="{:.2f}", fontsize=LABEL_FONTSIZE):
     """Write the mean of every bar of *order* above it, inside the axes."""
     for i, level in enumerate(order):
         vals = pd.to_numeric(data.loc[data[x] == level, y], errors="coerce").dropna()
@@ -1035,17 +933,15 @@ def bar_labels(ax, data, x, y, order, fmt="{:.2f}", fontsize=6):
 def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
              color=None, ax=None, figsize=(6, 4.2), title=None, xlabel="",
              ylabel=None, xticklabels=None, rotation=45, tick_fontsize=TICK_FONTSIZE,
-             ylim=None, log=False, labels=None, label_fontsize=6, hatch="joint",
+             ylim=None, log=False, labels=None, label_fontsize=LABEL_FONTSIZE, hatch="joint",
              legend=False, legend_title="Method", legend_kwargs=None, points=None,
-             point_data=None, path=None, bands=True, **bar_kwargs):
+             point_data=None, path=None, **bar_kwargs):
     """Bar chart of *y* per *x* level, mean +- SE with the observations on top.
 
     *order* fixes the x levels (defaults to their order of appearance) and
     *palette* colours them; pass *hue* / *hue_order* instead for grouped bars,
     or *color* for a single-colour chart. *xticklabels* replaces the tick
-    labels - "display" for display_name() of *order*, "group" for the models
-    of *order* with their caller written once under each group of bars
-    (group_methods()). *labels* is a format
+    labels - "display" or "group" for display_name() of *order*. *labels* is a format
     string for the per-bar mean, which only makes sense without a *hue*, where
     one bar is one group of values. *hatch* is "joint" for hatch_joint(), "all"
     for hatch_all(), None for neither, and *points* overrides the
@@ -1072,10 +968,8 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
     if ylabel is not None:
         ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
     ax.set_xticks(range(len(order)))
-    ax.set_xticklabels(_xticklabels(order, xticklabels, bands=bands), rotation=rotation,
+    ax.set_xticklabels(_xticklabels(order, xticklabels), rotation=rotation,
                        ha="right" if rotation else "center", fontsize=tick_fontsize)
-    if xticklabels == "group" and bands:
-        group_bands(ax, order, fontsize=tick_fontsize)
     ax.tick_params(axis="y", labelsize=tick_fontsize)
     if log and (pd.to_numeric(data[y], errors="coerce") > 0).any():
         ax.set_yscale("log")
@@ -1100,7 +994,7 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
 def broken_bar_plot(data, x, y, order, break_low=0.20, break_high=0.40, top=1.02,
                     height_ratios=(1, 4), figsize=(12, 6), title=None, xlabel=None,
                     ylabel=None, xticklabels=None, rotation=45,
-                    tick_fontsize=TICK_FONTSIZE, path=None, bands=True, **kwargs):
+                    tick_fontsize=TICK_FONTSIZE, path=None, **kwargs):
     """bar_plot() with the y axis broken between *break_low* and *break_high*.
 
     What the state composition plots need: the Quiescent state covers more than
@@ -1114,7 +1008,6 @@ def broken_bar_plot(data, x, y, order, break_low=0.20, break_high=0.40, top=1.02
     for ax in (ax_top, ax_bot):
         bar_plot(data, x, y, order=order, ax=ax, rotation=rotation,
                  tick_fontsize=tick_fontsize, xticklabels=xticklabels,
-                 bands=bands,
                  legend=kwargs.get("legend", False) and ax is ax_top, **{
                      k: v for k, v in kwargs.items() if k != "legend"})
     # The break is what carries the scale, so the ranges come after the bars.
@@ -1149,8 +1042,8 @@ def broken_bar_plot(data, x, y, order, break_low=0.20, break_high=0.40, top=1.02
 
 def stacked_bar_plot(pivot, colors=None, figsize=(15, 6), width=0.8, title=None,
                      xlabel=None, ylabel=None, xticklabels=None, rotation=90,
-                     tick_fontsize=6, legend_title="State",
-                     legend_fontsize="x-small", path=None, bands=True):
+                     tick_fontsize=TICK_FONTSIZE, legend_title="State",
+                     legend_fontsize=LEGEND_FONTSIZE, path=None):
     """Stacked bars of a fraction table, with the row totals outlined.
 
     *pivot* is indexed by the bars (dataset or method) and its columns are the
@@ -1166,7 +1059,7 @@ def stacked_bar_plot(pivot, colors=None, figsize=(15, 6), width=0.8, title=None,
                            edgecolor="lightgrey", linewidth=1, legend=False)
     if title:
         ax.set_title(title, **TITLE_STYLE)
-    ax.legend(title=legend_title, fontsize=legend_fontsize,
+    ax.legend(title=legend_title, fontsize=legend_fontsize, title_fontsize=LEGEND_TITLE_FONTSIZE,
               bbox_to_anchor=(1.01, 1), loc="upper left")
     ax.set_xlabel(xlabel or "", fontsize=AXIS_FONTSIZE)
     ax.set_ylabel(ylabel or "", fontsize=AXIS_FONTSIZE)
@@ -1176,10 +1069,9 @@ def stacked_bar_plot(pivot, colors=None, figsize=(15, 6), width=0.8, title=None,
         ax.set_xticklabels(_xticklabels(levels, xticklabels), rotation=rotation,
                            ha="right" if rotation not in (0, 90) else "center",
                            fontsize=tick_fontsize)
-        if xticklabels == "group" and bands:
-            group_bands(ax, levels, fontsize=tick_fontsize)
     else:
         ax.tick_params(axis="x", rotation=rotation, labelsize=tick_fontsize)
+    ax.tick_params(axis="y", labelsize=tick_fontsize)
     ax.grid(axis="y", alpha=0.3)
     if path is not None:
         save_fig(fig, path)

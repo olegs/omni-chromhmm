@@ -29,7 +29,8 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
 from utils import (METHOD_ORDER, DISPLAY_NAMES, scatter_points, strip_points,
-                   save_fig)
+                   save_fig, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE,
+                   LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE)
 
 
 METHODS_POOLED = [m for m in METHOD_ORDER
@@ -182,16 +183,17 @@ def _grouped_bars(ax, methods, df_slice, y_col, err_col, points_col=None):
 
     ax.set_xticks(x)
     ax.set_xticklabels([DISPLAY_NAMES.get(m, m) for m in methods],
-                       rotation=45, ha="right", fontsize=8)
+                       rotation=45, ha="right", fontsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.legend(fontsize=8, bbox_to_anchor=(1.02, 1), loc="upper left",
-              borderaxespad=0)
+    ax.legend(fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
+              bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
 
 
 def _label_and_save(fig, ax, ylabel, title, xlabel, outpath):
-    ax.set_ylabel(ylabel, fontsize=9)
-    ax.set_title(title, fontsize=10, fontweight="bold")
-    ax.set_xlabel(xlabel, fontsize=7, color="grey")
+    ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
+    ax.set_title(title, **TITLE_STYLE)
+    ax.set_xlabel(xlabel, fontsize=AXIS_FONTSIZE, color="grey")
     save_fig(fig, outpath)
 
 
@@ -446,16 +448,17 @@ def plot_out_binem(df, methods, outfile, cross_assay=False):
     strip_points(ax, data=plot_df, x="Method", y="mean_sim",
                  order=method_labels, dodge=False, size=2)
     ax.set_xlabel("")
-    ax.set_ylabel("Mean cosine similarity (matched states)", fontsize=9)
+    ax.set_ylabel("Mean cosine similarity (matched states)", fontsize=AXIS_FONTSIZE)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     pair_note = " — ChIP↔Mint-ChIP pairs" if cross_assay else ""
     ax.set_title(
         f"Inter-dataset binarized emission similarity{pair_note}\n"
         f"({n_methods} methods, {n_pairs} dataset pairs per method)",
-        fontsize=10, fontweight="bold",
+        **TITLE_STYLE
     )
-    ax.tick_params(axis="x", rotation=30, labelsize=8)
+    ax.tick_params(axis="x", rotation=30, labelsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
     save_fig(fig, outfile)
 
 
