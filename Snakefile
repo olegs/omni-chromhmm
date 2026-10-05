@@ -14,7 +14,6 @@ HOMER_BIN = P["homer_bin"]
 MACS2_BIN = P["macs2_bin"]
 NSTATES = P["n_states"]
 GENOME = P["genome"]
-MATCH_METHOD = P.get("match_method", "overlap")
 
 DATASETS = config["datasets"]
 
@@ -31,9 +30,12 @@ CALLER_BIN = {"omni": OMNI_BIN, "homer": HOMER_BIN, "macs2": MACS2_BIN}
 
 
 def _seg_bin(path):
-    """Native bin size for a segmentation BED path."""
+    """Native bin size for a segmentation BED path or Snakemake wildcards."""
+    if hasattr(path, "caller"):
+        return CALLER_BIN.get(path.caller, CHROMHMM_BIN)
+    path_str = str(path)
     for caller, size in CALLER_BIN.items():
-        if f"/{caller}/" in path:
+        if f"/{caller}/" in path_str:
             return size
     return CHROMHMM_BIN
 

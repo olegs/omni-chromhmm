@@ -172,7 +172,18 @@ def segmentation_to_bins(segs, bin_size):
 
 
 def _filter_bins(bins, exclude_states):
-    return {chrom: {b: s for b, s in bmap.items() if s not in exclude_states}
+    """Drop all bins carrying a state in *exclude_states*."""
+    if not exclude_states:
+        return bins
+    def _is_excluded(s):
+        if s in exclude_states: return True
+        if utils.normalize_state_name(s) in exclude_states: return True
+        if exclude_states is utils.NOQH_STATES:
+            return utils.is_noqh(s)
+        return False
+
+    return {chrom: {b: state for b, state in bmap.items()
+                    if not _is_excluded(state)}
             for chrom, bmap in bins.items()}
 
 
@@ -274,8 +285,14 @@ def compute_composition_similarity(segs1, segs2, exclude_states=None, mapping=No
         l2 = dict(l2_remapped)
 
     if exclude_states:
-        l1 = {s: v for s, v in l1.items() if s not in exclude_states}
-        l2 = {s: v for s, v in l2.items() if s not in exclude_states}
+        def _is_excluded(s):
+            if s in exclude_states: return True
+            if utils.normalize_state_name(s) in exclude_states: return True
+            if exclude_states is utils.NOQH_STATES:
+                return utils.is_noqh(s)
+            return False
+        l1 = {s: v for s, v in l1.items() if not _is_excluded(s)}
+        l2 = {s: v for s, v in l2.items() if not _is_excluded(s)}
     states = sorted(set(l1.keys()) | set(l2.keys()))
     v1 = np.array([l1.get(s, 0) for s in states], dtype=np.float64)
     v2 = np.array([l2.get(s, 0) for s in states], dtype=np.float64)
@@ -289,8 +306,7 @@ def compute_composition_similarity(segs1, segs2, exclude_states=None, mapping=No
 def _compare_pair(i, j, path_i, path_j, label_i, label_j,
                   bin_emission_path_i, bin_emission_path_j,
                   bw_emission_path_i, bw_emission_path_j,
-                  bin_size_i, bin_size_j, outdir, skip_noqh=False,
-                  rematch=False):
+                  bin_size_i, bin_size_j, outdir, skip_noqh=False):
     """Compare one pair of segmentations (runs in a worker process)."""
     import match
     match_pair_overlap = match.pair_overlap
@@ -314,15 +330,14 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     ref_states  = sorted({x[3] for x in segs_full_i}, key=_natural_sort_key)
     mapping = match_best_mapping(overlap, work_states, ref_states)
 
-    eff_mapping = mapping if rematch else None
-    row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, mapping=eff_mapping)
+    row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, mapping=None)
     if not skip_noqh:
-        row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES, mapping=eff_mapping)
+        row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES, mapping=None)
 
     bins_i = segmentation_to_bins(segs_i, bin_size)
     bins_j = segmentation_to_bins(segs_j, bin_size)
 
-    eff_bins_j = match_remap_bins(bins_j, mapping) if rematch else bins_j
+    eff_bins_j = bins_j
 
     kappa, po, pe, n_bins, _ = compute_kappa(bins_i, eff_bins_j)
     row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
@@ -372,8 +387,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
 
 
 def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
-                label_override=None, all_pairs=False, skip_noqh=False,
-                rematch=False):
+                label_override=None, all_pairs=False, skip_noqh=False):
     """Selective segmentation comparison; saves metric matrices as TSV.
 
     bin_sizes: one per segmentation; each pair uses the finer of the two for
@@ -382,13 +396,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     By default only pooled-vs-reference and same-method rep1-vs-rep2 pairs are
     compared; all_pairs=True compares every pair. label_override is an optional
     {seg_path: label} dict replacing _seg_label().
-
-    rematch realigns the state space of the second side of a pair onto the
-    first by maximum overlap before the metrics are read, for a pair whose two
-    sides were matched to two different markups. It is never applied to a
-    rep1-vs-rep2 pair, which shares one markup already, so that the replicate
-    consistency of a method is the same number wherever it is read off -
-    see utils.is_rep_pair.
     """
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -441,8 +448,7 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                                 bin_emission_paths.get(i), bin_emission_paths.get(j),
                                 bw_emission_paths.get(i), bw_emission_paths.get(j),
                                 bin_sizes[i], bin_sizes[j], outdir,
-                                skip_noqh=skip_noqh,
-                                rematch=rematch and not _is_rep_pair(labels[i], labels[j])): (i, j)
+                                skip_noqh=skip_noqh): (i, j)
                 for i, j in pair_order
             }
             for fut in as_completed(futures):
@@ -556,7 +562,13 @@ def compute_segment_stats(segs, exclude_states=None):
     background first (NOQH mode).
     """
     if exclude_states:
-        segs = [row for row in segs if row[3] not in exclude_states]
+        def _is_excluded(s):
+            if s in exclude_states: return True
+            if utils.normalize_state_name(s) in exclude_states: return True
+            if exclude_states is utils.NOQH_STATES:
+                return utils.is_noqh(s)
+            return False
+        segs = [row for row in segs if not _is_excluded(row[3])]
     if not segs:
         return {}
     lengths = np.array([row[2] - row[1] for row in segs])
@@ -655,8 +667,7 @@ def run_segment_stats(seg_paths, outdir, analysis_dir=None, skip_noqh=False):
 
 
 def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
-                labels=None, all_pairs=False, skip_noqh=False,
-                rematch=False):
+                labels=None, all_pairs=False, skip_noqh=False):
     """Cross-segmentation comparison: entropy, kappa, Jaccard, segment stats.
 
     *bins* may be a single int (broadcast to all segs) or a list, one per seg.
@@ -710,5 +721,4 @@ def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
 
     run_segment_stats(args.seg, comparison_dir, analysis_dir, skip_noqh=skip_noqh)
     compare_all(args.seg, bin_sizes, comparison_dir, analysis_dir, args.threads,
-                label_override=label_override, all_pairs=args.all_pairs, skip_noqh=skip_noqh,
-                rematch=rematch)
+                label_override=label_override, all_pairs=args.all_pairs, skip_noqh=skip_noqh)

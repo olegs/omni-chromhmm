@@ -1,14 +1,8 @@
 #!/bin/bash
 # Project root directory
 ROOT=$(cd "$(dirname "$0")" && pwd)
+source "$ROOT/match.sh"
 
-# Compatibility for Zsh
-if [ -n "$ZSH_VERSION" ]; then
-  emulate bash
-  setopt shwordsplit
-  # Peaks are discovered by globbing, let unmatched patterns through as in bash
-  setopt nonomatch
-fi
 
 # Please ensure that snakemake part was already processed
 DIR=~/data/2026_segmentations/sagaconf
@@ -24,6 +18,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
 
  for PC in homer macs2 omni; do
   echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
+  BIN=$(get_bin_size "$PC")
   mkdir -p joint_kmeans/$PC;
   # Discover marks present in at least one replicate for this peak caller
   MARKS_LIST="H3K27me3 H3K9me2 H3K4me2 H3K4me3 H3F3A H3K79me2 H3K4me1 H3K9ac H4K20me1 H3K9me3 H3K27ac H2AFZ H3K36me3"
@@ -64,22 +59,11 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
  cd $DIR/$ds;
 
  for PC in homer macs2 omni; do
+  echo "Matching $ds $PC individual to joint model"
+  BIN=$(get_bin_size "$PC")
   for R in rep1 rep2; do
-   REF=joint_kmeans/$PC/${R}_kmeans_joint_states.bed
-   WORK=$R/$PC/${PC}_kmeans_states.bed
-   MATCHED=$R/$PC/${PC}_kmeans_states_matched.bed
-   if [[ -f $REF ]] && [[ -f $WORK ]]; then
-    echo "Matching $ds $PC $R individual to joint KMeans"
-    python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK --out $MATCHED
-   fi
-   REF_BMM=joint_bmm3/$PC/${R}_bmm3_joint_states.bed
-   # Actually the paths for individual BMM should follow individual KMeans
-   WORK_BMM=$R/$PC/${PC}_bmm3_states.bed
-   MATCHED_BMM=$R/$PC/${PC}_bmm3_states_matched.bed
-   if [[ -f $REF_BMM ]] && [[ -f $WORK_BMM ]]; then
-    echo "Matching $ds $PC $R individual to joint BMM3"
-    python "$ROOT/scripts/rules/match.py" --ref $REF_BMM --work $WORK_BMM --out $MATCHED_BMM
-   fi
+   match_states "joint_kmeans/$PC/${R}_kmeans_joint_states.bed" "$R/$PC/${PC}_kmeans_states.bed" "$PC" "$BIN" "$R"
+   match_states "joint_bmm3/$PC/${R}_bmm3_joint_states.bed" "$R/$PC/${PC}_bmm3_states.bed" "$PC" "$BIN" "$R"
   done
  done
 done
@@ -113,14 +97,8 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   cd14_monocyte) cell="CD14Monocyte" ;;
   hela_s3) cell="HeLaS3" ;;
  esac
-
+ echo "Matching $ds ChromHMM individual to joint"
  for R in rep1 rep2; do
-  REF=joint_chromhmm/${R}_15_dense.bed
-  WORK=$R/chromhmm_default_result/${cell}_15_dense.bed
-  MATCHED=$R/chromhmm_default_result/${cell}_15_dense_matched.bed
-  if [[ -f $REF ]] && [[ -f $WORK ]]; then
-   echo "Matching $ds ChromHMM $R individual to joint"
-   python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK --out $MATCHED
-  fi
+  match_states "joint_chromhmm/${R}_15_dense.bed" "$R/chromhmm_default_result/${cell}_15_dense.bed" "chromhmm" 200 "$R"
  done
 done

@@ -1,6 +1,9 @@
 # State matching: relabel segmentations to the ENCODE reference.
 #
-# Strategy: overlap-only (Jaccard + Hungarian), driven by match.py.
+# Strategy: Hungarian assignment over Jaccard plus emission-profile
+# similarity, taken to a concave power so the largest states do not decide
+# the whole mapping; driven by match.py. The result is a bijection; pairs
+# that score poorly are named anyway and flagged in the .mapping.tsv.
 
 
 def _binarized_files(bedpath):
@@ -11,13 +14,19 @@ def _binarized_files(bedpath):
     if "chromhmm_default_result" in bedpath:
         # Default ChromHMM (BinarizeBam output)
         return [f"{folder}/chromhmm_default/{cell}_{c}_binary.txt" for c in CHROMS]
-    else:
-        # KMeans (peaks_segmentation.py output)
-        parts = bedpath.split("/")
-        # Path: {folder}/{caller}/{caller}_kmeans_states...
+    
+    parts = bedpath.split("/")
+    # KMeans paths look like {ds}/{caller}/{caller}_kmeans_states...
+    # or {ds}/repN/{caller}/{caller}_kmeans_states...
+    # In both cases, the caller is the directory containing the bed file.
+    if len(parts) >= 3 and parts[-2] in CALLER_BIN:
         caller = parts[-2]
         return [f"{folder}/{caller}/chromhmm_peaks/{c}_binary.txt.gz"
                 for c in CHROMS]
+    
+    # Reference BEDs or other beds in the root folder don't have binarized data
+    # that compute_bin_emissions can automatically find.
+    return []
 
 
 def _folder_bigwigs(folder):
@@ -43,15 +52,19 @@ ruleorder: match_segmentation > compute_bw_emissions
 ruleorder: match_segmentation > compute_bin_emissions
 
 
-# --- Overlap matching -----------------------------------------------------
+# --- Matching ---------------------------------------------------------
 
 rule match_segmentation:
-    """Overlap matching: {name}.bed → {name}_matched.bed + remapped emissions."""
+    """State matching: {name}.bed → {name}_matched.bed + remapped emissions."""
     input:
         ref=lambda w: ancient(_ref_bed(ds_of(_emissions_folder(w.bedpath)))),
         work="{bedpath}.bed",
         work_bw_em=lambda w: ["{bedpath}.bw_emissions.npz".format(**w)] if DO_BW_EMISSIONS else [],
         work_bin_em=lambda w: ["{bedpath}.bin_emissions.npz".format(**w)] if DO_BIN_EMISSIONS else [],
+        ref_bw_em=lambda w: ([ancient(_ref_bed(ds_of(_emissions_folder(w.bedpath))).replace(".bed", ".bw_emissions.npz"))]
+                             if DO_BW_EMISSIONS and P.get("ref_em_type", "") in ("", "bw") else []),
+        ref_bin_em=lambda w: ([ancient(_ref_bed(ds_of(_emissions_folder(w.bedpath))).replace(".bed", ".bin_emissions.npz"))]
+                              if DO_BIN_EMISSIONS and P.get("ref_em_type", "") in ("", "bin") and _binarized_files(_ref_bed(ds_of(_emissions_folder(w.bedpath))).replace(".bed", "")) else []),
     output:
         bed="{bedpath}_matched.bed",
         bw_em="{bedpath}_matched.bw_emissions.npz" if DO_BW_EMISSIONS else [],
@@ -60,9 +73,13 @@ rule match_segmentation:
         matrix_map="{bedpath}_matched.match.mapping.tsv",
     params:
         mprefix="{bedpath}_matched.match",
-        method=MATCH_METHOD,
+        work_em_type=P.get("work_em_type", ""),
+        ref_em_type=P.get("ref_em_type", ""),
         bw_flags=lambda w, input, output: f"--work-bw-emissions {input.work_bw_em} --remap-bw-emissions {output.bw_em}" if DO_BW_EMISSIONS else "",
-        bin_flags=lambda w, input, output: f"--work-bin-emissions {input.work_bin_em} --remap-bin-emissions {output.bin_em}" if DO_BIN_EMISSIONS else ""
+        bin_flags=lambda w, input, output: f"--work-bin-emissions {input.work_bin_em} --remap-bin-emissions {output.bin_em}" if DO_BIN_EMISSIONS else "",
+        ref_bw_flags=lambda w, input: f"--ref-bw-emissions {input.ref_bw_em}" if "ref_bw_em" in input.keys() and input.ref_bw_em else "",
+        ref_bin_flags=lambda w, input: f"--ref-bin-emissions {input.ref_bin_em}" if "ref_bin_em" in input.keys() and input.ref_bin_em else "",
+        type_flags=(f"--work-em-type {P.get('work_em_type', '')} " if P.get('work_em_type', '') else "") + (f"--ref-em-type {P.get('ref_em_type', '')}" if P.get('ref_em_type', '') else "")
     wildcard_constraints:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/python.yaml"
@@ -70,7 +87,9 @@ rule match_segmentation:
         "python {SCRIPTS_DIR}/match.py "
         "--ref {input.ref} --work {input.work} "
         "{params.bw_flags} {params.bin_flags} "
-        "--matrix-out {params.mprefix} --method {params.method} > {output.bed}"
+        "{params.ref_bw_flags} {params.ref_bin_flags} "
+        "{params.type_flags} "
+        "--matrix-out {params.mprefix} > {output.bed}"
 
 
 # --- Emissions pre-computation --------------------------------------------

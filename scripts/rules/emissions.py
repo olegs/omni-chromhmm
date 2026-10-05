@@ -73,7 +73,7 @@ def compute_emissions_from_binarized(segs, binary_paths, bin_size):
         if data is None:
             continue
         b0 = s // bin_size
-        b1 = min(e // bin_size, data.shape[0])
+        b1 = min((e + bin_size - 1) // bin_size, data.shape[0])
         if b1 > b0:
             sums[name] += data[b0:b1].sum(axis=0)
             counts[name] += (b1 - b0)

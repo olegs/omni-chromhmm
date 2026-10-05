@@ -329,13 +329,10 @@ _VARIANTS = {
 # rather than on the names interpret_centroids() gives it: utils.PROMOTER_STATES,
 # utils.TX_STATES and utils.ACTIVE_STATES, spelled out here so that importing
 # this module costs a measured fit nothing (see the label alignment section).
-PROMOTER_FAMILY = ("Tss", "TssFlnk", "TssFlnkU", "TssFlnkD")
-TX_FAMILY = ("Tx", "TxWk")
-ENHANCER_FAMILY = ("Enh", "Enh1", "Enh2", "EnhG", "EnhG1", "EnhG2", "EnhLo")
-
-FAMILIES = {"promoter": PROMOTER_FAMILY, "transcribed": TX_FAMILY,
-            "enhancer": ENHANCER_FAMILY,
-            "active": PROMOTER_FAMILY + ENHANCER_FAMILY}
+FAMILIES = {"promoter": utils.PROMOTER_STATES,
+            "transcribed": utils.TX_STATES,
+            "enhancer": utils.ENHANCER_STATES,
+            "active": utils.PROMOTER_STATES + utils.ENHANCER_STATES}
 
 
 def _base_name(presence):
@@ -457,13 +454,10 @@ def confusion_from_labels(labels_a, labels_b, k=N_STATES):
 
 def noqh_states(names):
     """The quiescent / heterochromatin bulk, which the NOQH variant drops.
-
-    utils.NOQH_STATES named by prefix: interpret_centroids() splits a base
-    name into variants ("Quies2", "HetWk", "ReprPCWk"), and they all belong to
-    the same background the exact set holds.
+    Uses utils.is_noqh() for detection.
     """
-    return {name for name in names
-            if name.startswith(("Quies", "Het", "ReprPC")) or name == "ZNF"}
+    import utils
+    return {name for name in names if utils.is_noqh(name)}
 
 
 def cross_sample_metrics(table, names, exclude=()):

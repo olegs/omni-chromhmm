@@ -55,7 +55,7 @@ def binarize_peaks(peak_files_groups, chroms, sizes, bin_size, marks):
                     off = offsets[chrom]
                     n_bins = chrom_bins[chrom]
                     starts = (group['start'] // bin_size).clip(lower=0, upper=n_bins - 1).values
-                    ends = (group['end'] // bin_size).clip(lower=0, upper=n_bins).values
+                    ends = ((group['end'] + bin_size - 1) // bin_size).clip(lower=0, upper=n_bins).values
                     for s, e in zip(starts, ends):
                         if e > s:
                             data_matrix[off + s : off + e, m_idx] = 1

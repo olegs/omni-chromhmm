@@ -24,7 +24,6 @@ params:
   omnipeak: false       # run OmniPeak-based binarization and segmentation
   bw_emissions: false   # process bigwig emissions or not
   bin_emissions: false  # process binarized emissions or not
-  match_method: overlap # possible options: overlap | jaccard
 
 datasets:
 

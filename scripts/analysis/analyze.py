@@ -186,24 +186,57 @@ def _natural_sort_key(s):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s)]
 
 
-def load_gene_tpms(rnaseq_path):
-    """Parse ENCODE RNA-seq quantification TSV; return {gene ID: TPM}."""
-    tpms = {}
+_FAMILIES = {
+    "Tss": utils.is_promoter_core,
+    "Enh": utils.is_distal_enhancer,
+    "Tx": utils.is_tx,
+    "Active": utils.is_active_open,
+    "Quies": utils.is_noqh,
+}
+
+
+def load_gene_tpms(rnaseq_path, top_n=12000):
+    """Parse ENCODE RNA-seq quantification TSV; return {gene ID: TPM} and top expressed gene ID set."""
+    raw_tpms = {}
     with open(rnaseq_path) as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
             try:
                 tpm = float(row["TPM"])
                 gene_id = row["gene_id"].strip()
-                tpms[gene_id] = tpm
-                if "." in gene_id:
-                    tpms[gene_id.split(".")[0]] = tpm
+                raw_tpms[gene_id] = tpm
             except (ValueError, KeyError):
                 continue
-    return tpms
+
+    # Rank genes descending by TPM
+    sorted_genes = sorted(
+        [(gid, tpm) for gid, tpm in raw_tpms.items() if tpm > 0],
+        key=lambda x: x[1],
+        reverse=True
+    )
+    if top_n is not None:
+        selected_genes = sorted_genes[:top_n]
+    else:
+        selected_genes = sorted_genes
+
+    top_expressed_ids = set()
+    for gid, _ in selected_genes:
+        top_expressed_ids.add(gid)
+        if "." in gid:
+            top_expressed_ids.add(gid.split(".")[0])
+
+    tpms = {}
+    for gid, tpm in raw_tpms.items():
+        tpms[gid] = tpm
+        if "." in gid:
+            base_gid = gid.split(".")[0]
+            if base_gid not in tpms or tpm > tpms[base_gid]:
+                tpms[base_gid] = tpm
+
+    return tpms, top_expressed_ids
 
 
-def load_gene_coords(gtf_path, gene_tpms, exp_thresh=1.0, nonexp_thresh=0.1):
+def load_gene_coords(gtf_path, gene_tpms, top_expressed_ids=None, exp_thresh=1.0, nonexp_thresh=0.1):
     """Parse GENCODE GTF for expressed and non-expressed gene bodies and TSS regions."""
     exp_bodies, exp_tss = [], []
     nonexp_bodies, nonexp_tss = [], []
@@ -240,7 +273,16 @@ def load_gene_coords(gtf_path, gene_tpms, exp_thresh=1.0, nonexp_thresh=0.1):
                 strand = cols[6]
                 tss = start if strand == "+" else end - 1
 
-                if tpm >= exp_thresh:
+                if top_expressed_ids is not None:
+                    is_exp = (
+                        (gene_id and gene_id in top_expressed_ids) or
+                        (gene_id and "." in gene_id and gene_id.split(".")[0] in top_expressed_ids) or
+                        (gene_name and gene_name in top_expressed_ids)
+                    )
+                else:
+                    is_exp = (tpm >= exp_thresh)
+
+                if is_exp:
                     exp_bodies.append((chrom, start, end, label))
                     exp_tss.append((chrom, tss, tss + 1, label))
                 elif tpm <= nonexp_thresh:
@@ -251,18 +293,17 @@ def load_gene_coords(gtf_path, gene_tpms, exp_thresh=1.0, nonexp_thresh=0.1):
     return exp_bodies, exp_tss, nonexp_bodies, nonexp_tss
 
 
-def make_expressed_annotations(rnaseq_path, gtf_path):
+def make_expressed_annotations(rnaseq_path, gtf_path, top_expressed=12000, nonexp_thresh=0.1):
     """Build expressed and non-expressed gene body/TSS BED annotations."""
-    gene_tpms = load_gene_tpms(rnaseq_path)
-    exp_b, exp_t, nonexp_b, nonexp_t = load_gene_coords(gtf_path, gene_tpms)
+    gene_tpms, top_exp_ids = load_gene_tpms(rnaseq_path, top_n=top_expressed)
+    exp_b, exp_t, nonexp_b, nonexp_t = load_gene_coords(
+        gtf_path, gene_tpms, top_expressed_ids=top_exp_ids, nonexp_thresh=nonexp_thresh
+    )
 
-    def window(tss_list):   # TSS ± 2 kb
-        return [(chrom, max(0, s - 2000), e + 2000, label) for chrom, s, e, label in tss_list]
+    exp_t2k = utils.extend_bed(exp_t, utils.TSS_WINDOW)
+    nonexp_t2k = utils.extend_bed(nonexp_t, utils.TSS_WINDOW)
 
-    exp_t2k = window(exp_t)
-    nonexp_t2k = window(nonexp_t)
-
-    print(f"  RNA-seq: {len([t for t in gene_tpms.values() if t >= 1.0])} expressed gene IDs (TPM >= 1)", file=sys.stderr)
+    print(f"  RNA-seq: top {top_expressed} expressed genes selected", file=sys.stderr)
     print(f"  GTF: {len(exp_b)} exp bodies, {len(nonexp_b)} non-exp bodies", file=sys.stderr)
 
     result = []
@@ -278,10 +319,18 @@ def make_expressed_annotations(rnaseq_path, gtf_path):
 def build_transition_matrix(segs, bin_size, exclude_states=None, mapping=None):
     """Build empirical transition count matrix at bin resolution."""
     exclude = set(exclude_states or [])
+    def _is_excluded(s):
+        if not exclude: return False
+        if s in exclude: return True
+        if utils.normalize_state_name(s) in exclude: return True
+        if exclude_states is utils.NOQH_STATES:
+            return utils.is_noqh(s)
+        return False
+
     by_chrom = defaultdict(dict)
     for row in segs:
         chrom, s, e, state = row[:4]
-        if state in exclude:
+        if _is_excluded(state):
             continue
         st = mapping.get(state, state) if mapping else state
         for b in range(s // bin_size, e // bin_size):
@@ -289,7 +338,7 @@ def build_transition_matrix(segs, bin_size, exclude_states=None, mapping=None):
 
     all_states = sorted(
         {mapping.get(row[3], row[3]) if mapping else row[3]
-         for row in segs if row[3] not in exclude},
+         for row in segs if not _is_excluded(row[3])},
         key=_natural_sort_key)
     state_idx = {s: i for i, s in enumerate(all_states)}
     n = len(all_states)
@@ -640,7 +689,7 @@ def state_emissions(segs, by_chrom, marks, bin_size):
         if data is None:
             continue
         b0 = s // bin_size
-        b1 = min(e // bin_size, data.shape[0])
+        b1 = min((e + bin_size - 1) // bin_size, data.shape[0])
         if b1 > b0:
             sums[name] += data[b0:b1].sum(axis=0)
             counts[name] += (b1 - b0)
@@ -722,14 +771,20 @@ def _compute_overlap_bp(by_chrom, starts, ann_segs):
     return state_hit
 
 
+
+
 def compute_enrichment(segs, annotation_items):
-    """Fold enrichment of each state vs each annotation (ChromHMM-style)."""
+    """Fold enrichment of each state vs each annotation (ChromHMM-style),
+    including base-pair overlaps and >=50% locus/segment overlap framework.
+    """
     by_chrom = defaultdict(list)
     state_total = defaultdict(int)
+    state_seg_counts = defaultdict(int)
     for row in segs:
         chrom, s, e, name = row[:4]
         by_chrom[chrom].append((s, e, name))
         state_total[name] += e - s
+        state_seg_counts[name] += 1
     for chrom in by_chrom:
         by_chrom[chrom].sort()
     starts = {c: [s for s, _, _ in v] for c, v in by_chrom.items()}
@@ -754,15 +809,69 @@ def compute_enrichment(segs, annotation_items):
             ann_by_chrom[row[0]].append([row[1], row[2]])
 
         merged_ann_segs = []
+        ann_chrom_intervals = {}
+        ann_chrom_starts = {}
         for chrom in sorted(ann_by_chrom):
-            for s, e in merge_intervals(ann_by_chrom[chrom]):
+            m_ints = merge_intervals(ann_by_chrom[chrom])
+            ann_chrom_intervals[chrom] = m_ints
+            ann_chrom_starts[chrom] = [s for s, _ in m_ints]
+            for s, e in m_ints:
                 merged_ann_segs.append((chrom, s, e))
         ann_segs = merged_ann_segs
 
         ann_bp = sum(row[2] - row[1] for row in ann_segs)
         ann_frac = ann_bp / total_bp if total_bp > 0 else 0
 
-        state_hit = _compute_overlap_bp(by_chrom, starts, ann_segs)
+        # Base-pair overlap and locus-level >=50% coverage of annotation items.
+        state_hit = defaultdict(int)
+        ann_total_loci = len(ann_segs)
+        locus_hit_50 = defaultdict(int)
+        family_locus_hit_50 = defaultdict(int)
+
+        for row in ann_segs:
+            chrom, s, e = row[:3]
+            l_a = e - s
+            if l_a <= 0 or chrom not in by_chrom:
+                continue
+            arr = by_chrom[chrom]
+            i = max(0, bisect_left(starts[chrom], s) - 1)
+            locus_state_ov = defaultdict(int)
+            while i < len(arr) and arr[i][0] < e:
+                ss, se, st = arr[i]
+                ov = min(se, e) - max(ss, s)
+                if ov > 0:
+                    state_hit[st] += ov
+                    locus_state_ov[st] += ov
+                i += 1
+
+            for st, ov in locus_state_ov.items():
+                if ov >= 0.5 * l_a:
+                    locus_hit_50[st] += 1
+
+            for fname, check_fn in _FAMILIES.items():
+                f_ov = sum(ov for st, ov in locus_state_ov.items() if check_fn(st))
+                if f_ov >= 0.5 * l_a:
+                    family_locus_hit_50[fname] += 1
+
+        # Segment-level >=50% coverage of state segments by annotation.
+        state_seg_hit_50 = defaultdict(int)
+        for row in segs:
+            chrom, s, e, st = row[:4]
+            l_s = e - s
+            if l_s <= 0 or chrom not in ann_chrom_intervals:
+                continue
+            arr_ann = ann_chrom_intervals[chrom]
+            arr_starts = ann_chrom_starts[chrom]
+            i = max(0, bisect_left(arr_starts, s) - 1)
+            ov_s = 0
+            while i < len(arr_ann) and arr_ann[i][0] < e:
+                as_, ae_ = arr_ann[i]
+                ov = min(ae_, e) - max(as_, s)
+                if ov > 0:
+                    ov_s += ov
+                i += 1
+            if ov_s >= 0.5 * l_s:
+                state_seg_hit_50[st] += 1
 
         for st in states:
             overlap = state_hit.get(st, 0)
@@ -770,8 +879,39 @@ def compute_enrichment(segs, annotation_items):
             fold = state_frac / ann_frac if ann_frac > 0 else 0
             union = state_total[st] + ann_bp - overlap
             jaccard = overlap / union if union > 0 else 0
+
+            sensitivity = overlap / ann_bp if ann_bp > 0 else 0
+            sens_50 = locus_hit_50[st] / ann_total_loci if ann_total_loci > 0 else 0
+            cov_50 = state_seg_hit_50[st] / state_seg_counts[st] if state_seg_counts[st] > 0 else 0
+
             rows.append({"state": st, "label": label,
-                         "fold_enrichment": fold, "jaccard": jaccard, "coverage": state_frac})
+                         "fold_enrichment": fold, "jaccard": jaccard, "coverage": state_frac,
+                         "sensitivity": sensitivity,
+                         "sensitivity_50": sens_50, "coverage_50": cov_50})
+
+        # Add family rows.
+        for fname, check_fn in _FAMILIES.items():
+            family_states = [st for st in states if check_fn(st)]
+            if not family_states:
+                continue
+
+            f_state_total = sum(state_total[st] for st in family_states)
+            f_overlap = sum(state_hit.get(st, 0) for st in family_states)
+            f_state_frac = f_overlap / f_state_total if f_state_total > 0 else 0
+            f_fold = f_state_frac / ann_frac if ann_frac > 0 else 0
+            f_union = f_state_total + ann_bp - f_overlap
+            f_jaccard = f_overlap / f_union if f_union > 0 else 0
+            f_sensitivity = f_overlap / ann_bp if ann_bp > 0 else 0
+
+            f_sens_50 = family_locus_hit_50[fname] / ann_total_loci if ann_total_loci > 0 else 0
+            f_seg_total = sum(state_seg_counts[st] for st in family_states)
+            f_seg_hit = sum(state_seg_hit_50[st] for st in family_states)
+            f_cov_50 = f_seg_hit / f_seg_total if f_seg_total > 0 else 0
+
+            rows.append({"state": f"POOL:{fname}", "label": label,
+                         "fold_enrichment": f_fold, "jaccard": f_jaccard, "coverage": f_state_frac,
+                         "sensitivity": f_sensitivity,
+                         "sensitivity_50": f_sens_50, "coverage_50": f_cov_50})
 
     if not rows:
         return pd.DataFrame(columns=["state", "label", "fold_enrichment"])
@@ -791,6 +931,18 @@ def save_enrichment_table(enrich_df, outdir):
     if "coverage" in enrich_df.columns:
         (enrich_df[["state", "label", "coverage"]]
          .to_csv(os.path.join(edir, "coverage.tsv"),
+                 sep="\t", index=False, float_format="%.6f"))
+    if "sensitivity" in enrich_df.columns:
+        (enrich_df[["state", "label", "sensitivity"]]
+         .to_csv(os.path.join(edir, "sensitivity.tsv"),
+                 sep="\t", index=False, float_format="%.6f"))
+    if "sensitivity_50" in enrich_df.columns:
+        (enrich_df[["state", "label", "sensitivity_50"]]
+         .to_csv(os.path.join(edir, "sensitivity_50.tsv"),
+                 sep="\t", index=False, float_format="%.6f"))
+    if "coverage_50" in enrich_df.columns:
+        (enrich_df[["state", "label", "coverage_50"]]
+         .to_csv(os.path.join(edir, "coverage_50.tsv"),
                  sep="\t", index=False, float_format="%.6f"))
 
 
@@ -845,7 +997,7 @@ def plot_enrichment(enrich_df, segs, outdir):
 
 
 def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
-                rnaseq=None, gtf=None, bw_emissions=None, emissions_only=False,
+                rnaseq=None, gtf=None, top_expressed=12000, bw_emissions=None, emissions_only=False,
                 skip_noqh=False):
     """Per-segmentation analysis: writes report, emission and enrichment
     tables and plots under *outdir*; called from analysis.ipynb.
@@ -894,7 +1046,7 @@ def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
 
     if rnaseq and gtf:
         if os.path.exists(rnaseq) and os.path.exists(gtf):
-            annotation_items.extend(make_expressed_annotations(rnaseq, gtf))
+            annotation_items.extend(make_expressed_annotations(rnaseq, gtf, top_expressed=top_expressed))
         else:
             if not os.path.exists(rnaseq):
                 print(f"Warning: RNA-seq file {rnaseq} not found, skipping expressed annotations.", file=sys.stderr)

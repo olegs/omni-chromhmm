@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Init, updated and refitted models on newly arrived samples.
+"""Initial, Updated and Refit models on newly arrived samples.
 
 K-means and the Bernoulli mixture over the previous-current-next bin patterns
 (BMM3) on the same Omnipeak pattern tracks, and ChromHMM over the same
@@ -320,24 +320,24 @@ METHODS = ("chromhmm", "omni_kmeans", "omni_bmm3",
 MIXTURES = ("omni_bmm3", "homer_bmm3", "macs2_bmm3")          # the methods fitted by Bernoulli EM
 SPATIAL_BINS_OF = {m: 3 for m in MIXTURES}    # ... of which these read spatial bins
 
-METHOD_DISPLAY = {INIT_ARM: "ChromHMM Init", UPDATED: "ChromHMM updated",
-                  REFIT: "ChromHMM refit",
-                  BMM3_INIT: "BMM3 (Omni) Init", BMM3_UPDATED: "BMM3 (Omni) updated",
-                  BMM3_REFIT: "BMM3 (Omni) refit",
-                  KM_INIT: "KMeans (Omni) Init", KM_UPDATED: "KMeans (Omni) updated",
-                  KM_REFIT: "KMeans (Omni) refit",
-                  HOMER_KM_INIT: "KMeans (HOMER) Init",
-                  HOMER_KM_UPDATED: "KMeans (HOMER) updated",
-                  HOMER_KM_REFIT: "KMeans (HOMER) refit",
-                  HOMER_BMM3_INIT: "BMM3 (HOMER) Init",
-                  HOMER_BMM3_UPDATED: "BMM3 (HOMER) updated",
-                  HOMER_BMM3_REFIT: "BMM3 (HOMER) refit",
-                  MACS2_KM_INIT: "KMeans (MACS2) Init",
-                  MACS2_KM_UPDATED: "KMeans (MACS2) updated",
-                  MACS2_KM_REFIT: "KMeans (MACS2) refit",
-                  MACS2_BMM3_INIT: "BMM3 (MACS2) Init",
-                  MACS2_BMM3_UPDATED: "BMM3 (MACS2) updated",
-                  MACS2_BMM3_REFIT: "BMM3 (MACS2) refit"}
+METHOD_DISPLAY = {INIT_ARM: "ChromHMM Initial", UPDATED: "ChromHMM Updated",
+                  REFIT: "ChromHMM Refit",
+                  BMM3_INIT: "BMM3 (Omni) Initial", BMM3_UPDATED: "BMM3 (Omni) Updated",
+                  BMM3_REFIT: "BMM3 (Omni) Refit",
+                  KM_INIT: "KMeans (Omni) Initial", KM_UPDATED: "KMeans (Omni) Updated",
+                  KM_REFIT: "KMeans (Omni) Refit",
+                  HOMER_KM_INIT: "KMeans (HOMER) Initial",
+                  HOMER_KM_UPDATED: "KMeans (HOMER) Updated",
+                  HOMER_KM_REFIT: "KMeans (HOMER) Refit",
+                  HOMER_BMM3_INIT: "BMM3 (HOMER) Initial",
+                  HOMER_BMM3_UPDATED: "BMM3 (HOMER) Updated",
+                  HOMER_BMM3_REFIT: "BMM3 (HOMER) Refit",
+                  MACS2_KM_INIT: "KMeans (MACS2) Initial",
+                  MACS2_KM_UPDATED: "KMeans (MACS2) Updated",
+                  MACS2_KM_REFIT: "KMeans (MACS2) Refit",
+                  MACS2_BMM3_INIT: "BMM3 (MACS2) Initial",
+                  MACS2_BMM3_UPDATED: "BMM3 (MACS2) Updated",
+                  MACS2_BMM3_REFIT: "BMM3 (MACS2) Refit"}
 
 
 def objective_gap(score, reference, mixture):
@@ -1032,13 +1032,13 @@ def objective_table(frames):
         return pd.DataFrame()
     table = (rows.groupby("method")[["score", "score_reference",
                                      "score_gap_pct"]].mean()
-             .rename(columns={"score": "warm objective",
-                              "score_reference": "fresh objective",
-                              "score_gap_pct": "warm is worse by (%)"}))
+             .rename(columns={"score": "Updated objective",
+                              "score_reference": "Refit objective",
+                              "score_gap_pct": "Updated is worse by (%)"}))
     learn = cost[cost["step"] == "learn_model"].groupby("method")["wall"].mean()
     fresh = cost[cost["step"] == "reference_fit"].groupby("method")["wall"].mean()
-    table["warm fit (s)"] = learn
-    table["fresh fit (s)"] = fresh
+    table["Updated fit (s)"] = learn
+    table["Refit fit (s)"] = fresh
     return (table.reindex([a for a in METHOD_PLOT_ORDER if a in table.index])
             .rename(index=METHOD_DISPLAY))
 
@@ -1065,7 +1065,7 @@ def plots(frames, summary, outdir):
         draw_fig(name, size, lambda fig: panel(fig.subplots()))
 
     if "cross_sample" in frames:
-        for metric in (utils.KAPPA,):
+        for metric in (utils.KAPPA, utils.JACCARD):
             for domain in (utils.FULL, utils.NOQH):
                 draw(f"cross_sample_{metric}_{domain}", ARM_FIG,
                      lambda ax, m=metric, d=domain: _cross_sample_panel(
@@ -1073,24 +1073,24 @@ def plots(frames, summary, outdir):
     if "cost" in frames:
         draw("cost", ARM_FIG, lambda ax: _cost_panel(ax, frames["cost"]))
     if "state_jaccard" in frames:
-        draw_fig("state_kappa", (13, 4.2 * len(ARMS_OF_SCENARIO)),
-                 lambda fig: _state_figure(fig, frames["state_jaccard"]),
-                 tight=False)
-        for scenario in ARMS_OF_SCENARIO:
-            draw_fig(f"state_kappa_{scenario}", (13, 4.8),
-                     lambda fig, s=scenario: _state_figure(
-                         fig, frames["state_jaccard"], scenarios=[s]),
+        for metric in (utils.KAPPA, utils.JACCARD):
+            draw_fig(f"state_{metric}", (13, 4.2 * len(ARMS_OF_SCENARIO)),
+                     lambda fig, m=metric: _state_figure(fig, frames["state_jaccard"], metric=m),
                      tight=False)
-            draw(f"state_kappa_summary_{scenario}", (7.0, 4.4),
-                 lambda ax, s=scenario: _state_agreement_summary_panel(
-                     ax, frames["state_jaccard"], s))
+            for scenario in ARMS_OF_SCENARIO:
+                draw_fig(f"state_{metric}_{scenario}", (13, 4.8),
+                         lambda fig, s=scenario, m=metric: _state_figure(
+                             fig, frames["state_jaccard"], scenarios=[s], metric=m),
+                         tight=False)
+            draw(f"state_{metric}_summary", (7.0, 4.4),
+                 lambda ax, m=metric: _state_agreement_summary_panel(
+                     ax, frames["state_jaccard"], m))
     if "stability" in frames:
-        for metric in (utils.KAPPA,):
+        for metric in (utils.KAPPA, utils.JACCARD):
             for domain in (utils.FULL, utils.NOQH):
-                for scenario in ARMS_OF_SCENARIO:
-                    draw(f"stability_{metric}_{domain}_{scenario}", (7.0, 4.4),
-                         lambda ax, m=metric, d=domain, s=scenario: _stability_panel(
-                             ax, frames["stability"], m, d, s))
+                draw(f"stability_{metric}_{domain}", (7.0, 4.4),
+                     lambda ax, m=metric, d=domain: _stability_panel(
+                         ax, frames["stability"], m, d))
     return written
 
 
@@ -1182,8 +1182,8 @@ METHOD_LABEL = {"omni_kmeans": "KMeans (Omni)",
                 "macs2_kmeans": "KMeans (MACS2)",
                 "macs2_bmm3": "BMM3 (MACS2)"}
 SCENARIO_HATCH = {"init": "xx", "updated": "..", "refit": None}
-SCENARIO_LABEL = {"init": "Init", "updated": "updated (new only)",
-                  "refit": "refit"}
+SCENARIO_LABEL = {"init": "Initial", "updated": "Updated",
+                  "refit": "Refit"}
 METHOD_PLOT_ORDER = (KM_INIT, KM_UPDATED, KM_REFIT,
                      BMM3_INIT, BMM3_UPDATED, BMM3_REFIT,
                      INIT_ARM, UPDATED, REFIT,
@@ -1191,20 +1191,8 @@ METHOD_PLOT_ORDER = (KM_INIT, KM_UPDATED, KM_REFIT,
                      HOMER_BMM3_INIT, HOMER_BMM3_UPDATED, HOMER_BMM3_REFIT,
                      MACS2_KM_INIT, MACS2_KM_UPDATED, MACS2_KM_REFIT,
                      MACS2_BMM3_INIT, MACS2_BMM3_UPDATED, MACS2_BMM3_REFIT)
-SHORT_LABEL = {KM_INIT: "KM\ninit", KM_UPDATED: "KM\nupd",
-               KM_REFIT: "KM\nrefit",
-               BMM3_INIT: "BMM3\ninit", BMM3_UPDATED: "BMM3\nupd",
-               BMM3_REFIT: "BMM3\nrefit",
-               INIT_ARM: "CHMM\ninit", UPDATED: "CHMM\nupd",
-               REFIT: "CHMM\nrefit",
-               HOMER_KM_INIT: "HKM\ninit", HOMER_KM_UPDATED: "HKM\nupd",
-               HOMER_KM_REFIT: "HKM\nrefit",
-               HOMER_BMM3_INIT: "HBMM\ninit", HOMER_BMM3_UPDATED: "HBMM\nupd",
-               HOMER_BMM3_REFIT: "HBMM\nrefit",
-               MACS2_KM_INIT: "MKM\ninit", MACS2_KM_UPDATED: "MKM\nupd",
-               MACS2_KM_REFIT: "MKM\nrefit",
-               MACS2_BMM3_INIT: "MBMM\ninit", MACS2_BMM3_UPDATED: "MBMM\nupd",
-               MACS2_BMM3_REFIT: "MBMM\nrefit"}
+SHORT_LABEL = {arm: f"{METHOD_LABEL[METHOD_OF[arm]]} {SCENARIO_LABEL[SCENARIO_OF[arm]]}"
+               for arm in METHOD_PLOT_ORDER}
 PLOT_METHODS = ("omni_kmeans", "omni_bmm3", "chromhmm",
                 "homer_kmeans", "homer_bmm3", "macs2_kmeans", "macs2_bmm3")
 def comparison_series(scenario):
@@ -1238,10 +1226,24 @@ def _bar_style(arm):
                 edgecolor="white", linewidth=0.9)
 
 
+def _arm_positions():
+    """X positions for each arm, with gaps between methods."""
+    positions = []
+    current = 0
+    for i in range(len(METHOD_PLOT_ORDER)):
+        if i > 0 and i % 3 == 0:
+            current += 1
+        positions.append(current)
+        current += 1
+    return positions
+
+
 def _arm_axis(ax):
     arms = METHOD_PLOT_ORDER
-    ax.set_xticks(range(len(arms)))
-    ax.set_xticklabels([SHORT_LABEL[a] for a in arms], fontsize=5.5)
+    positions = _arm_positions()
+    ax.set_xticks(positions)
+    ax.set_xticklabels([SHORT_LABEL[a] for a in arms], rotation=45, ha="right",
+                       fontsize=5.5)
     # Twenty-one ticks on one axis: each is tinted its method's colour, so the
     # three scenarios of a method read as a group without reading the text.
     for tick, arm in zip(ax.get_xticklabels(), arms):
@@ -1264,7 +1266,7 @@ def _legend(ax, scenarios=("init", "updated", "refit")):
 def _cross_sample_panel(ax, cross_sample, metric, domain):
     """Cross-sample agreement per arm: do two different samples look alike?"""
     subset = cross_sample[cross_sample["domain"] == domain]
-    for x, arm in enumerate(METHOD_PLOT_ORDER):
+    for x, arm in zip(_arm_positions(), METHOD_PLOT_ORDER):
         values = subset[subset["method"] == arm][metric]
         if values.empty:
             continue
@@ -1286,8 +1288,9 @@ def _cost_panel(ax, cost):
     """Fitting and annotation cost per arm, log axis: they differ by 100x."""
     steps = (("learn_model", "Fit"), ("make_segmentation", "Annotate 4"))
     width = 0.38
+    positions = _arm_positions()
     for offset, (step, label) in zip((-width / 2, width / 2), steps):
-        for x, arm in enumerate(METHOD_PLOT_ORDER):
+        for x, arm in zip(positions, METHOD_PLOT_ORDER):
             values = cost[(cost["method"] == arm)
                           & (cost["step"] == step)]["wall"].dropna()
             if values.empty:
@@ -1319,50 +1322,59 @@ STATE_GROUPS = (("promoter", pat.PROMOTER_FAMILY),
                 ("quiescent", ("Quies",)))
 
 
-def _state_agreement_summary_panel(ax, state_jaccard, scenario):
-    """Mean per-state agreement (Kappa) against the refit, averaged over all states."""
-    series = comparison_series(scenario)
-    for x, (comparison, arm, label) in enumerate(series):
-        subset = state_jaccard[state_jaccard["comparison"] == comparison]
-        if subset.empty:
-            continue
-        # Each row is one state in one sample in one split.
-        # Average per split and sample first, to get points for scatter.
-        values = subset.groupby(["split", "sample"])["kappa"].mean()
-        ax.bar(x, values.mean(), 0.66, **_bar_style(arm))
-        utils.scatter_points(ax, x, values, jitter=0.08, size=9)
-        ax.annotate(f"{values.mean():.3f}", (x, float(values.mean())),
-                    textcoords="offset points", xytext=(0, 3), ha="center",
-                    fontsize=6)
-    ax.set_xticks(range(len(series)))
-    ax.set_xticklabels([label for _, _, label in series], rotation=45, ha="right", fontsize=7)
-    _style(ax, f"{SCENARIO_LABEL[scenario].capitalize()} vs its own refit",
-           "Mean per-state Kappa")
+def _state_agreement_summary_panel(ax, state_jaccard, metric=utils.KAPPA,
+                                   scenarios=("init", "updated")):
+    """Mean per-state agreement (Kappa/Jaccard) against the refit, averaged over all states."""
+    width = 0.8 / len(scenarios)
+    offsets = _series_offsets(len(scenarios), width)
+    for offset, scenario in zip(offsets, scenarios):
+        series = comparison_series(scenario)
+        for x, (comparison, arm, label) in enumerate(series):
+            subset = state_jaccard[state_jaccard["comparison"] == comparison]
+            if subset.empty:
+                continue
+            # Each row is one state in one sample in one split.
+            # Average per split and sample first, to get points for scatter.
+            values = subset.groupby(["split", "sample"])[metric].mean()
+            ax.bar(x + offset, values.mean(), width, **_bar_style(arm))
+            utils.scatter_points(ax, x + offset, values, jitter=0.08, size=9)
+            ax.annotate(f"{values.mean():.3f}", (x + offset, float(values.mean())),
+                        textcoords="offset points", xytext=(0, 3), ha="center",
+                        fontsize=6)
+    first_series = comparison_series(scenarios[0])
+    ax.set_xticks(range(len(first_series)))
+    ax.set_xticklabels([label for _, _, label in first_series], rotation=45, ha="right", fontsize=7)
+    _style(ax, "Stability against its own refit",
+           f"Mean per-state {utils.METRIC_DISPLAY.get(metric, metric.capitalize())}")
     ax.set_ylim(0, 1.2)
-    _legend(ax, scenarios=(scenario,))
+    _legend(ax, scenarios=scenarios)
 
 
-def _stability_panel(ax, stability, metric, domain, scenario):
-    """Mean per-state agreement (Kappa) against the refit, averaged over all states."""
-    series = comparison_series(scenario)
-    subset = stability[(stability["domain"] == domain) &
-                       (stability["scenario"] == scenario)]
-    for x, (comparison, arm, label) in enumerate(series):
-        values = subset[subset["comparison"] == comparison][metric]
-        if values.empty:
-            continue
-        ax.bar(x, float(values.mean()), 0.66, **_bar_style(arm))
-        utils.scatter_points(ax, x, values, jitter=0.08, size=9)
-        ax.annotate(f"{values.mean():.3f}", (x, float(values.mean())),
-                    textcoords="offset points", xytext=(0, 3), ha="center",
-                    fontsize=6)
-    ax.set_xticks(range(len(series)))
-    ax.set_xticklabels([label for _, _, label in series], rotation=45, ha="right", fontsize=7)
+def _stability_panel(ax, stability, metric, domain, scenarios=("init", "updated")):
+    """Mean per-state agreement (Kappa/Jaccard) against the refit, averaged over all states."""
+    width = 0.8 / len(scenarios)
+    offsets = _series_offsets(len(scenarios), width)
+    for offset, scenario in zip(offsets, scenarios):
+        series = comparison_series(scenario)
+        subset = stability[(stability["domain"] == domain) &
+                           (stability["scenario"] == scenario)]
+        for x, (comparison, arm, label) in enumerate(series):
+            values = subset[subset["comparison"] == comparison][metric]
+            if values.empty:
+                continue
+            ax.bar(x + offset, float(values.mean()), width, **_bar_style(arm))
+            utils.scatter_points(ax, x + offset, values, jitter=0.08, size=9)
+            ax.annotate(f"{values.mean():.3f}", (x + offset, float(values.mean())),
+                        textcoords="offset points", xytext=(0, 3), ha="center",
+                        fontsize=6)
+    first_series = comparison_series(scenarios[0])
+    ax.set_xticks(range(len(first_series)))
+    ax.set_xticklabels([label for _, _, label in first_series], rotation=45, ha="right", fontsize=7)
     domain_label = "FULL" if domain == utils.FULL else "NOQH"
-    _style(ax, f"{SCENARIO_LABEL[scenario].capitalize()} vs its own refit ({domain_label})",
-           f"{metric.capitalize()}, mean over splits")
+    _style(ax, f"Stability against its own refit ({domain_label})",
+           f"{utils.METRIC_DISPLAY.get(metric, metric.capitalize())}, mean over splits")
     ax.set_ylim(0, 1.2)
-    _legend(ax, scenarios=(scenario,))
+    _legend(ax, scenarios=scenarios)
 
 
 def _state_order(state_jaccard):
@@ -1387,7 +1399,7 @@ def _state_groups(ax, order, labels=True, label_y=-0.30):
                         va="top", fontsize=7, color="#777777")
 
 
-def _state_panel(ax, state_jaccard, scenario="init", xlabels=True):
+def _state_panel(ax, state_jaccard, scenario="init", metric=utils.KAPPA, xlabels=True):
     """Per-state agreement of one scenario with its own refit, in one vocabulary."""
     if state_jaccard.empty:
         return
@@ -1402,7 +1414,7 @@ def _state_panel(ax, state_jaccard, scenario="init", xlabels=True):
     full = int(state_jaccard.groupby(["comparison", "state"]).size().max())
     for offset, (comparison, arm, label) in zip(offsets, series):
         subset = subsets[comparison]
-        values = [subset[subset["state"] == state]["kappa"] for state in order]
+        values = [subset[subset["state"] == state][metric] for state in order]
         means = [float(v.mean()) if v.notna().any() else np.nan for v in values]
         ax.bar(np.arange(len(order)) + offset, means, width, label=label,
                **_bar_style(arm))
@@ -1438,13 +1450,13 @@ def _state_panel(ax, state_jaccard, scenario="init", xlabels=True):
     ax.set_ylim(0, top)
     ax.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
     _style(ax, f"{SCENARIO_LABEL[scenario].capitalize()} vs its own refit",
-           "Kappa")
+           utils.METRIC_DISPLAY.get(metric, metric.capitalize()))
 
 
-def _state_figure(fig, state_jaccard, scenarios=None):
+def _state_figure(fig, state_jaccard, metric=utils.KAPPA, scenarios=None):
     """One or both scenarios against the refit, one row each, on a shared axis.
 
-    The Kappa is shown for every state matched onto the ENCODE reference
+    The agreement is shown for every state matched onto the ENCODE reference
     vocabulary.
     """
     if scenarios is None:
@@ -1453,12 +1465,13 @@ def _state_figure(fig, state_jaccard, scenarios=None):
                          [comparison_key(m, s) for m in PLOT_METHODS]).any()]
     axes = np.atleast_1d(fig.subplots(len(scenarios), 1, sharex=True))
     for index, (ax, scenario) in enumerate(zip(axes, scenarios)):
-        _state_panel(ax, state_jaccard, scenario,
+        _state_panel(ax, state_jaccard, scenario, metric=metric,
                      xlabels=index == len(scenarios) - 1)
     fig.subplots_adjust(top=0.88 if len(scenarios) > 1 else 0.82,
                         bottom=0.16 if len(scenarios) > 1 else 0.22,
                         left=0.05, right=0.99, hspace=0.22)
-    fig.suptitle("Per-state agreement (Kappa) against each arm's own refit, in the "
+    metric_label = utils.METRIC_DISPLAY.get(metric, metric.capitalize())
+    fig.suptitle(f"Per-state agreement ({metric_label}) against each arm's own refit, in the "
                  "ENCODE reference vocabulary (every arm matched onto it)",
                  y=0.985, **utils.TITLE_STYLE)
     handles, labels = axes[0].get_legend_handles_labels()

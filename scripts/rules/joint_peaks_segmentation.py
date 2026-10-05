@@ -86,10 +86,9 @@ def main():
                         off = cell_offset + c_info['offset']
                         n_bins = c_info['bins']
                         
-                        starts = (group['start'] // args.bin).values
-                        ends = (group['end'] // args.bin).values
+                        starts = (group['start'] // args.bin).clip(lower=0, upper=n_bins - 1).values
+                        ends = ((group['end'] + args.bin - 1) // args.bin).clip(lower=0, upper=n_bins).values
                         for s, e in zip(starts, ends):
-                            e = min(e, n_bins)
                             if e > s:
                                 X[off + s : off + e, mark_offset + m_idx] = 1
                 except Exception as e:

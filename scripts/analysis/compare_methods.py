@@ -15,6 +15,7 @@ matplotlib.use("Agg")
 matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 
+import utils
 from utils import (METHOD_IDX, BIN_COLORS, METHOD_INFO, display_name,
                    bin_color, load_matrix, save_fig,
                    COMPOSITION, JACCARD, KAPPA, NOQH_SUFFIX,
@@ -114,6 +115,15 @@ def load_jaccard(analysis_dir, method):
         return {}
     df = pd.read_csv(path, sep="\t")
     return df.pivot(index="state", columns="label", values="jaccard").to_dict("index")
+
+
+def load_sensitivity(analysis_dir, method):
+    """{state: {annotation: sensitivity}}."""
+    path = os.path.join(analysis_dir, method, "enrichment", "sensitivity.tsv")
+    if not os.path.exists(path):
+        return {}
+    df = pd.read_csv(path, sep="\t")
+    return df.pivot(index="state", columns="label", values="sensitivity").to_dict("index")
 
 
 def build_table(analysis_dir, comparison_dir, ref_dir=None):
@@ -252,27 +262,15 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                     return data[target_state][k]
             return np.nan
 
-        for state, annotation, col in [
-            ("Tx",   "RefSeqGene.hg38",        "enrich_Tx_RefSeqGene"),
-            ("Tx",   "ExpressedGeneBodies",     "enrich_Tx_ExpressedGeneBodies"),
-            ("Tss",  "RefSeqTSS.hg38",          "enrich_Tss_RefSeqTSS"),
-            ("Tss",  "RefSeqTSS2kb.hg38",       "enrich_Tss_RefSeqTSS2kb"),
-            ("Enh1", "ExpressedTSS",            "enrich_Enh1_ExpressedTSS"),
-        ]:
-            val = _get_val(enrichment, state, annotation)
-            if not np.isnan(val):
-                row[col] = val
-
-        jaccard = load_jaccard(_adir(method), method)
-        for state, annotation, col in [
-            ("Tx",  "ExpressedGeneBodies", "jaccard_Tx_ExpressedGeneBodies"),
-        ]:
-            val = _get_val(jaccard, state, annotation)
-            if not np.isnan(val):
-                row[col] = val
+        row["enrich_Tx_RefSeqGene"] = _get_val(enrichment, "Tx", "RefSeqGene.hg38")
+        row["enrich_Tx_ExpressedGeneBodies"] = _get_val(enrichment, "Tx", "ExpressedGeneBodies")
+        for suffix in ("2kb",):
+            row[f"enrich_Tss_RefSeqTSS{suffix}"] = _get_val(enrichment, "Tss", f"RefSeqTSS{suffix}.hg38")
+        row["enrich_Enh1_ExpressedTSS"] = _get_val(enrichment, "Enh1", "ExpressedTSS")
 
         # ATAC-seq validation (pooled active states).
         coverage = load_coverage(_adir(method), method)
+        sensitivity = load_sensitivity(_adir(method), method)
 
         atac_label = None
         for st_data in enrichment.values():
@@ -291,14 +289,17 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                         ann_frac = c / f
                         break
             
-            for pool_name, substrs in [("Tss", ["Tss"]), 
-                                       ("Enh", ["Enh"]), 
-                                       ("Active", ["Tss", "Enh"]),
-                                       ("Quies", ["Quies", "Het", "ZNF"])]:
-                # Pool states matching any substr, excluding "Biv".
-                pooled_states = [st for st in enrichment 
-                                if any(sub.lower() in st.lower() for sub in substrs)
-                                and "biv" not in st.lower()]
+            for pool_name, check_fn in [("Tss", utils.is_promoter_core), 
+                                       ("Enh", utils.is_distal_enhancer), 
+                                       ("Active", utils.is_active_open),
+                                       ("Quies", utils.is_noqh)]:
+                pool_key = f"POOL:{pool_name}"
+                if pool_key in sensitivity and atac_label in sensitivity[pool_key]:
+                    row[f"sensitivity_{pool_name}_ATAC"] = sensitivity[pool_key][atac_label]
+                if pool_key in coverage and atac_label in coverage[pool_key]:
+                    row[f"coverage_{pool_name}_ATAC"] = coverage[pool_key][atac_label]
+                
+                pooled_states = [st for st in enrichment if check_fn(st) and not st.startswith("POOL:")]
                 
                 if pooled_states:
                     overlap_sum = 0
@@ -311,25 +312,28 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                     
                     if state_bp_sum > 0:
                         pooled_cov = overlap_sum / state_bp_sum
-                        row[f"coverage_{pool_name}_ATAC"] = pooled_cov
+                        if f"coverage_{pool_name}_ATAC" not in row:
+                            row[f"coverage_{pool_name}_ATAC"] = pooled_cov
                         
                         if not np.isnan(ann_frac) and ann_frac > 0:
                             ann_bp = ann_frac * total_bp
                             row[f"enrich_{pool_name}_ATAC"] = pooled_cov / ann_frac
                             # Fraction of ATAC peaks covered by these states.
-                            row[f"sensitivity_{pool_name}_ATAC"] = overlap_sum / ann_bp
-                            row[f"{JACCARD}_{pool_name}_ATAC"] = overlap_sum / (state_bp_sum + ann_bp - overlap_sum)
+                            if f"sensitivity_{pool_name}_ATAC" not in row:
+                                row[f"sensitivity_{pool_name}_ATAC"] = overlap_sum / ann_bp
 
         # Biological validation: fraction of each annotation covered by states.
-        for pool_name, substrs, ann_name, col_prefix in [
-            ("Tss",    ["Tss"], "RefSeqTSS2kb.hg38",      "Tss_RefSeqTSS2kb"),
-            ("Tx",     ["Tx"],  "ExpressedGeneBodies",    "Tx_ExpressedGeneBodies"),
-            ("Tss",    ["Tss"], "ExpressedTSS",           "Tss_ExpressedTSS"),
-            ("Tss",    ["Tss"], "ExpressedTSS2kb",         "Tss_ExpressedTSS2kb"),
-            ("Active", ["Tss", "Enh"], "ExpressedTSS",    "Active_ExpressedTSS"),
-            ("Active", ["Tss", "Enh"], "NonExpressedGeneBodies", "Active_NonExpGeneBodies"),
-            ("Quies",  ["Quies", "Het", "ZNF"], "NonExpressedGeneBodies", "Quies_NonExpGeneBodies"),
-        ]:
+        val_targets = [
+            ("Tx", utils.is_tx, "ExpressedGeneBodies", "Tx_ExpressedGeneBodies"),
+            ("Active", utils.is_active_open, "NonExpressedGeneBodies", "Active_NonExpGeneBodies"),
+            ("Quies", utils.is_noqh, "NonExpressedGeneBodies", "Quies_NonExpGeneBodies"),
+            ("Active", utils.is_active_open, "ExpressedTSS", "Active_ExpressedTSS"),
+        ]
+        for suffix in ("2kb",):
+            val_targets.append(("Tss", utils.is_promoter_core, f"RefSeqTSS{suffix}.hg38", f"Tss_RefSeqTSS{suffix}"))
+            val_targets.append(("Tss", utils.is_promoter_core, f"ExpressedTSS{suffix}", f"Tss_ExpressedTSS{suffix}"))
+
+        for pool_name, check_fn, ann_name, col_prefix in val_targets:
             target_ann = None
             for st in enrichment:
                 if ann_name in enrichment[st]:
@@ -345,6 +349,15 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                     if target_ann: break
             
             if target_ann and total_bp > 0:
+                pool_key = f"POOL:{pool_name}"
+                val_sens = _get_val(sensitivity, pool_key, target_ann)
+                val_cov = _get_val(coverage, pool_key, target_ann)
+                
+                if not np.isnan(val_sens):
+                    row[f"sensitivity_{col_prefix}"] = val_sens
+                if not np.isnan(val_cov):
+                    row[f"coverage_{col_prefix}"] = val_cov
+
                 ann_frac = np.nan
                 for st in enrichment:
                     if target_ann in enrichment[st] and target_ann in coverage.get(st, {}):
@@ -355,9 +368,7 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                             break
                 
                 if not np.isnan(ann_frac) and ann_frac > 0:
-                    pooled_states = [st for st in enrichment 
-                                    if any(sub.lower() in st.lower() for sub in substrs)
-                                    and "biv" not in st.lower()]
+                    pooled_states = [st for st in enrichment if check_fn(st) and not st.startswith("POOL:")]
                     if pooled_states:
                         overlap_sum = 0
                         state_bp_sum = 0
@@ -368,10 +379,11 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                             state_bp_sum += st_bp
                         
                         ann_bp = ann_frac * total_bp
-                        row[f"sensitivity_{col_prefix}"] = overlap_sum / ann_bp
-                        row[f"coverage_{col_prefix}"] = overlap_sum / state_bp_sum if state_bp_sum > 0 else np.nan
+                        if f"sensitivity_{col_prefix}" not in row:
+                            row[f"sensitivity_{col_prefix}"] = overlap_sum / ann_bp
+                        if f"coverage_{col_prefix}" not in row:
+                            row[f"coverage_{col_prefix}"] = overlap_sum / state_bp_sum if state_bp_sum > 0 else np.nan
                         row[f"enrich_{col_prefix}"] = (overlap_sum / state_bp_sum) / ann_frac if state_bp_sum > 0 else np.nan
-                        row[f"{JACCARD}_{col_prefix}"] = overlap_sum / (state_bp_sum + ann_bp - overlap_sum) if (state_bp_sum + ann_bp - overlap_sum) > 0 else np.nan
 
         rows.append(row)
 
@@ -450,29 +462,35 @@ def plot_comparison(df, outdir):
             _bar_panel(ax, df_main, col, title, ylabel)
             save_fig(fig, os.path.join(outdir, f"{col}.png"))
 
-    for col, title in [
+    plot_targets = [
         ("enrich_Tx_ExpressedGeneBodies",  "Tx enrichment vs expressed gene bodies"),
-        (f"{JACCARD}_Tx_ExpressedGeneBodies", f"{JACCARD_DISPLAY}: Tx state vs expressed gene bodies"),
-        ("sensitivity_Tx_ExpressedGeneBodies", "Fraction of expressed gene bodies covered by Tx states"),
+        ("sensitivity_Tx_ExpressedGeneBodies", "Tx bp overlap at expressed gene bodies"),
+        ("coverage_Tx_ExpressedGeneBodies",    "Tx bp overlap by expressed genes"),
         ("enrich_Active_ATAC",             "Active chromatin enrichment at ATAC-seq peaks"),
-        ("sensitivity_Active_ATAC",        "Fraction of ATAC-seq peaks covered by Active states"),
-        (f"{JACCARD}_Active_ATAC",  f"{JACCARD_DISPLAY}: Active states vs ATAC-seq"),
-        ("coverage_Active_ATAC",           "Fraction of Active states covered by ATAC-seq peaks"),
-        ("enrich_Tss_RefSeqTSS2kb",        "Tss enrichment at RefSeq TSS ±2 kb"),
-        (f"{JACCARD}_Tss_RefSeqTSS2kb", f"{JACCARD_DISPLAY}: Tss state vs RefSeq TSS ±2 kb"),
-        ("sensitivity_Tss_RefSeqTSS2kb",   "Fraction of RefSeq TSS ±2 kb covered by Tss states"),
-        ("coverage_Tss_RefSeqTSS2kb",      "Fraction of Tss states covered by RefSeq TSS ±2 kb"),
-        ("enrich_Tss_ExpressedTSS",        "Tss enrichment at Expressed TSS"),
-        ("enrich_Tss_ExpressedTSS2kb",      "Tss enrichment at Expressed TSS ±2 kb"),
-        (f"{JACCARD}_Tss_ExpressedTSS", f"{JACCARD_DISPLAY}: Tss state vs Expressed TSS"),
-        (f"{JACCARD}_Tss_ExpressedTSS2kb", f"{JACCARD_DISPLAY}: Tss state vs Expressed TSS ±2 kb"),
-        ("sensitivity_Tss_ExpressedTSS",   "Fraction of Expressed TSS covered by Tss states"),
-        ("coverage_Tss_ExpressedTSS",      "Fraction of Tss states covered by Expressed TSS"),
+        ("sensitivity_Active_ATAC",        "Active chromatin bp overlap at ATAC-seq peaks"),
+        ("coverage_Active_ATAC",           "Active chromatin bp overlap by ATAC-seq peaks"),
+        # Expressed TSS validation (±2kb window by default).
+        ("enrich_Tss_ExpressedTSS2kb",     "Tss enrichment at Expressed TSS", "enrich_Tss_ExpressedTSS"),
+        ("sensitivity_Tss_ExpressedTSS2kb", "Tss bp overlap at Expressed TSS", "sensitivity_Tss_ExpressedTSS"),
+        ("coverage_Tss_ExpressedTSS2kb",    "Tss bp overlap by Expressed TSS", "coverage_Tss_ExpressedTSS"),
         ("enrich_Active_NonExpGeneBodies",  "Active states enrichment at non-expressed genes"),
         ("enrich_Quies_NonExpGeneBodies",   "Quiescent states enrichment at non-expressed genes"),
         ("median_Tx_length",               "Median Tx (transcription) segment length"),
         ("mean_Tx_length",                 "Mean Tx (transcription) segment length"),
-    ]:
+    ]
+    # RefSeq TSS validation (±2kb window by default).
+    plot_targets.extend([
+        ("enrich_Tss_RefSeqTSS2kb",      "Tss enrichment at RefSeq TSS", "enrich_Tss_RefSeqTSS"),
+        ("sensitivity_Tss_RefSeqTSS2kb", "Tss bp overlap at RefSeq TSS", "sensitivity_Tss_RefSeqTSS"),
+        ("coverage_Tss_RefSeqTSS2kb",    "Tss bp overlap by RefSeq TSS", "coverage_Tss_RefSeqTSS"),
+    ])
+
+    for col_info in plot_targets:
+        if len(col_info) == 3:
+            col, title, filename = col_info
+        else:
+            col, title = col_info
+            filename = col
         ylabel = "Fold enrichment" if col.startswith("enrich") else \
                  "Fraction" if col.startswith("sensitivity") else \
                  JACCARD_DISPLAY if col.startswith(JACCARD) else \
@@ -480,7 +498,7 @@ def plot_comparison(df, outdir):
         if col in df_main.columns and df_main[col].notna().any():
             fig, ax = _make_fig()
             _bar_panel(ax, df_main, col, title, ylabel)
-            save_fig(fig, os.path.join(outdir, f"{col}.png"))
+            save_fig(fig, os.path.join(outdir, f"{filename}.png"))
 
 
 def run_compare_methods(analysis_dir, comparison_dir, outdir, ref_dir=None):

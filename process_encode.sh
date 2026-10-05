@@ -1,12 +1,7 @@
 #!/bin/bash
 # Project root directory
 ROOT=$(cd "$(dirname "$0")" && pwd)
-
-# Compatibility for Zsh
-if [ -n "$ZSH_VERSION" ]; then
-  emulate bash
-  setopt shwordsplit
-fi
+source "$ROOT/match.sh"
 
 # Joint segmentations across replicates of the ENCODE datasets.
 # Please ensure that snakemake part was already processed, see README.md
@@ -32,17 +27,6 @@ ref_bed() {
  esac
 }
 
-# Relabel both replicates of a joint model to the ENCODE reference in a single
-# match.py call: one shared mapping is applied to them, so the joint state space
-# survives the matching, rep1 / rep2 stay comparable, and both end up in the label
-# space of the individual _matched segmentations.
-match_joint() {
- if [[ -f "$1" ]] && [[ -f "$2" ]] && [[ -f "$3" ]]; then
-  python "$ROOT/scripts/rules/match.py" --ref "$1" --work "$2" "$3" --out "${2%.bed}_matched.bed" "${3%.bed}_matched.bed"
- else
-  echo "Skipping matching, missing $1, $2 or $3"
- fi
-}
 
 # 1. Joint KMeans replicates states processing
 for ds in imr90 monocytes spleen
@@ -52,11 +36,7 @@ do
  for PC in homer macs2 omni
  do
   echo "~~~~~~~~~~~~~~~~~~~~"; echo "$PC"
-  case "$PC" in
-   omni)  BIN=100 ;;
-   homer) BIN=200 ;;
-   macs2) BIN=100 ;;
-  esac
+  BIN=$(get_bin_size "$PC")
   echo "Collecting peaks"
   ALL_PEAKS=""
   for R in rep1 rep2
@@ -97,8 +77,8 @@ do
  for PC in homer macs2 omni
  do
   echo "Matching $ds $PC joint KMeans to the ENCODE reference"
-  match_joint "$(ref_bed "$ds")" "joint_kmeans/$PC/rep1_kmeans_joint_states.bed" "joint_kmeans/$PC/rep2_kmeans_joint_states.bed"
-  match_joint "$(ref_bed "$ds")" "joint_bmm3/$PC/rep1_bmm3_joint_states.bed" "joint_bmm3/$PC/rep2_bmm3_joint_states.bed"
+  match_joint "$(ref_bed "$ds")" "joint_kmeans/$PC/rep1_kmeans_joint_states.bed" "joint_kmeans/$PC/rep2_kmeans_joint_states.bed" "$PC" "$(get_bin_size "$PC")"
+  match_joint "$(ref_bed "$ds")" "joint_bmm3/$PC/rep1_bmm3_joint_states.bed" "joint_bmm3/$PC/rep2_bmm3_joint_states.bed" "$PC" "$(get_bin_size "$PC")"
  done
 done
 
@@ -121,5 +101,5 @@ do
  echo "===================="; echo "$ds"
  cd "$DIR/$ds" || exit
  echo "Matching $ds joint ChromHMM to the ENCODE reference"
- match_joint "$(ref_bed "$ds")" "joint_chromhmm/rep1_${STATES}_dense.bed" "joint_chromhmm/rep2_${STATES}_dense.bed"
+ match_joint "$(ref_bed "$ds")" "joint_chromhmm/rep1_${STATES}_dense.bed" "joint_chromhmm/rep2_${STATES}_dense.bed" "chromhmm" 200
 done

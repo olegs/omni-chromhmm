@@ -315,4 +315,219 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=None):
                   "Jaccard (rep1 vs rep2)", "Peak Jaccard: rep1 vs rep2",
                   os.path.join(args.outdir, "jaccard_rep1_vs_rep2.png"))
 
+    cov_df = binarization_mark_coverage(args.ds, args.cell, workdir=".")
+    if not cov_df.empty:
+        cov_path = os.path.join(args.outdir, "mark_coverage.tsv")
+        cov_df.to_csv(cov_path, sep="\t", index=False, float_format="%.4f")
+        plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage_absolute.png"), relative=False)
+        plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage_relative.png"), relative=True)
+        plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage.png"), relative=True)
+
     print("Done.", file=sys.stderr)
+
+
+def fast_count_marks(file_path):
+    """Count the number of bins with each mark sum (0, 1, ..., n_marks) in a binary file."""
+    if file_path.endswith(".gz"):
+        opener = gzip.open(file_path, "rb")
+    else:
+        opener = open(file_path, "rb")
+    with opener as f:
+        h1 = f.readline()
+        h2 = f.readline()
+        data = f.read()
+    if not data:
+        return np.zeros(1, dtype=np.int64)
+    marks = h2.strip().split(b"\t")
+    m = len(marks)
+    line_len = 2 * m
+    if len(data) >= line_len and data[line_len - 1] == 10:
+        step = line_len
+    elif len(data) > line_len and data[line_len] == 10:
+        step = line_len + 1
+    else:
+        step = None
+
+    if step is not None and len(data) % step == 0:
+        arr = np.frombuffer(data, dtype=np.uint8).reshape(-1, step)
+        mark_cols = arr[:, 0:2*m:2]
+        sums = (mark_cols == 49).sum(axis=1)
+        return np.bincount(sums, minlength=m + 1)
+    else:
+        lines = data.split(b"\n")
+        sums = []
+        for l in lines:
+            if not l:
+                continue
+            parts = l.split(b"\t")
+            sums.append(sum(1 for x in parts if x == b"1"))
+        return np.bincount(sums, minlength=m + 1)
+
+
+def get_binary_files(ds, method, cell, workdir="."):
+    """Find binary files for a given dataset and method."""
+    ds_path = os.path.join(workdir, ds) if ds else workdir
+    if method == "ChromHMM":
+        for pattern in [
+            os.path.join(ds_path, "chromhmm_default", f"{cell}_chr*_binary.txt*"),
+            os.path.join(ds_path, "chromhmm_default", "*_binary.txt*"),
+            os.path.join(ds_path, "chromhmm_binary", f"{cell}_chr*_binary.txt*"),
+            os.path.join(ds_path, "chromhmm_binary", "*_binary.txt*"),
+            os.path.join(ds_path, f"{cell}_chromhmm", "*_binary.txt*"),
+            os.path.join(ds_path, "*", "chromhmm_default", f"{cell}_chr*_binary.txt*"),
+            os.path.join(ds_path, "*", "chromhmm_default", "*_binary.txt*"),
+            os.path.join(ds_path, "*", "chromhmm_binary", f"{cell}_chr*_binary.txt*"),
+            os.path.join(ds_path, "*", "chromhmm_binary", "*_binary.txt*"),
+        ]:
+            files = sorted(glob.glob(pattern))
+            if files:
+                return files
+        return []
+    else:
+        caller = {"HOMER": "homer", "MACS2": "macs2", "OmniPeak": "omni"}.get(method, method.lower())
+        for pattern in [
+            os.path.join(ds_path, caller, "chromhmm_peaks", "chr*.txt*"),
+            os.path.join(ds_path, caller, "chromhmm_peaks", "*_binary.txt*"),
+            os.path.join(ds_path, "*", caller, "chromhmm_peaks", "chr*.txt*"),
+            os.path.join(ds_path, "*", caller, "chromhmm_peaks", "*_binary.txt*"),
+        ]:
+            files = sorted(glob.glob(pattern))
+            if files:
+                return files
+        return []
+
+
+def binarization_mark_coverage(ds, cell, methods=METHOD_ORDER, workdir="."):
+    """Compute number of bins covered by at least N marks (N=1..M), normalized to N=1.
+
+    Returns DataFrame with columns: ['dataset', 'method', 'N', 'raw_bins', 'fraction'].
+    """
+    rows = []
+    ds_path = os.path.join(workdir, ds) if ds else workdir
+    for method in methods:
+        files = get_binary_files(ds, method, cell, workdir=workdir)
+        total_counts = None
+        if files:
+            for f in files:
+                c = fast_count_marks(f)
+                if total_counts is None or len(total_counts) < len(c):
+                    if total_counts is None:
+                        total_counts = np.zeros(len(c), dtype=np.int64)
+                    else:
+                        new_tc = np.zeros(len(c), dtype=np.int64)
+                        new_tc[:len(total_counts)] = total_counts
+                        total_counts = new_tc
+                total_counts[:len(c)] += c
+        else:
+            caller = {"HOMER": "homer", "MACS2": "macs2", "OmniPeak": "omni"}.get(method, method.lower())
+            caller_dirs = [os.path.join(ds_path, caller)]
+            caller_dirs += glob.glob(os.path.join(ds_path, "*", caller))
+            caller_dir = next((d for d in caller_dirs if os.path.isdir(d)), None)
+            if caller_dir:
+                import contextlib
+                import io
+                try:
+                    import peaks_segmentation
+                except ImportError:
+                    rules_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "rules"))
+                    if rules_dir not in sys.path:
+                        sys.path.insert(0, rules_dir)
+                    import peaks_segmentation
+                chromsizes_cands = [
+                    os.path.join(workdir, "hg19.chrom.sizes"),
+                    os.path.join(ds_path, "hg19.chrom.sizes"),
+                    os.path.join(ds_path, "..", "hg19.chrom.sizes"),
+                    os.path.expanduser("~/data/2026_segmentations/epi1000/hg19.chrom.sizes"),
+                ]
+                chromsizes_path = next((p for p in chromsizes_cands if os.path.exists(p)), None)
+                if chromsizes_path:
+                    marks = ["H3K4me3", "H3K4me1", "H3K36me3", "H3K9me3", "H3K27me3", "H3K27ac"]
+                    globs = {
+                        "homer": ["*{mark}*_homer.bed", "*{mark}*.bed"],
+                        "macs2": ["*{mark}*Peak", "*{mark}*.bed"],
+                        "omni": ["*{mark}*.peak", "*{mark}*.bed"],
+                    }
+                    peak_files = []
+                    for m in marks:
+                        mf = []
+                        for pat in globs.get(caller, [f"*{m}*"]):
+                            cand = sorted(glob.glob(os.path.join(caller_dir, pat.format(mark=m))))
+                            cand = [f for f in cand if not f.endswith(".txt") and not f.endswith(".idx") and not f.endswith(".log") and not f.endswith(".png")]
+                            if cand:
+                                mf = cand
+                                break
+                        peak_files.append(mf)
+                    if any(len(mf) > 0 for mf in peak_files):
+                        chroms, sizes = peaks_segmentation.read_chrom_sizes(chromsizes_path)
+                        with contextlib.redirect_stderr(io.StringIO()):
+                            binarized, _ = peaks_segmentation.binarize_peaks(
+                                peak_files, chroms, sizes, 100, marks
+                            )
+                        sums = binarized.sum(axis=1)
+                        total_counts = np.bincount(sums, minlength=len(marks) + 1)
+
+        if total_counts is None:
+            continue
+        n_marks = len(total_counts) - 1
+        ge_N = np.array([total_counts[N:].sum() for N in range(1, n_marks + 1)])
+        if len(ge_N) > 0 and ge_N[0] > 0:
+            norm = ge_N / ge_N[0]
+            for N_val, (raw, val) in enumerate(zip(ge_N, norm), start=1):
+                rows.append({
+                    "dataset": ds,
+                    "method": method,
+                    "N": N_val,
+                    "raw_bins": int(raw),
+                    "fraction": float(val)
+                })
+    return pd.DataFrame(rows)
+
+
+def plot_mark_coverage(df, outfile=None, title=None, ax=None, relative=True):
+    """Plot binarization mark coverage lines: absolute (number of bins) or relative (normalized to N=1)."""
+    if df.empty:
+        return None, None
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    else:
+        fig = ax.get_figure()
+
+    methods = [m for m in METHOD_ORDER if m in df["method"].unique()]
+    y_col = "fraction" if relative else "raw_bins"
+    y_label = r"Fraction of bins covered by $\geq N$ marks (norm. to N=1)" if relative else r"Bins covered by $\geq N$ marks"
+
+    sns.lineplot(data=df, x="N", y=y_col, hue="method", hue_order=methods,
+                 palette=PALETTE, marker="o", markersize=6, errorbar="se",
+                 err_kws={"alpha": 0.2}, ax=ax)
+
+    ax.set_xlabel("Number of marks (N)", fontsize=10)
+    ax.set_ylabel(y_label, fontsize=10)
+    n_ds = df["dataset"].nunique()
+    if title:
+        plot_title = title
+    else:
+        type_str = "Relative" if relative else "Absolute"
+        plot_title = f"Binarization Mark Coverage — {type_str} (n={n_ds})" if n_ds > 1 else f"Binarization Mark Coverage — {type_str}"
+    ax.set_title(plot_title, fontsize=11, fontweight="bold")
+    ax.set_xticks(sorted(df["N"].unique()))
+    if relative:
+        ax.set_ylim(-0.02, 1.05)
+    else:
+        ax.set_yscale("log")
+    ax.grid(True, alpha=0.3)
+    ax.legend(title="Method", fontsize=9, title_fontsize=9)
+
+    if outfile:
+        save_fig(fig, outfile)
+    return fig, ax
+
+
+def plot_mark_coverage_absolute(df, outfile=None, title=None, ax=None):
+    """Plot absolute binarization mark coverage lines (raw bins)."""
+    return plot_mark_coverage(df, outfile=outfile, title=title, ax=ax, relative=False)
+
+
+def plot_mark_coverage_relative(df, outfile=None, title=None, ax=None):
+    """Plot relative binarization mark coverage lines (normalized to N=1)."""
+    return plot_mark_coverage(df, outfile=outfile, title=title, ax=ax, relative=True)

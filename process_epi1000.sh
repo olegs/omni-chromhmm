@@ -1,12 +1,8 @@
 #!/bin/bash
 # Project root directory
 ROOT=$(cd "$(dirname "$0")" && pwd)
+source "$ROOT/match.sh"
 
-# Compatibility for Zsh
-if [ -n "$ZSH_VERSION" ]; then
-  emulate bash
-  setopt shwordsplit
-fi
 
 DIR=~/data/2026_segmentations/epi1000
 mkdir -p $DIR
@@ -43,12 +39,11 @@ gzip ${E}_15_coreMarks_dense.bed;
 done
 
 # Rematch to the joint model
-for E in $(cat marks.txt); do echo $E;
+for E in $(cat names.txt); do echo $E;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=${E}_15_coreMarks_dense.bed.gz;
- MATCHED=${WORK/.bed.gz/_matched.bed};
  if [[ -f $REF ]] && [[ -f $WORK ]]; then
-	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
+	match_states "$REF" "$WORK"
  fi;
 done
 
@@ -114,7 +109,8 @@ BIN=100;
 #KMeans states processing
 for E in $(cat names.txt); do echo "===================="; echo $E;
 for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
- MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac"
+  BIN=$(get_bin_size "$PC")
+  MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac"
  PEAKS=()
  for M in H3K4me3 H3K4me1 H3K36me3 H3K9me3 H3K27me3 H3K27ac; do
   if [[ $PC == "omni" ]]; then
@@ -169,18 +165,13 @@ done
 # Rematch peak caller states
 for E in $(cat names.txt); do echo $E;
 for PC in homer macs2 omni;   do echo $PC;
+  BIN=$(get_bin_size "$PC")
 # REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
- MATCHED=${WORK/.bed/_matched.bed};
- if [[ -f $REF ]] && [[ -f $WORK ]] && [[ ! -f $MATCHED ]]; then
-	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
- fi;
+ match_states "$REF" "$WORK" "$PC" "$BIN" "$E"
  WORK_BMM=$E/$PC/${E}_${PC}_bmm3_states.bed;
- MATCHED_BMM=${WORK_BMM/.bed/_matched.bed};
- if [[ -f $REF ]] && [[ -f $WORK_BMM ]] && [[ ! -f $MATCHED_BMM ]]; then
-	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK_BMM > $MATCHED_BMM;
- fi;
+ match_states "$REF" "$WORK_BMM" "$PC" "$BIN" "$E"
 done
 done
 
@@ -189,17 +180,15 @@ for E in $(cat names.txt); do echo $E;
 # REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=${E}/${E}_chromhmm/${E}_15_dense.bed;
- MATCHED=${WORK/.bed/_matched.bed};
- if [[ -f $REF ]] && [[ -f $WORK ]]; then
-	python "$ROOT/scripts/rules/match.py" --ref $REF --work $WORK > $MATCHED;
- fi;
+ match_states "$REF" "$WORK" "chromhmm" 200 "$E"
 done
 
 ########## Joint models ###################
 
 # Joint KMeans states processing
 for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
- MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac"
+  BIN=$(get_bin_size "$PC")
+  MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac"
  CELLS=$(cat names.txt | tr '\n' ',' | sed 's/,$//')
  ALL_PEAKS=()
  for E in $(cat names.txt); do
@@ -229,7 +218,8 @@ done
 
 # Rematch joint peak caller states
 for PC in homer macs2 omni; do echo $PC;
- REFS=()
+  BIN=$(get_bin_size "$PC")
+  REFS=()
  WORKS=()
  MATCHEDS=()
  for E in $(cat names.txt); do

@@ -88,6 +88,7 @@ DOMAIN_DISPLAY = {FULL: FULL_DISPLAY, NOQH: NOQH_DISPLAY}
 # "" for FULL, "_noqh" for NOQH: the suffix every domain-specific column, TSV
 # and matrix name carries.
 NOQH_SUFFIX = f"_{NOQH}"
+TSS_WINDOW = 2000
 
 
 def normalize_metric(name):
@@ -244,10 +245,10 @@ DISPLAY_NAMES = {
     BMM3_OMNI:             "OmniPeak BMM3",
     BMM3_HOMER:            "Homer BMM3",
     BMM3_MACS2:            "MACS2 BMM3",
-    BMM_OMNI:              "OmniPeak BMM (current)",
-    BMM_HOMER:             "Homer BMM (current)",
-    BMM_MACS2:             "MACS2 BMM (current)",
-    KMEANS3_OMNI:          "OmniPeak KMeans3 (prev, current, next)",
+    BMM_OMNI:              "OmniPeak BMM",
+    BMM_HOMER:             "Homer BMM",
+    BMM_MACS2:             "MACS2 BMM",
+    KMEANS3_OMNI:          "OmniPeak KMeans3",
     JOINT_CHROMHMM:        "Joint ChromHMM",
     JOINT_KMEANS_OMNI:     "Joint OmniPeak KMeans",
     JOINT_KMEANS_HOMER:    "Joint Homer KMeans",
@@ -317,10 +318,7 @@ def normalize_method(name):
 # The Quies/Het bulk of the genome, dropped by the NOQH variant of every metric,
 # where it would otherwise dominate both kappa and Jaccard.
 NOQH_STATES = {
-    "Quies", "Quiescent", "Quies_low",
-    "Het", "9_Het", "13_Het",
-    "15_Quies", "18_Quies",
-    "8_ZNF/Rpts", "ZNF/Rpts"
+    "Quies", "Quiescent", "Background", "Het", "ZNF/Rpts"
 }
 
 # The same background, named in the vocabulary of interpretation.py: what the
@@ -331,6 +329,11 @@ NOQH_STATES = {
 NOQH_TYPES = (QUIESCENT, FACULTATIVE_HET, CONSTITUTIVE_HET)
 
 
+def normalize_state_name(name):
+    """Remove leading number: '1_TssA' -> 'TssA', '01_TssA' -> 'TssA'."""
+    return re.sub(r"^\d+_", "", str(name).strip())
+
+
 def is_quiescent(name):
     """True for the quiescent state, under any spelling a markup gives it.
 
@@ -339,23 +342,97 @@ def is_quiescent(name):
     not relabelled the states, and a model that splits the background names
     the halves "Quies2", "Quies3".
 
-    Narrower than NOQH_STATES on purpose: Het and ZNF/Rpts do carry marks, the
+    Narrower than is_noqh() on purpose: Het and ZNF/Rpts do carry marks, the
     NOQH domain only drops them alongside the quiescent bulk because together
     they are what dominates a placement metric.
     """
-    name = re.sub(r"^\d+_", "", str(name).strip())
-    return name.lower().startswith("quies")
+    name = normalize_state_name(name).lower()
+    return name.startswith("quies") or name == "background"
 
 
-# The state families the functional validations score, over the names the
-# 15-state markups use: the promoter family is Tss with its flanking states,
-# the active family adds the enhancers. Biv is in neither - a bivalent promoter
-# is as much repressed as active, so counting it as active would charge a
-# caller for finding one.
-PROMOTER_STATES = ("Tss", "TssFlnk", "TssFlnkU", "TssFlnkD")
-TX_STATES = ("Tx", "TxWk")
-ENHANCER_STATES = ("Enh", "Enh1", "Enh2", "EnhG", "EnhG1", "EnhG2", "EnhLo")
+def is_noqh(name):
+    """True for states in the NOQH background (Quies, Het, ZNF/Rpts, ReprPC).
+
+    Handles numbered variants ("15_Quies"), case, and common naming variations.
+    """
+    name = normalize_state_name(name).lower()
+    return (name.startswith("quies") or name == "background" or
+            "het" in name or "znf" in name or "rpts" in name or "reprpc" in name)
+
+
+# Core functional state sets optimized for biological benchmarking
+PROMOTER_CORE_STATES = ("Tss", "TssA", "TssAFlnk", "TssFlnkU")
+PROMOTER_FLANK_STATES = ("TssFlnk", "TssFlnkD")
+PROMOTER_STATES = PROMOTER_CORE_STATES + PROMOTER_FLANK_STATES
+
+DISTAL_ENHANCER_STATES = ("Enh", "EnhA", "EnhAFlnk", "Enh1", "Enh2")
+GENIC_ENHANCER_STATES = ("EnhG", "EnhG1", "EnhG2", "EnhLo")
+ENHANCER_STATES = DISTAL_ENHANCER_STATES + GENIC_ENHANCER_STATES
+
+# Active open chromatin for ATAC-seq validation (excludes non-open genic enhancers)
+ACTIVE_OPEN_STATES = PROMOTER_CORE_STATES + DISTAL_ENHANCER_STATES
 ACTIVE_STATES = PROMOTER_STATES + ENHANCER_STATES
+
+# Transcribed states
+TX_STATES = ("Tx", "TxA", "TxWk", "TxFlnk")
+TX_CORE_STATES = ("Tx", "TxA", "TxFlnk")
+
+BIV_STATES = ("TssBiv", "BivFlnk", "EnhBiv", "Biv")
+
+
+def is_promoter_core(name):
+    """True for core promoter states (Tss, TssA, TssAFlnk, TssFlnkU)."""
+    return normalize_state_name(name) in PROMOTER_CORE_STATES
+
+
+def is_promoter_flank(name):
+    """True for flanking promoter states (TssFlnk, TssFlnkD)."""
+    return normalize_state_name(name) in PROMOTER_FLANK_STATES
+
+
+def is_promoter(name):
+    """True for promoter states (core and flanking)."""
+    return normalize_state_name(name) in PROMOTER_STATES
+
+
+def is_distal_enhancer(name):
+    """True for distal enhancer states (Enh, EnhA, EnhAFlnk, Enh1, Enh2)."""
+    return normalize_state_name(name) in DISTAL_ENHANCER_STATES
+
+
+def is_genic_enhancer(name):
+    """True for genic enhancer states (EnhG, EnhG1, EnhG2, EnhLo)."""
+    return normalize_state_name(name) in GENIC_ENHANCER_STATES
+
+
+def is_enhancer(name):
+    """True for enhancer states (distal and genic)."""
+    return normalize_state_name(name) in ENHANCER_STATES
+
+
+def is_active_open(name):
+    """True for active open chromatin (core promoters and distal enhancers)."""
+    return normalize_state_name(name) in ACTIVE_OPEN_STATES
+
+
+def is_active(name):
+    """True for all active chromatin (promoters and enhancers)."""
+    return normalize_state_name(name) in ACTIVE_STATES
+
+
+def is_tx_core(name):
+    """True for core transcribed states (Tx, TxA, TxFlnk)."""
+    return normalize_state_name(name) in TX_CORE_STATES
+
+
+def is_tx(name):
+    """True for transcribed states (Tx, TxA, TxFlnk, TxWk)."""
+    return normalize_state_name(name) in TX_STATES
+
+
+def is_biv(name):
+    """True for bivalent states (TssBiv, BivFlnk, EnhBiv)."""
+    return normalize_state_name(name) in BIV_STATES
 
 # (key, label, state family, annotation label prefix) of the functional
 # validations: a state family against an annotation of the same sample that
@@ -367,12 +444,12 @@ ACTIVE_STATES = PROMOTER_STATES + ENHANCER_STATES
 # ("atac_ENCFF243NTP"), so annotations are matched by prefix rather than by
 # name.
 FUNCTIONAL_TARGETS = (
-    ("functional_atac", "Active chromatin vs ATAC-seq",
-     ACTIVE_STATES, "atac_"),
-    ("functional_tss", "Tss states vs expressed TSS \u00b12 kb",
-     PROMOTER_STATES, "ExpressedTSS2kb"),
-    ("functional_refseq_tss", "Tss states vs RefSeq TSS \u00b12 kb",
-     PROMOTER_STATES, "RefSeqTSS2kb"),
+    ("functional_atac", "Active open chromatin vs ATAC-seq",
+     ACTIVE_OPEN_STATES, "atac_"),
+    ("functional_tss", "Core Tss states vs expressed TSS",
+     PROMOTER_CORE_STATES, "ExpressedTSS2kb"),
+    ("functional_refseq_tss", "Core Tss states vs RefSeq TSS",
+     PROMOTER_CORE_STATES, "RefSeqTSS2kb"),
     ("functional_tx", "Tx states vs expressed gene bodies",
      TX_STATES, "ExpressedGeneBodies"),
 )
@@ -433,6 +510,12 @@ def annotation_f1(dirpath, states, prefix):
         rows.append({"Label": str(label),
                      F1_DISPLAY: 2 * overlap / (family_bp + annotation)})
     return rows
+
+
+def extend_bed(bed_data, window):
+    """Extend each interval in bed_data (list of 4-tuples) by *window* bp on each side."""
+    return [(chrom, max(0, s - window), e + window, label)
+            for chrom, s, e, label in bed_data]
 
 
 def annotation_jaccard(dirpath, state, prefix):
