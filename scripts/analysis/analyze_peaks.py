@@ -325,6 +325,13 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=None):
         plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage_relative.png"), relative=True)
         plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage.png"), relative=True)
 
+    comb_df = binarization_mark_combinations(args.ds, args.cell, workdir=".")
+    if not comb_df.empty:
+        comb_path = os.path.join(args.outdir, "mark_combinations.tsv")
+        comb_df.to_csv(comb_path, sep="\t", index=False, float_format="%.4f")
+        plot_mark_combinations(comb_df, outfile=os.path.join(args.outdir, "mark_combinations.png"))
+        plot_mark_combinations(comb_df, outfile=os.path.join(args.outdir, "binarization_mark_combinations.png"))
+
     print("Done.", file=sys.stderr)
 
 
@@ -364,6 +371,58 @@ def fast_count_marks(file_path):
             parts = l.split(b"\t")
             sums.append(sum(1 for x in parts if x == b"1"))
         return np.bincount(sums, minlength=m + 1)
+
+
+def fast_get_combinations(file_path):
+    """Return (m, unique_bitmasks) for a binary file."""
+    if file_path.endswith(".gz"):
+        opener = gzip.open(file_path, "rb")
+    else:
+        opener = open(file_path, "rb")
+    with opener as f:
+        h1 = f.readline()
+        h2 = f.readline()
+        data = f.read()
+    if not data:
+        return 0, set()
+    marks = h2.strip().split(b"\t")
+    m = len(marks)
+    line_len = 2 * m
+    if len(data) >= line_len and data[line_len - 1] == 10:
+        step = line_len
+    elif len(data) > line_len and data[line_len] == 10:
+        step = line_len + 1
+    else:
+        step = None
+
+    if step is not None and len(data) % step == 0:
+        arr = np.frombuffer(data, dtype=np.uint8).reshape(-1, step)
+        mark_cols = (arr[:, 0:2*m:2] == 49)
+        if m <= 62:
+            powers = (1 << np.arange(m, dtype=np.int64))
+            bitmasks = mark_cols.dot(powers)
+            return m, set(np.unique(bitmasks))
+        else:
+            unique_rows = np.unique(mark_cols, axis=0)
+            return m, set(tuple(r) for r in unique_rows)
+    else:
+        lines = data.split(b"\n")
+        unique_masks = set()
+        for l in lines:
+            if not l:
+                continue
+            parts = l.strip().split(b"\t")
+            if len(parts) != m:
+                continue
+            if m <= 62:
+                mask = 0
+                for j, x in enumerate(parts):
+                    if x == b"1":
+                        mask |= (1 << j)
+                unique_masks.add(mask)
+            else:
+                unique_masks.add(tuple(x == b"1" for x in parts))
+        return m, unique_masks
 
 
 def get_binary_files(ds, method, cell, workdir="."):
@@ -534,3 +593,137 @@ def plot_mark_coverage_absolute(df, outfile=None, title=None, ax=None):
 def plot_mark_coverage_relative(df, outfile=None, title=None, ax=None):
     """Plot relative binarization mark coverage lines (normalized to N=1)."""
     return plot_mark_coverage(df, outfile=outfile, title=title, ax=ax, relative=True)
+
+
+def binarization_mark_combinations(ds, cell, methods=METHOD_ORDER, workdir="."):
+    """Compute number of unique combinations of N marks (N=1..M).
+
+    Returns DataFrame with columns: ['dataset', 'method', 'N', 'combinations'].
+    """
+    rows = []
+    ds_path = os.path.join(workdir, ds) if ds else workdir
+    for method in methods:
+        files = get_binary_files(ds, method, cell, workdir=workdir)
+        unique_masks = set()
+        m_total = 0
+        if files:
+            for f in files:
+                m, masks = fast_get_combinations(f)
+                if m > m_total:
+                    m_total = m
+                unique_masks.update(masks)
+        else:
+            caller = {"HOMER": "homer", "MACS2": "macs2", "OmniPeak": "omni"}.get(method, method.lower())
+            caller_dirs = [os.path.join(ds_path, caller)]
+            caller_dirs += glob.glob(os.path.join(ds_path, "*", caller))
+            caller_dir = next((d for d in caller_dirs if os.path.isdir(d)), None)
+            if caller_dir:
+                import contextlib
+                import io
+                try:
+                    import peaks_segmentation
+                except ImportError:
+                    rules_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "rules"))
+                    if rules_dir not in sys.path:
+                        sys.path.insert(0, rules_dir)
+                    import peaks_segmentation
+                chromsizes_cands = [
+                    os.path.join(workdir, "hg19.chrom.sizes"),
+                    os.path.join(ds_path, "hg19.chrom.sizes"),
+                    os.path.join(ds_path, "..", "hg19.chrom.sizes"),
+                    os.path.expanduser("~/data/2026_segmentations/epi1000/hg19.chrom.sizes"),
+                ]
+                chromsizes_path = next((p for p in chromsizes_cands if os.path.exists(p)), None)
+                if chromsizes_path:
+                    marks = ["H3K4me3", "H3K4me1", "H3K36me3", "H3K9me3", "H3K27me3", "H3K27ac"]
+                    globs = {
+                        "homer": ["*{mark}*_homer.bed", "*{mark}*.bed"],
+                        "macs2": ["*{mark}*Peak", "*{mark}*.bed"],
+                        "omni": ["*{mark}*.peak", "*{mark}*.bed"],
+                    }
+                    peak_files = []
+                    for mk in marks:
+                        mf = []
+                        for pat in globs.get(caller, [f"*{mk}*"]):
+                            cand = sorted(glob.glob(os.path.join(caller_dir, pat.format(mark=mk))))
+                            cand = [f for f in cand if not f.endswith(".txt") and not f.endswith(".idx") and not f.endswith(".log") and not f.endswith(".png")]
+                            if cand:
+                                mf = cand
+                                break
+                        peak_files.append(mf)
+                    if any(len(mf) > 0 for mf in peak_files):
+                        chroms, sizes = peaks_segmentation.read_chrom_sizes(chromsizes_path)
+                        with contextlib.redirect_stderr(io.StringIO()):
+                            binarized, _ = peaks_segmentation.binarize_peaks(
+                                peak_files, chroms, sizes, 100, marks
+                            )
+                        m_total = binarized.shape[1]
+                        if m_total <= 62:
+                            powers = (1 << np.arange(m_total, dtype=np.int64))
+                            masks = binarized.dot(powers)
+                            unique_masks.update(np.unique(masks))
+                        else:
+                            unique_rows = np.unique(binarized == 1, axis=0)
+                            unique_masks.update(tuple(r) for r in unique_rows)
+
+        if m_total == 0 or not unique_masks:
+            continue
+
+        comb_counts = {}
+        for mask in unique_masks:
+            if isinstance(mask, (int, np.integer)):
+                if mask == 0:
+                    continue
+                n_ones = int(mask).bit_count()
+            else:
+                n_ones = sum(mask)
+                if n_ones == 0:
+                    continue
+            comb_counts[n_ones] = comb_counts.get(n_ones, 0) + 1
+
+        for N_val in range(1, m_total + 1):
+            rows.append({
+                "dataset": ds,
+                "method": method,
+                "N": N_val,
+                "combinations": comb_counts.get(N_val, 0)
+            })
+    return pd.DataFrame(rows)
+
+
+def plot_mark_combinations(df, outfile=None, title=None, ax=None):
+    """Plot number of unique mark combinations of N marks for N=1..M."""
+    if df.empty:
+        return None, None
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    else:
+        fig = ax.get_figure()
+
+    methods = [m for m in METHOD_ORDER if m in df["method"].unique()]
+
+    sns.lineplot(data=df, x="N", y="combinations", hue="method", hue_order=methods,
+                 palette=PALETTE, marker="o", markersize=6, errorbar="se",
+                 err_kws={"alpha": 0.2}, ax=ax)
+
+    ax.set_xlabel("Number of marks (N)", fontsize=AXIS_FONTSIZE)
+    ax.set_ylabel("Number of unique combinations", fontsize=AXIS_FONTSIZE)
+    ax.tick_params(labelsize=TICK_FONTSIZE)
+    n_ds = df["dataset"].nunique()
+    if title:
+        plot_title = title
+    else:
+        plot_title = f"Binarization Mark Combinations (n={n_ds})" if n_ds > 1 else "Binarization Mark Combinations"
+    ax.set_title(plot_title, **TITLE_STYLE)
+    ax.set_xticks(sorted(df["N"].unique()))
+    ax.grid(True, alpha=0.3)
+    ax.legend(title="Method", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE)
+
+    fig.tight_layout()
+    if outfile:
+        save_fig(fig, outfile)
+    return fig, ax
+
+
+plot_binarization_mark_combinations = plot_mark_combinations

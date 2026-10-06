@@ -138,6 +138,7 @@ def test_binarization_mark_coverage_and_plot():
         assert os.path.exists(os.path.join(summary_dir, "summary_2way_tss_exptss.png"))
         assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage_absolute.png"))
         assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage_relative.png"))
+        assert os.path.exists(os.path.join(summary_dir, "binarization_mark_combinations.png"))
 
 
 def test_binarization_mark_coverage_replicates():
@@ -237,3 +238,83 @@ def test_binarization_mark_coverage_chromhmm_binary_and_peak_fallback():
         assert set(df["method"]) == {"ChromHMM", "HOMER"}
         assert 1 in df[df["method"] == "ChromHMM"]["N"].values
         assert 1 in df[df["method"] == "HOMER"]["N"].values
+
+
+def test_binarization_mark_combinations_and_plot():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ds = "sample1"
+        cell = "SampleCell"
+        ds_dir = os.path.join(tmpdir, ds)
+        # ChromHMM default dir
+        ch_dir = os.path.join(ds_dir, "chromhmm_default")
+        os.makedirs(ch_dir, exist_ok=True)
+        ch_file = os.path.join(ch_dir, f"{cell}_chr1_binary.txt")
+        lines_ch = [
+            f"{cell}\tchr1\n",
+            "H3K4me3\tH3K27ac\tH3K4me1\n",
+            "0\t0\t0\n",  # 0
+            "1\t0\t0\n",  # N=1, mask 1
+            "0\t1\t0\n",  # N=1, mask 2
+            "1\t1\t0\n",  # N=2, mask 3
+            "1\t1\t1\n",  # N=3, mask 7
+        ]
+        with open(ch_file, "w") as f:
+            f.writelines(lines_ch)
+
+        # OmniPeak dir
+        omni_dir = os.path.join(ds_dir, "omni", "chromhmm_peaks")
+        os.makedirs(omni_dir, exist_ok=True)
+        omni_file = os.path.join(omni_dir, "chr1_binary.txt.gz")
+        lines_omni = [
+            f"{cell}\tchr1\n",
+            "H3K4me3\tH3K27ac\tH3K4me1\n",
+            "1\t0\t0\n",  # N=1, mask 1
+            "1\t0\t0\n",  # duplicate mask 1
+            "1\t1\t0\n",  # N=2, mask 3
+            "0\t1\t1\n",  # N=2, mask 6
+            "1\t1\t1\n",  # N=3, mask 7
+        ]
+        with gzip.open(omni_file, "wt") as f:
+            f.writelines(lines_omni)
+
+        m_ch, masks_ch = analyze_peaks.fast_get_combinations(ch_file)
+        assert m_ch == 3
+        assert masks_ch == {0, 1, 2, 3, 7}
+
+        m_omni, masks_omni = analyze_peaks.fast_get_combinations(omni_file)
+        assert m_omni == 3
+        assert masks_omni == {1, 3, 6, 7}
+
+        df = analyze_peaks.binarization_mark_combinations(
+            ds, cell, methods=["ChromHMM", "OmniPeak"], workdir=tmpdir
+        )
+        assert not df.empty
+        assert set(df["method"]) == {"ChromHMM", "OmniPeak"}
+        assert set(df["N"]) == {1, 2, 3}
+
+        # Check ChromHMM combination counts: N=1 -> 2 (masks 1, 2), N=2 -> 1 (mask 3), N=3 -> 1 (mask 7)
+        ch_sub = df[df["method"] == "ChromHMM"].set_index("N")["combinations"]
+        assert ch_sub[1] == 2
+        assert ch_sub[2] == 1
+        assert ch_sub[3] == 1
+
+        # Check OmniPeak combination counts: N=1 -> 1 (mask 1), N=2 -> 2 (masks 3, 6), N=3 -> 1 (mask 7)
+        omni_sub = df[df["method"] == "OmniPeak"].set_index("N")["combinations"]
+        assert omni_sub[1] == 1
+        assert omni_sub[2] == 2
+        assert omni_sub[3] == 1
+
+        # Plot combinations
+        plot_comb_path = os.path.join(tmpdir, "binarization_mark_combinations.png")
+        fig, ax = analyze_peaks.plot_mark_combinations(df, outfile=plot_comb_path)
+        assert fig is not None
+        assert ax is not None
+        assert os.path.exists(plot_comb_path)
+
+        # Test summary_plots._plot_mark_combinations
+        import summary_plots
+        summary_out = os.path.join(tmpdir, "summary_comb.png")
+        summary_plots._plot_mark_combinations(
+            [ds], tmpdir, summary_out, cells={ds: cell}
+        )
+        assert os.path.exists(summary_out)

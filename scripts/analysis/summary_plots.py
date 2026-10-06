@@ -881,6 +881,36 @@ def _plot_mark_coverage(datasets, workdir, outpath, cells=None, relative=True):
     analyze_peaks.plot_mark_coverage(cov_df, outfile=outpath, relative=relative)
 
 
+def _plot_mark_combinations(datasets, workdir, outpath, cells=None):
+    """Plot binarization mark combinations for multiple datasets."""
+    import analyze_peaks
+    if isinstance(datasets, pd.DataFrame):
+        comb_df = datasets
+    else:
+        frames = []
+        for i, ds in enumerate(datasets):
+            tsv_path = os.path.join(workdir, ds, "peaks", "mark_combinations.tsv")
+            if os.path.exists(tsv_path):
+                df = pd.read_csv(tsv_path, sep="\t")
+                frames.append(df)
+            else:
+                cand_tsvs = sorted(glob.glob(os.path.join(workdir, ds, "*", "peaks", "mark_combinations.tsv")))
+                if cand_tsvs:
+                    for cp in cand_tsvs:
+                        df = pd.read_csv(cp, sep="\t")
+                        frames.append(df)
+                else:
+                    cell = cells.get(ds, "") if isinstance(cells, dict) else (cells[i] if cells and i < len(cells) else None)
+                    df = analyze_peaks.binarization_mark_combinations(ds, cell, workdir=workdir)
+                    if not df.empty:
+                        frames.append(df)
+        if not frames:
+            print(f"  skipping {outpath}: no data")
+            return
+        comb_df = pd.concat(frames, ignore_index=True)
+    analyze_peaks.plot_mark_combinations(comb_df, outfile=outpath)
+
+
 def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile, match_method, ref_paths=None):
     """Grouped bar chart: fraction of genome per state, method as hue, all
     datasets pooled.
@@ -1450,9 +1480,11 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       peak_stats_outfile=None, mark_coverage_outfile=None,
                       mark_coverage_absolute_outfile=None,
                       mark_coverage_relative_outfile=None,
+                      mark_combinations_outfile=None,
                       binarization_mark_coverage_outfile=None,
                       binarization_mark_coverage_absolute_outfile=None,
                       binarization_mark_coverage_relative_outfile=None,
+                      binarization_mark_combinations_outfile=None,
                       ref_composition_outfile=None,
                       ref_comp_matrix=None,
                       ref_kappa_matrix=None, ref_jaccard_matrix=None,
@@ -1488,9 +1520,11 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         mark_coverage_outfile=mark_coverage_outfile,
         mark_coverage_absolute_outfile=mark_coverage_absolute_outfile,
         mark_coverage_relative_outfile=mark_coverage_relative_outfile,
+        mark_combinations_outfile=mark_combinations_outfile,
         binarization_mark_coverage_outfile=binarization_mark_coverage_outfile,
         binarization_mark_coverage_absolute_outfile=binarization_mark_coverage_absolute_outfile,
         binarization_mark_coverage_relative_outfile=binarization_mark_coverage_relative_outfile,
+        binarization_mark_combinations_outfile=binarization_mark_combinations_outfile,
         ref_composition_outfile=ref_composition_outfile,
         ref_comp_matrix=ref_comp_matrix,
         ref_kappa_matrix=ref_kappa_matrix, ref_jaccard_matrix=ref_jaccard_matrix,
@@ -1718,6 +1752,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
 
         _plot_mark_coverage(ds, args.workdir or ".", os.path.join(args.outdir, "binarization_mark_coverage_absolute.png"), cells=args.cells, relative=False)
         _plot_mark_coverage(ds, args.workdir or ".", os.path.join(args.outdir, "binarization_mark_coverage_relative.png"), cells=args.cells, relative=True)
+        _plot_mark_combinations(ds, args.workdir or ".", os.path.join(args.outdir, "binarization_mark_combinations.png"), cells=args.cells)
 
     if args.state_coverage_outfile:
         if not (args.workdir and (args.markups_dir or args.ref_paths) and args.cells):
@@ -1756,6 +1791,11 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
     if mark_cov_rel_out:
         os.makedirs(os.path.dirname(os.path.abspath(mark_cov_rel_out)), exist_ok=True)
         _plot_mark_coverage(args.datasets, args.workdir or ".", mark_cov_rel_out, cells=args.cells, relative=True)
+
+    mark_comb_out = args.mark_combinations_outfile or args.binarization_mark_combinations_outfile
+    if mark_comb_out:
+        os.makedirs(os.path.dirname(os.path.abspath(mark_comb_out)), exist_ok=True)
+        _plot_mark_combinations(args.datasets, args.workdir or ".", mark_comb_out, cells=args.cells)
 
     # Deprecated: split into the two plots above.
     if args.peak_stats_outfile:
