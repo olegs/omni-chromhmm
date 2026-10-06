@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
 from utils import (METHOD_ORDER, DISPLAY_NAMES, scatter_points, strip_points,
-                   save_fig, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE,
+                   save_fig, BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE,
                    LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE)
 
 
@@ -171,7 +171,7 @@ def _grouped_bars(ax, methods, df_slice, y_col, err_col, points_col=None):
         means, errs = np.array(means), np.array(errs)
         ax.bar(x + offsets[etype], np.nan_to_num(means),
                width=width * 0.9, color=EMISSION_COLORS[etype],
-               label=EMISSION_LABELS[etype], edgecolor="lightgrey", linewidth=1)
+               label=EMISSION_LABELS[etype], edgecolor=BAR_STYLE["edgecolor"], linewidth=BAR_STYLE["linewidth"])
         valid = ~np.isnan(means) & ~np.isnan(errs)
         if valid.any():
             ax.errorbar(x[valid] + offsets[etype], means[valid],
@@ -441,9 +441,7 @@ def plot_out_binem(df, methods, outfile, cross_assay=False):
         data=plot_df, x="Method", y="mean_sim",
         order=method_labels,
         color="#5B8DB8",
-        estimator="mean", errorbar="sd",
-        ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
-        edgecolor="lightgrey", linewidth=1,
+        estimator="mean", ax=ax, **{**BAR_STYLE, "errorbar": "sd"},
     )
     strip_points(ax, data=plot_df, x="Method", y="mean_sim",
                  order=method_labels, dodge=False, size=2)

@@ -18,6 +18,23 @@ import matplotlib.colors as mcolors
 from matplotlib.transforms import blended_transform_factory, offset_copy
 import seaborn as sns
 
+
+# Every bar chart of the notebooks is the same figure: mean +- SE bars in
+# BAR_STYLE, the observations on top of them, the joint models hatched, and
+# the mean of each bar written inside the axes. bar_plot() draws it, and the
+# two variants after it cover the composition plots, whose Quiescent state
+# needs either a broken axis or a stack. Every other bar chart of the scripts
+# and notebooks takes the same BAR_STYLE and font sizes below.
+BAR_STYLE = dict(capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
+                 edgecolor="lightgrey", linewidth=1)
+TITLE_STYLE = dict(fontsize=11, fontweight="bold")
+AXIS_FONTSIZE = 9
+TICK_FONTSIZE = 8
+LEGEND_FONTSIZE = 8
+LEGEND_TITLE_FONTSIZE = 9
+LABEL_FONTSIZE = 7
+ANNOTATION_FONTSIZE = 7
+
 # Metrics, plus the two comparison domains every agreement is measured in: full
 # over all states, noqh with the Quies/Het background dropped. These are the
 # on-disk spelling — the keys of agreement_by_mode() and the "_noqh" file
@@ -852,22 +869,6 @@ def group_xticks(ax, order, labels=None, key=None, rotation=45, fontsize=None,
                        fontsize=fontsize)
 
 
-# Every bar chart of the notebooks is the same figure: mean +- SE bars in the
-# style above, the observations on top of them, the joint models hatched, and
-# the mean of each bar written inside the axes. bar_plot() draws it, and the
-# two variants below cover the composition plots, whose Quiescent state needs
-# either a broken axis or a stack.
-BAR_STYLE = dict(capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
-                 edgecolor="lightgrey", linewidth=1)
-TITLE_STYLE = dict(fontsize=11, fontweight="bold")
-AXIS_FONTSIZE = 9
-TICK_FONTSIZE = 8
-LEGEND_FONTSIZE = 8
-LEGEND_TITLE_FONTSIZE = 9
-LABEL_FONTSIZE = 7
-ANNOTATION_FONTSIZE = 7
-
-
 def _bars(ax, data, x, y, order, hue, hue_order, palette, color, hatch, points,
           bar_kwargs, point_data=None):
     """One sns.barplot in the shared style, with its points and hatching.
@@ -1057,7 +1058,7 @@ def stacked_bar_plot(pivot, colors=None, figsize=(15, 6), width=0.8, title=None,
     pivot.plot(kind="bar", stacked=True, ax=ax, width=width, color=colors, linewidth=0)
     # Drawn after the stack so ax.legend() below picks up the components only.
     pivot.sum(axis=1).plot(kind="bar", ax=ax, width=width, facecolor="none",
-                           edgecolor="lightgrey", linewidth=1, legend=False)
+                           edgecolor=BAR_STYLE["edgecolor"], linewidth=BAR_STYLE["linewidth"], legend=False)
     if title:
         ax.set_title(title, **TITLE_STYLE)
     ax.legend(title=legend_title, fontsize=legend_fontsize, title_fontsize=LEGEND_TITLE_FONTSIZE,

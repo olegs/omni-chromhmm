@@ -23,7 +23,7 @@ import seaborn as sns
 
 sys.path.insert(0, os.path.dirname(__file__))
 import utils
-from utils import (save_fig, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE,
+from utils import (save_fig, BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE,
                    LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE,
                    ANNOTATION_FONTSIZE)
 
@@ -645,7 +645,7 @@ def plot_segment_lengths(segs, outdir):
 
     fig, ax = plt.subplots(figsize=(max(4, 0.3 * len(states)), 4.2))
     sns.barplot(data=df, x="state", y="mean_length", ax=ax, color="skyblue",
-                edgecolor="lightgrey", linewidth=1)
+                **BAR_STYLE)
     
     ax.set_xticks(range(len(states)))
     ax.set_xticklabels(states, rotation=90, fontsize=TICK_FONTSIZE)

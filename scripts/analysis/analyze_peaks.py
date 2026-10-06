@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from utils import (BIN_COLORS, save_fig, TITLE_STYLE, AXIS_FONTSIZE,
+from utils import (BIN_COLORS, save_fig, BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE,
                    TICK_FONTSIZE, LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE)
 
 
@@ -167,7 +167,7 @@ def _bar_plot(df, value_col, ylabel, title, outpath):
     
     sns.barplot(data=df, x="mark", y=value_col, hue="method",
                 order=marks, hue_order=methods, palette=PALETTE,
-                ax=ax, edgecolor="lightgrey", linewidth=1)
+                ax=ax, **BAR_STYLE)
 
     ax.set_xticks(range(len(marks)))
     ax.set_xticklabels(marks, rotation=30, ha="right", fontsize=TICK_FONTSIZE)

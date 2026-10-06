@@ -34,7 +34,7 @@ from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
                    method_color, save_fig, NOQH_STATES as _EXCLUDE_STATES, \
                    JACCARD, KAPPA, NOQH_SUFFIX, \
                    JACCARD_DISPLAY, KAPPA_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY, \
-                   TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE, \
+                   BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE, \
                    LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE, ANNOTATION_FONTSIZE
 
 
@@ -118,7 +118,7 @@ def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
     sns.barplot(data=df, x="segmentation", y="total_entropy", ax=ax,
                 palette={l: c for l, c in zip(df["segmentation"], colors)},
                 hue="segmentation", dodge=False,
-                edgecolor="lightgrey", linewidth=1)
+                **BAR_STYLE)
     
     ax.set_xticks(range(len(df)))
     ax.set_xticklabels(display_names, rotation=45, ha="right", fontsize=TICK_FONTSIZE)
@@ -151,7 +151,7 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
     
     sns.barplot(data=df_combined, x="segmentation", y="total_entropy", hue="Type",
                 ax=ax, palette={FULL_DISPLAY: "#4878CF", NOQH_DISPLAY: "#E8833A"},
-                capsize=0.05, edgecolor="lightgrey", linewidth=1)
+                **BAR_STYLE)
     
     display_names = [_get_method_style(l)[0] for l in df_full["segmentation"]]
     ax.set_xticks(range(len(df_full)))

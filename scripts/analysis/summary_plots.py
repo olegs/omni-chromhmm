@@ -37,7 +37,7 @@ from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
                    COMPOSITION, JACCARD, KAPPA, FULL, NOQH, NOQH_SUFFIX,
                    COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY, COSINE_DISPLAY,
                    FULL_DISPLAY, NOQH_DISPLAY,
-                   TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE,
+                   BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE,
                    LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE, ANNOTATION_FONTSIZE)
 from analyze import load_bed_df
 
@@ -312,7 +312,7 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
     if np.all(np.isnan(means)):
         fig, ax = plt.subplots(figsize=(5, 4))
         ax.text(0.5, 0.5, "No data available", ha="center", va="center",
-                transform=ax.transAxes, fontsize=11, color="grey")
+                transform=ax.transAxes, fontsize=AXIS_FONTSIZE, color="grey")
         ax.set_axis_off()
         ax.set_title(title, **TITLE_STYLE)
         save_fig(fig, outpath, tight=False, note="(no data)")
@@ -329,8 +329,7 @@ def _plot_summary(data, title, ylabel, outpath, partial_note=False, order=None):
 
     sns.barplot(data=df_melted, x="display_name", y="value", order=display_order,
                 palette=palette, hue="display_name", dodge=False,
-                capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
-                ax=ax, edgecolor="lightgrey", linewidth=1, legend=False)
+                ax=ax, legend=False, **BAR_STYLE)
 
     strip_points(ax, data=df_melted, x="display_name", y="value",
                  order=display_order, dodge=False, size=2)
@@ -542,7 +541,7 @@ def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
         
         sns.barplot(data=plot_df, x="state", y=metric, 
                     order=states_order, color="#4878CF",
-                    capsize=0.1, errorbar="se", ax=ax, edgecolor="lightgrey", linewidth=1)
+                    ax=ax, **BAR_STYLE)
         
         strip_points(ax, data=plot_df, x="state", y=metric,
                      order=states_order,
@@ -610,9 +609,7 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
         order=method_labels,
         hue_order=[m[0] for m in metric_configs],
         palette=palette,
-        estimator="mean", errorbar="se",
-        ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
-        edgecolor="lightgrey", linewidth=1,
+        estimator="mean", ax=ax, **BAR_STYLE,
     )
     strip_points(ax, data=plot_df, x="Method", y="value", hue="Metric",
                  order=method_labels, hue_order=[m[0] for m in metric_configs])
@@ -656,9 +653,7 @@ def _plot_rep_consistency_per_state(datasets, methods_dirs, outdir):
             data=df, x="state", y=metric, hue="Method",
             order=states, hue_order=method_labels,
             palette=METHOD_PALETTE,
-            estimator="mean", errorbar="se",
-            ax=ax, capsize=0.05, err_kws={"linewidth": 1.0},
-            edgecolor="lightgrey", linewidth=0.5
+            estimator="mean", ax=ax, **BAR_STYLE
         )
 
         strip_points(ax, data=df, x="state", y=metric, hue="Method",
@@ -768,8 +763,7 @@ def _peak_bar(data, col, ylabel, title, outpath, p_low=None, p_high=None, marks=
 
     sns.barplot(data=data, x="mark", y=col, hue="method",
                 order=marks, hue_order=methods, palette=_PEAK_METHOD_COLORS,
-                capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
-                ax=ax, edgecolor="lightgrey", linewidth=1)
+                ax=ax, **BAR_STYLE)
 
     strip_points(ax, data=data, x="mark", y=col, hue="method",
                  order=marks, hue_order=methods, dodge=True, size=2)
@@ -960,10 +954,8 @@ def _plot_state_coverage(datasets, cells, workdir, markups_dir, nstates, outfile
         sns.barplot(
             data=plot_df, x="State", y="fraction", hue="Method",
             hue_order=labels, palette=colors,
-            estimator="mean", errorbar="se",
-            ax=ax, capsize=0.15, err_kws={"linewidth": 1.0},
-            legend=(ax is ax_top),
-            edgecolor="lightgrey", linewidth=1,
+            estimator="mean", ax=ax, legend=(ax is ax_top),
+            **BAR_STYLE,
         )
         strip_points(ax, data=plot_df, x="State", y="fraction", hue="Method",
                      order=states, hue_order=labels,
@@ -1040,8 +1032,8 @@ def _stacked_composition_chart(coverages, labels, title, outfile,
         bottom += vals
 
     # A single border around the whole stacked bar.
-    ax.bar(x, bottom, color='none', edgecolor='lightgrey', linewidth=1,
-           width=0.8, label='_nolegend_')
+    ax.bar(x, bottom, color='none', edgecolor=BAR_STYLE["edgecolor"],
+           linewidth=BAR_STYLE["linewidth"], width=0.8, label='_nolegend_')
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=label_fontsize,
@@ -1257,9 +1249,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
         order=method_labels,
         hue_order=SIMILARITY_ORDER,
         palette=palette,
-        estimator="mean", errorbar="se",
-        ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
-        edgecolor="lightgrey", linewidth=1,
+        estimator="mean", ax=ax, **BAR_STYLE,
     )
     strip_points(ax, data=plot_df, x="Method", y="value", hue="Metric",
                  order=method_labels,
@@ -1300,9 +1290,7 @@ def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
     fig, ax = plt.subplots(figsize=(5, 5))
     sns.barplot(data=plot_df, x="Metric", y="value", hue="Metric",
                 order=SIMILARITY_ORDER, palette=SIMILARITY_COLORS,
-                estimator="mean", errorbar="se",
-                ax=ax, capsize=0.15, err_kws={"linewidth": 1.0},
-                legend=False, edgecolor="lightgrey", linewidth=1)
+                estimator="mean", ax=ax, legend=False, **BAR_STYLE)
     strip_points(ax, data=plot_df, x="Metric", y="value",
                  order=SIMILARITY_ORDER, dodge=False)
     ax.set_xlabel("")
@@ -1350,9 +1338,7 @@ def _plot_reference_distribution_combined(comp_path, kappa_path, jaccard_path,
         data=plot_df, x="Metric", y="value", hue="Mode",
         order=SIMILARITY_ORDER, hue_order=[FULL_DISPLAY, NOQH_DISPLAY],
         palette={FULL_DISPLAY: "#4878CF", NOQH_DISPLAY: "#E8833A"},
-        estimator="mean", errorbar="se",
-        ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
-        edgecolor="lightgrey", linewidth=1,
+        estimator="mean", ax=ax, **BAR_STYLE,
     )
     strip_points(
         ax, data=plot_df, x="Metric", y="value", hue="Mode",
@@ -1403,7 +1389,7 @@ def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
             return
     fig, ax = plt.subplots(figsize=(max(5, len(labs) * 1.2), 4.2))
     x = np.arange(len(labs))
-    ax.bar(x, vals, color=BIN_COLORS["reference"], edgecolor="lightgrey", linewidth=1)
+    ax.bar(x, vals, color=BIN_COLORS["reference"], edgecolor=BAR_STYLE["edgecolor"], linewidth=BAR_STYLE["linewidth"])
     ax.set_xticks(x)
     ax.set_xticklabels(labs, rotation=45, ha="right", fontsize=TICK_FONTSIZE)
     ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
