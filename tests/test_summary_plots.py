@@ -85,3 +85,30 @@ def test_plot_per_dataset_method_composition_reference(tmp_path):
     )
     ref_file = os.path.join(outdir, "method_ds_composition_reference.png")
     assert os.path.exists(ref_file)
+
+
+def test_plot_reference_distribution_combined(tmp_path):
+    # Mock similarity matrix TSVs
+    matrix_content = "cell\tCellA\tCellB\nCellA\t1.0\t0.8\nCellB\t0.8\t1.0\n"
+    comp_file = tmp_path / "comp.tsv"
+    kappa_file = tmp_path / "kappa.tsv"
+    jaccard_file = tmp_path / "jaccard.tsv"
+    comp_noqh_file = tmp_path / "comp_noqh.tsv"
+    kappa_noqh_file = tmp_path / "kappa_noqh.tsv"
+    jaccard_noqh_file = tmp_path / "jaccard_noqh.tsv"
+
+    for f in [comp_file, kappa_file, jaccard_file, comp_noqh_file, kappa_noqh_file, jaccard_noqh_file]:
+        with open(f, "w") as fp:
+            fp.write(matrix_content)
+
+    outfile = str(tmp_path / "similarity_distribution_combined.png")
+    summary_plots.run_summary_plots(
+        ref_comp_matrix=str(comp_file),
+        ref_kappa_matrix=str(kappa_file),
+        ref_jaccard_matrix=str(jaccard_file),
+        ref_comp_noqh_matrix=str(comp_noqh_file),
+        ref_kappa_noqh_matrix=str(kappa_noqh_file),
+        ref_jaccard_noqh_matrix=str(jaccard_noqh_file),
+        ref_dist_combined_outfile=outfile,
+    )
+    assert os.path.exists(outfile)

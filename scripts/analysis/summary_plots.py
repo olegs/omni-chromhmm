@@ -1320,6 +1320,67 @@ def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
     save_fig(fig, outfile)
 
 
+def _plot_reference_distribution_combined(comp_path, kappa_path, jaccard_path,
+                                         comp_noqh_path, kappa_noqh_path, jaccard_noqh_path,
+                                         outfile, title="Cross-sample agreement of ENCODE references"):
+    """Bar plot of pairwise similarity among ENCODE reference segmentations with hue as FULL / NOQH."""
+    metrics_configs = [
+        (FULL_DISPLAY, [comp_path, kappa_path, jaccard_path]),
+        (NOQH_DISPLAY, [comp_noqh_path, kappa_noqh_path, jaccard_noqh_path]),
+    ]
+    rows = []
+    for mode, paths in metrics_configs:
+        for metric, path in zip(SIMILARITY_ORDER, paths):
+            if not path or not os.path.exists(path):
+                print(f"  WARNING: missing {path}", file=sys.stderr)
+                continue
+            mat = pd.read_csv(path, sep="\t", index_col=0)
+            n = len(mat)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    rows.append({"Metric": metric, "Mode": mode, "value": float(mat.iloc[i, j])})
+    if not rows:
+        print(f"  skipping {outfile}: no data", file=sys.stderr)
+        return
+
+    plot_df = pd.DataFrame(rows)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    sns.barplot(
+        data=plot_df, x="Metric", y="value", hue="Mode",
+        order=SIMILARITY_ORDER, hue_order=[FULL_DISPLAY, NOQH_DISPLAY],
+        palette={FULL_DISPLAY: "#4878CF", NOQH_DISPLAY: "#E8833A"},
+        estimator="mean", errorbar="se",
+        ax=ax, capsize=0.1, err_kws={"linewidth": 1.0},
+        edgecolor="lightgrey", linewidth=1,
+    )
+    strip_points(
+        ax, data=plot_df, x="Metric", y="value", hue="Mode",
+        order=SIMILARITY_ORDER, hue_order=[FULL_DISPLAY, NOQH_DISPLAY],
+        dodge=True, size=2,
+    )
+    ax.set_xlabel("")
+    ax.set_ylabel("Pairwise similarity", fontsize=AXIS_FONTSIZE)
+    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.set_ylim(0, 1)
+    ax.grid(axis="y", alpha=0.3, linewidth=0.5)
+    ax.legend(title="Mode", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
+              bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
+    n_refs_pairs = plot_df[(plot_df["Metric"] == COMPOSITION_DISPLAY) & (plot_df["Mode"] == FULL_DISPLAY)]["value"].count()
+    if title:
+        n_refs = int((-1 + (1 + 8 * n_refs_pairs) ** 0.5) / 2 + 1) if n_refs_pairs > 0 else 0
+        full_title = (
+            f"{title}\n"
+            f"({n_refs} ENCODE references, {n_refs_pairs} pairs each metric)"
+        )
+        ax.set_title(full_title, **TITLE_STYLE)
+    save_fig(fig, outfile)
+
+
+plot_reference_distribution_combined = _plot_reference_distribution_combined
+
+
 def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
     """Bar chart: number of segments of each dataset's own ENCODE reference,
     one grey bar per dataset (the "ref" row of its comparison_table).
@@ -1413,6 +1474,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       ref_comp_noqh_matrix=None,
                       ref_kappa_noqh_matrix=None, ref_jaccard_noqh_matrix=None,
                       ref_dist_noqh_outfile=None,
+                      ref_dist_combined_outfile=None,
                       method_composition_outfile=None,
                       method_composition_title=None,
                       method_ds_composition_outdir=None,
@@ -1451,6 +1513,7 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         ref_kappa_noqh_matrix=ref_kappa_noqh_matrix,
         ref_jaccard_noqh_matrix=ref_jaccard_noqh_matrix,
         ref_dist_noqh_outfile=ref_dist_noqh_outfile,
+        ref_dist_combined_outfile=ref_dist_combined_outfile,
         method_composition_outfile=method_composition_outfile,
         method_composition_title=method_composition_title,
         method_ds_composition_outdir=method_ds_composition_outdir,
@@ -1746,6 +1809,19 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                                      args.ref_kappa_noqh_matrix,
                                      args.ref_jaccard_noqh_matrix, args.ref_dist_noqh_outfile,
                                      title_suffix=f" — {NOQH_DISPLAY}")
+
+    if args.ref_dist_combined_outfile:
+        if not (args.ref_comp_matrix and args.ref_kappa_matrix and args.ref_jaccard_matrix and
+                args.ref_comp_noqh_matrix and args.ref_kappa_noqh_matrix and args.ref_jaccard_noqh_matrix):
+            raise ValueError("--ref-comp-matrix, --ref-kappa-matrix, --ref-jaccard-matrix, "
+                             "--ref-comp-noqh-matrix, --ref-kappa-noqh-matrix and "
+                             "--ref-jaccard-noqh-matrix are required for --ref-dist-combined-outfile")
+        os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_combined_outfile)), exist_ok=True)
+        _plot_reference_distribution_combined(
+            args.ref_comp_matrix, args.ref_kappa_matrix, args.ref_jaccard_matrix,
+            args.ref_comp_noqh_matrix, args.ref_kappa_noqh_matrix, args.ref_jaccard_noqh_matrix,
+            args.ref_dist_combined_outfile,
+        )
 
     if args.method_sim_dist_outfile or args.method_sim_dist_noqh_outfile:
         if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
