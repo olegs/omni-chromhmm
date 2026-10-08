@@ -132,10 +132,10 @@ for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
  python "$ROOT/scripts/rules/peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES --cell $E;
  echo "Done: $STATES";
  fi;
- STATES_BMM=$E/$PC/${E}_${PC}_bmm3_states.bed;
+ STATES_BMM=$E/$PC/${E}_${PC}_bmm_states.bed;
  if [[ ! -f $STATES_BMM ]]; then
-  echo "States (BMM3 peaks)";
-  python "$ROOT/scripts/rules/peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES_BMM --cell $E --mixture --spatial-bins 3;
+  echo "States (BMM peaks)";
+  python "$ROOT/scripts/rules/peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES_BMM --cell $E --mixture;
   echo "Done: $STATES_BMM";
  fi;
 done
@@ -172,7 +172,7 @@ for PC in homer macs2 omni;   do echo $PC;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
  match_states "$REF" "$WORK" "$PC" "$BIN" "$E"
- WORK_BMM=$E/$PC/${E}_${PC}_bmm3_states.bed;
+ WORK_BMM=$E/$PC/${E}_${PC}_bmm_states.bed;
  match_states "$REF" "$WORK_BMM" "$PC" "$BIN" "$E"
 done
 done
@@ -210,10 +210,10 @@ for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
   python "$ROOT/scripts/rules/joint_peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS \
    --cells "$CELLS" --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_kmeans/$PC;
  fi
- mkdir -p joint_bmm3/$PC;
- if [[ -z $(ls -A "joint_bmm3/$PC") ]]; then
+ mkdir -p joint_bmm/$PC;
+ if [[ -z $(ls -A "joint_bmm/$PC") ]]; then
   python "$ROOT/scripts/rules/joint_peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS \
-   --cells "$CELLS" --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_bmm3/$PC --mixture --spatial-bins 3;
+   --cells "$CELLS" --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_bmm/$PC --mixture;
  fi;
 done
 
@@ -242,7 +242,7 @@ for PC in homer macs2 omni; do echo $PC;
  MATCHEDS=()
  for E in $(cat names.txt); do
   REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz
-  WORK=joint_bmm3/$PC/${E}_bmm3_joint_states.bed
+  WORK=joint_bmm/$PC/${E}_bmm_joint_states.bed
   MATCHED=${WORK/.bed/_matched.bed}
   if [[ -f $REF ]] && [[ -f $WORK ]]; then
     REFS+=($REF)

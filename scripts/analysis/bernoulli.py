@@ -6,20 +6,9 @@ carried on the table of distinct patterns weighted by their bin counts: both EM
 steps see the rows only through weight-weighted sums, so the fit on the
 collapsed table is the same fit at a cost independent of the number of bins.
 
-The spatial variant widens a bin into the marks of its neighbours - `bins` x m
-features, 2^(bins*m) patterns - and is fitted by the same code on the same
-representation.  Both the pipeline's mixture segmentations and the transfer
-experiment read SPATIAL_BINS of them: the bin, its predecessor and its
-successor.
-
-Two representations of that vocabulary live here.  The dense one -
-spatial_histogram() and spatial_labels() through lookup_table() - is indexed by
-pattern code, so its size is set by the vocabulary and it is capped at
-MAX_DENSE_PATTERN_BITS.  The sparse one - sparse_spatial_histogram() and
-spatial_pattern_labels() - holds only the patterns a track actually shows, which
-is what makes 11 to 13 marks (2^22 to 2^26 spatial patterns, of which a genome
-carries a small fraction) fittable at all.  Neither ever holds more than one
-chromosome of spatial codes.
+The pipeline's segmentations count a genome-wide track into that table with
+pattern_histogram() and annotate it with track_labels(), block by block, so
+neither ever holds the pattern codes of the whole track at once.
 """
 
 import numpy as np
@@ -32,19 +21,15 @@ from sklearn.utils import check_random_state
 # patterns stops being the cheaper representation.
 MAX_PATTERN_MARKS = 24
 
-# Bins a spatial pattern spans: the previous one, the bin itself, the next.
-SPATIAL_BINS = 3
-
-# Bins the pipeline's mixture spans: the previous one, the bin itself and the
-# next.  The spatial fit reads both neighbours.
-DEFAULT_SPATIAL_BINS = 3
-
-# Rows per block when the whole pattern table is walked.  At 18 features the
-# table is 2^18 rows, and blocking keeps its temporaries out of the way.
+# Rows per block when the whole pattern table is walked; blocking keeps the
+# temporaries of a wide table out of the way.
 PATTERN_BLOCK = 1 << 15
 
+# Bins per block when a genome-wide track is counted or annotated.
+TRACK_BLOCK = 1 << 22
+
 # Widest pattern space an array may span: 2^24 counters are 134 MB of int64,
-# and one bit more doubles that.  Beyond this a histogram has to be sparse.
+# and one bit more doubles that.
 MAX_DENSE_PATTERN_BITS = 24
 
 # How much of the pooled mean is mixed into a K-means centroid before EM sees
@@ -70,8 +55,8 @@ def pattern_rows(n_features, codes=None):
     if codes is None:
         _check_dense(n_features, "enumerating every pattern")
         codes = np.arange(1 << n_features)
-    # Spatial codes go past 32 bits and arrive unsigned; numpy refuses to shift
-    # a uint64 by a signed amount, so both sides are made unsigned here.
+    # numpy refuses to shift a uint64 by a signed amount, so both sides are
+    # made unsigned here.
     codes = np.asarray(codes, dtype=np.uint64)
     shifts = np.arange(n_features, dtype=np.uint64)
     return ((codes[:, np.newaxis] >> shifts) & np.uint64(1)).astype(np.float64)
@@ -81,16 +66,12 @@ def _check_dense(n_features, what):
     """Refuse to span a pattern space that does not fit in an array.
 
     The dense forms below are indexed by pattern code, so their size is set by
-    the vocabulary and not by the track: at 11 marks a 3-bin spatial histogram
-    would ask for 2^33 counters, 69 GB of them.  Whoever needs those marks
-    wants the sparse forms.
+    the vocabulary and not by the track.
     """
     if n_features > MAX_DENSE_PATTERN_BITS:
         raise ValueError(
             f"{what} needs 2^{n_features} entries, over the "
-            f"2^{MAX_DENSE_PATTERN_BITS} an array may span; use the sparse "
-            "pattern forms (sparse_spatial_histogram, "
-            "BernoulliMixture.fit_patterns, spatial_pattern_labels) instead")
+            f"2^{MAX_DENSE_PATTERN_BITS} an array may span")
 
 
 def _worth_collapsing(n_samples, n_features):
@@ -136,145 +117,33 @@ def _collapse(X, sample_weight):
     return pattern_rows(X.shape[1], present), mass[present]
 
 
-# --- spatial patterns: previous, current and next bin ----------------------
+# --- genome-wide tracks, block by block -----------------------------------
 
-def block_spatial_codes(block, n_marks, bins=SPATIAL_BINS):
-    """Spatial code of every bin of one contiguous run of bins.
+def pattern_histogram(X, block=TRACK_BLOCK):
+    """Bins per pattern of a binary matrix - the mixture's input.
 
-    Bits [0, n_marks) hold the previous bin and the next n_marks the bin
-    itself; at bins=3 the top n_marks hold the successor as well.  Off either
-    end of the block the neighbour reads as all-zero.  One block at a time is
-    what keeps the genome-wide arrays out of the counting and the annotation
-    below.  bins=1 is the plain pattern of a bin, unwidened.
+    Counted block by block, so the pattern codes of the whole track are never
+    held at once.
     """
-    if bins not in (1, 2, 3):
-        raise ValueError(f"a spatial pattern spans 1, 2 or 3 bins, not {bins}")
-    dtype = np.uint64 if bins * n_marks > 32 else np.uint32
-    block = np.asarray(block, dtype=dtype)
-    if bins == 1:
-        return block.copy()
-    # The bin itself moves up to make room for its predecessor below it.
-    spatial = np.left_shift(block, n_marks, dtype=dtype)
-    spatial[1:] |= block[:-1]
-    if bins == 3:
-        spatial[:-1] |= np.left_shift(block[1:], 2 * n_marks, dtype=dtype)
-    return spatial
-
-
-def spatial_histogram(codes, slices, n_marks, bins=SPATIAL_BINS):
-    """Bins per spatial pattern over `slices` - the spatial mixture's input.
-
-    Counted chromosome by chromosome, so restricting the slices to the training
-    chromosomes costs only those chromosomes.
-    """
-    codes = np.asarray(codes)
-    _check_dense(bins * n_marks, f"a spatial histogram of {n_marks} marks")
-
-    total = np.zeros(1 << (bins * n_marks), dtype=np.int64)
-    for _, lo, hi in slices:
-        if hi > lo:
-            block = codes[lo:hi]
-            if block.ndim == 2:
-                block = to_pattern_codes(block)
-            total += np.bincount(block_spatial_codes(block, n_marks, bins=bins),
-                                 minlength=total.size)
+    X = np.asarray(X)
+    n_features = X.shape[1]
+    _check_dense(n_features, f"a histogram of {n_features} marks")
+    total = np.zeros(1 << n_features, dtype=np.int64)
+    for start in range(0, len(X), block):
+        total += np.bincount(to_pattern_codes(X[start:start + block]),
+                             minlength=total.size)
     return total
 
 
-def spatial_labels(lut, codes, slices, n_marks, bins=SPATIAL_BINS):
-    """Annotate every bin through a spatial lookup table, chromosome by
-    chromosome - the spatial counterpart of `lut[codes]`."""
-    lut = np.asarray(lut)
-    codes = np.asarray(codes)
-
-    out = np.zeros(len(codes), dtype=lut.dtype)
-    for _, lo, hi in slices:
-        if hi > lo:
-            block = codes[lo:hi]
-            if block.ndim == 2:
-                block = to_pattern_codes(block)
-            out[lo:hi] = lut[block_spatial_codes(block, n_marks, bins=bins)]
-    return out
-
-
-# --- sparse spatial patterns: the vocabulary a track actually shows --------
-#
-# A dense form is indexed by pattern code, so 13 marks of 2-bin spatial pattern
-# ask for 2^26 entries whatever the track holds.  The forms below are indexed
-# by the patterns that occur instead: a track of n bins carries at most n of
-# them, and real peak calls - clustered, mostly empty - carry far fewer.
-
-def _merge_counts(keys, counts, other_keys, other_counts):
-    """Sum two sparse histograms into one, codes ascending."""
-    merged, inverse = np.unique(np.concatenate((keys, other_keys)),
-                                return_inverse=True)
-    total = np.bincount(np.ravel(inverse),
-                        weights=np.concatenate((counts, other_counts)),
-                        minlength=merged.size)
-    return merged, total.astype(np.int64)
-
-
-def sparse_spatial_histogram(codes, slices, n_marks, bins=DEFAULT_SPATIAL_BINS):
-    """The spatial histogram of `slices` as (code, count) pairs.
-
-    The same counts spatial_histogram() returns, held only for the patterns a
-    track actually shows.  Counted and merged chromosome by chromosome, so
-    nothing genome-wide is ever duplicated.
-    """
-    codes = np.asarray(codes)
-    keys = np.zeros(0, dtype=np.uint64)
-    counts = np.zeros(0, dtype=np.int64)
-    for _, lo, hi in slices:
-        if hi > lo:
-            block = codes[lo:hi]
-            if block.ndim == 2:
-                block = to_pattern_codes(block)
-            block, block_counts = np.unique(
-                block_spatial_codes(block, n_marks, bins=bins),
-                return_counts=True)
-            keys, counts = _merge_counts(keys, counts,
-                                         block.astype(np.uint64), block_counts)
-    return keys, counts
-
-
-def pattern_labels(probs, weights, codes, dtype=np.int8):
-    """State of every one of the given pattern codes.
-
-    lookup_table() scores the whole vocabulary once and indexes into it, which
-    a wide spatial model cannot afford; here every block of codes is folded
-    onto the distinct patterns it holds and only those are scored.
-    """
-    probs = np.asarray(probs)
-    logit, offset = _logit_offset(probs, weights)
-    codes = np.asarray(codes)
-    out = np.empty(len(codes), dtype=dtype)
-    for start in range(0, len(codes), PATTERN_BLOCK):
-        stop = min(start + PATTERN_BLOCK, len(codes))
-        present, inverse = np.unique(codes[start:stop], return_inverse=True)
-        rows = pattern_rows(probs.shape[1], present)
-        states = np.argmax(rows @ logit.T + offset, axis=1)
-        out[start:stop] = states[np.ravel(inverse)]
-    return out
-
-
-def spatial_pattern_labels(probs, weights, codes, slices, n_marks,
-                           bins=DEFAULT_SPATIAL_BINS, dtype=np.int8):
-    """Annotate every bin from the fitted parameters, chromosome by chromosome.
-
-    What spatial_labels() does, without the table over the whole spatial
-    vocabulary that a model of more than a handful of marks cannot hold.
-    """
-    codes = np.asarray(codes)
-    out = np.zeros(len(codes), dtype=dtype)
-    for _, lo, hi in slices:
-        if hi > lo:
-            block = codes[lo:hi]
-            if block.ndim == 2:
-                block = to_pattern_codes(block)
-            out[lo:hi] = pattern_labels(
-                probs, weights,
-                block_spatial_codes(block, n_marks, bins=bins),
-                dtype=dtype)
+def track_labels(probs, weights, X, block=TRACK_BLOCK, dtype=np.int8):
+    """State of every bin of a binary matrix, through the lookup table of the
+    fitted parameters, block by block."""
+    X = np.asarray(X)
+    lut = lookup_table(probs, weights, dtype=dtype)
+    out = np.empty(len(X), dtype=dtype)
+    for start in range(0, len(X), block):
+        stop = min(start + block, len(X))
+        out[start:stop] = lut[to_pattern_codes(X[start:stop])]
     return out
 
 
@@ -613,8 +482,8 @@ def log_likelihood(counts, probs, weights):
 def lookup_table(probs, weights, dtype=np.int8):
     """State of every pattern: the whole annotation model.
 
-    The table is walked in blocks, which is what keeps a 2^18-pattern spatial
-    model from materialising its rows and their scores all at once.
+    The table is walked in blocks, which keeps a wide model from materialising
+    its rows and their scores all at once.
     """
     probs = np.asarray(probs)
     _check_dense(probs.shape[1], f"a lookup table over {probs.shape[1]} features")

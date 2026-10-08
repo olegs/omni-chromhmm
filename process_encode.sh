@@ -59,12 +59,12 @@ do
    --bin "$BIN" --chromsizes "$CHROMSIZES" --marks "$MARKS" --cells "$REPS" \
    --peaks $ALL_PEAKS --states "$STATES" --outdir "joint_kmeans/$PC";
   fi
-  if [[ -z $(ls -A "joint_bmm3/$PC") ]]; then
-   mkdir -p "joint_bmm3/$PC"
+  if [[ -z $(ls -A "joint_bmm/$PC") ]]; then
+   mkdir -p "joint_bmm/$PC"
    python "$ROOT/scripts/rules/joint_peaks_segmentation.py" \
    --bin "$BIN" --chromsizes "$CHROMSIZES" --marks "$MARKS" --cells "$REPS" \
-   --peaks $ALL_PEAKS --states "$STATES" --outdir "joint_bmm3/$PC" \
-   --mixture --spatial-bins 3;
+   --peaks $ALL_PEAKS --states "$STATES" --outdir "joint_bmm/$PC" \
+   --mixture;
   fi
  done
 done
@@ -78,7 +78,7 @@ do
  do
   echo "Matching $ds $PC joint KMeans to the ENCODE reference"
   match_joint "$(ref_bed "$ds")" "joint_kmeans/$PC/rep1_kmeans_joint_states.bed" "joint_kmeans/$PC/rep2_kmeans_joint_states.bed" "$PC" "$(get_bin_size "$PC")"
-  match_joint "$(ref_bed "$ds")" "joint_bmm3/$PC/rep1_bmm3_joint_states.bed" "joint_bmm3/$PC/rep2_bmm3_joint_states.bed" "$PC" "$(get_bin_size "$PC")"
+  match_joint "$(ref_bed "$ds")" "joint_bmm/$PC/rep1_bmm_joint_states.bed" "joint_bmm/$PC/rep2_bmm_joint_states.bed" "$PC" "$(get_bin_size "$PC")"
  done
 done
 

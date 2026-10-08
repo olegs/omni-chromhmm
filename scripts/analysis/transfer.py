@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Initial, Updated and Refit models on newly arrived samples.
 
-K-means and the Bernoulli mixture over the previous-current-next bin patterns
-(BMM3) on the same Omnipeak pattern tracks, and ChromHMM over the same
+K-means and the Bernoulli mixture (BMM) on the same Omnipeak pattern tracks, and ChromHMM over the same
 binarization, and on HOMER and MACS2 peak calls, on the ENCODE split:
 twenty-one arms, scored on the incoming samples only.
 """
@@ -24,7 +23,6 @@ from tqdm.auto import tqdm
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import patterns as pat                                           # noqa: E402
-import bernoulli as bern                                          # noqa: E402
 import utils                                                     # noqa: E402
 
 INIT_ARM = "init"
@@ -230,7 +228,7 @@ INCOMING = ("imr90", "sigmoid_colon", "adrenal_gland", "tibial_nerve")
 # How the mixture arms are fitted, and how much endpoint loss still counts as
 # the init model annotating the incoming samples well enough.
 INIT = "kmeans"
-# 200 restarts of the spatial mixture cost ~13 s against ChromHMM's ~85 s,
+# 200 restarts of the mixture cost ~13 s against ChromHMM's ~85 s,
 # and take the seed-to-seed per-state Jaccard of the fit from 0.92 to 0.98.
 N_INIT = 200
 TOLERANCE = 0.02
@@ -276,11 +274,10 @@ def setup(data_dir=DATA_DIR):
 LEARN_CHROMS = ("chr1",)
 N_STATES = 15
 
-# The mixture appears over the peak calls: BMM3 reads the
-# previous, own and next bin together (2^18 patterns).
-BMM3_INIT = "bmm_spatial_init"
-BMM3_UPDATED = "bmm_spatial_updated"
-BMM3_REFIT = "bmm_spatial_refit"
+# The mixture appears over the peak calls: BMM reads a bin's own marks.
+BMM_INIT = "bmm_init"
+BMM_UPDATED = "bmm_updated"
+BMM_REFIT = "bmm_refit"
 KM_INIT = "kmeans_init"
 KM_UPDATED = "kmeans_updated"
 KM_REFIT = "kmeans_refit"
@@ -288,56 +285,55 @@ KM_REFIT = "kmeans_refit"
 HOMER_KM_INIT = "homer_kmeans_init"
 HOMER_KM_UPDATED = "homer_kmeans_updated"
 HOMER_KM_REFIT = "homer_kmeans_refit"
-HOMER_BMM3_INIT = "homer_bmm3_init"
-HOMER_BMM3_UPDATED = "homer_bmm3_updated"
-HOMER_BMM3_REFIT = "homer_bmm3_refit"
+HOMER_BMM_INIT = "homer_bmm_init"
+HOMER_BMM_UPDATED = "homer_bmm_updated"
+HOMER_BMM_REFIT = "homer_bmm_refit"
 
 MACS2_KM_INIT = "macs2_kmeans_init"
 MACS2_KM_UPDATED = "macs2_kmeans_updated"
 MACS2_KM_REFIT = "macs2_kmeans_refit"
-MACS2_BMM3_INIT = "macs2_bmm3_init"
-MACS2_BMM3_UPDATED = "macs2_bmm3_updated"
-MACS2_BMM3_REFIT = "macs2_bmm3_refit"
+MACS2_BMM_INIT = "macs2_bmm_init"
+MACS2_BMM_UPDATED = "macs2_bmm_updated"
+MACS2_BMM_REFIT = "macs2_bmm_refit"
 
 # The refit is the incoming-only update's fresh counterpart.
 PATTERN_ARMS = (
     (KM_INIT, "init", "omni_kmeans"), (KM_UPDATED, "updated", "omni_kmeans"),
     (KM_REFIT, "refit", "omni_kmeans"),
-    (BMM3_INIT, "init", "omni_bmm3"), (BMM3_UPDATED, "updated", "omni_bmm3"),
-    (BMM3_REFIT, "refit", "omni_bmm3"),
+    (BMM_INIT, "init", "omni_bmm"), (BMM_UPDATED, "updated", "omni_bmm"),
+    (BMM_REFIT, "refit", "omni_bmm"),
     (HOMER_KM_INIT, "init", "homer_kmeans"), (HOMER_KM_UPDATED, "updated", "homer_kmeans"),
     (HOMER_KM_REFIT, "refit", "homer_kmeans"),
-    (HOMER_BMM3_INIT, "init", "homer_bmm3"), (HOMER_BMM3_UPDATED, "updated", "homer_bmm3"),
-    (HOMER_BMM3_REFIT, "refit", "homer_bmm3"),
+    (HOMER_BMM_INIT, "init", "homer_bmm"), (HOMER_BMM_UPDATED, "updated", "homer_bmm"),
+    (HOMER_BMM_REFIT, "refit", "homer_bmm"),
     (MACS2_KM_INIT, "init", "macs2_kmeans"), (MACS2_KM_UPDATED, "updated", "macs2_kmeans"),
     (MACS2_KM_REFIT, "refit", "macs2_kmeans"),
-    (MACS2_BMM3_INIT, "init", "macs2_bmm3"), (MACS2_BMM3_UPDATED, "updated", "macs2_bmm3"),
-    (MACS2_BMM3_REFIT, "refit", "macs2_bmm3")
+    (MACS2_BMM_INIT, "init", "macs2_bmm"), (MACS2_BMM_UPDATED, "updated", "macs2_bmm"),
+    (MACS2_BMM_REFIT, "refit", "macs2_bmm")
 )
 
-METHODS = ("chromhmm", "omni_kmeans", "omni_bmm3",
-           "homer_kmeans", "homer_bmm3", "macs2_kmeans", "macs2_bmm3")
-MIXTURES = ("omni_bmm3", "homer_bmm3", "macs2_bmm3")          # the methods fitted by Bernoulli EM
-SPATIAL_BINS_OF = {m: 3 for m in MIXTURES}    # ... of which these read spatial bins
+METHODS = ("chromhmm", "omni_kmeans", "omni_bmm",
+           "homer_kmeans", "homer_bmm", "macs2_kmeans", "macs2_bmm")
+MIXTURES = ("omni_bmm", "homer_bmm", "macs2_bmm")          # the methods fitted by Bernoulli EM
 
 METHOD_DISPLAY = {INIT_ARM: "ChromHMM Initial", UPDATED: "ChromHMM Updated",
                   REFIT: "ChromHMM Refit",
-                  BMM3_INIT: "BMM3 (Omni) Initial", BMM3_UPDATED: "BMM3 (Omni) Updated",
-                  BMM3_REFIT: "BMM3 (Omni) Refit",
+                  BMM_INIT: "BMM (Omni) Initial", BMM_UPDATED: "BMM (Omni) Updated",
+                  BMM_REFIT: "BMM (Omni) Refit",
                   KM_INIT: "KMeans (Omni) Initial", KM_UPDATED: "KMeans (Omni) Updated",
                   KM_REFIT: "KMeans (Omni) Refit",
                   HOMER_KM_INIT: "KMeans (HOMER) Initial",
                   HOMER_KM_UPDATED: "KMeans (HOMER) Updated",
                   HOMER_KM_REFIT: "KMeans (HOMER) Refit",
-                  HOMER_BMM3_INIT: "BMM3 (HOMER) Initial",
-                  HOMER_BMM3_UPDATED: "BMM3 (HOMER) Updated",
-                  HOMER_BMM3_REFIT: "BMM3 (HOMER) Refit",
+                  HOMER_BMM_INIT: "BMM (HOMER) Initial",
+                  HOMER_BMM_UPDATED: "BMM (HOMER) Updated",
+                  HOMER_BMM_REFIT: "BMM (HOMER) Refit",
                   MACS2_KM_INIT: "KMeans (MACS2) Initial",
                   MACS2_KM_UPDATED: "KMeans (MACS2) Updated",
                   MACS2_KM_REFIT: "KMeans (MACS2) Refit",
-                  MACS2_BMM3_INIT: "BMM3 (MACS2) Initial",
-                  MACS2_BMM3_UPDATED: "BMM3 (MACS2) Updated",
-                  MACS2_BMM3_REFIT: "BMM3 (MACS2) Refit"}
+                  MACS2_BMM_INIT: "BMM (MACS2) Initial",
+                  MACS2_BMM_UPDATED: "BMM (MACS2) Updated",
+                  MACS2_BMM_REFIT: "BMM (MACS2) Refit"}
 
 
 def objective_gap(score, reference, mixture):
@@ -374,21 +370,9 @@ def prepare_binary(cache, mask, datasets, samples, root, bin_size=None,
     return dirs
 
 
-def chrom_histogram(cache, samples, mask, chroms, bins=1, ratio=1):
-    """Pattern counts of `samples` restricted to `chroms` - the mixture input.
-
-    With `bins > 1`, a bin is counted as its spatial context. For `bins=3`,
-    this includes the previous, own and next bin together. The plain counts
-    (bins=1) are what K-means reads.
-    """
-    if bins == 1:
-        size = pat.N_PATTERNS
-    elif bins == 3:
-        size = pat.N_PATTERNS_SPATIAL
-    else:
-        raise ValueError(f"Unsupported bins={bins}")
-
-    total = np.zeros(size, dtype=np.int64)
+def chrom_histogram(cache, samples, mask, chroms, ratio=1):
+    """Pattern counts of `samples` restricted to `chroms` - the model input."""
+    total = np.zeros(pat.N_PATTERNS, dtype=np.int64)
     for sample in samples:
         codes = cache.codes(sample)
         for chrom, lo, hi in mask.slices():
@@ -398,11 +382,7 @@ def chrom_histogram(cache, samples, mask, chroms, bins=1, ratio=1):
                     n = len(c) // ratio
                     c = np.bitwise_or.reduce(
                         c[:n * ratio].reshape(n, ratio), axis=1)
-                if bins > 1:
-                    total += bern.spatial_histogram(c, [(None, 0, len(c))],
-                                                    len(pat.MARKS), bins=bins)
-                else:
-                    total += np.bincount(c, minlength=size)
+                total += np.bincount(c, minlength=total.size)
     return total
 
 
@@ -587,16 +567,14 @@ def run(out_root=None, seed=SEED, states=N_STATES, learn_chroms=LEARN_CHROMS,
         training_of = {"init": initial, "updated": incoming, "refit": samples}
 
         with pat.step("count patterns on " + ",".join(learn_chroms)):
-            pools = {c: {b: {} for b in (1, 3)} for c in caches}
+            pools = {c: {} for c in caches}
             for c in caches:
                 ratio = caller_bins[c] // mask.bin
-                for b in (1, 3):
-                    for scenario in ("init", "updated"):
-                        pools[c][b][scenario] = chrom_histogram(
-                            caches[c], training_of[scenario], mask,
-                            set(learn_chroms), bins=b, ratio=ratio)
-                    pools[c][b]["refit"] = (pools[c][b]["init"]
-                                            + pools[c][b]["updated"])
+                for scenario in ("init", "updated"):
+                    pools[c][scenario] = chrom_histogram(
+                        caches[c], training_of[scenario], mask,
+                        set(learn_chroms), ratio=ratio)
+                pools[c]["refit"] = pools[c]["init"] + pools[c]["updated"]
 
         reference = [None]
         def get_reference():
@@ -682,8 +660,7 @@ def run(out_root=None, seed=SEED, states=N_STATES, learn_chroms=LEARN_CHROMS,
                         if m_type != method:
                             continue
                         mixture = m_type in MIXTURES
-                        spatial_bins = SPATIAL_BINS_OF.get(m_type, 1)
-                        counts = pools[caller][spatial_bins][scenario]
+                        counts = pools[caller][scenario]
                         training = training_of[scenario]
                         fresh = INIT if mixture else None
                         warm = (init_fit.get(m_type)
@@ -744,9 +721,7 @@ def run(out_root=None, seed=SEED, states=N_STATES, learn_chroms=LEARN_CHROMS,
                                     n = len(c) // ratio
                                     c = np.bitwise_or.reduce(
                                         c[:n * ratio].reshape(n, ratio), axis=1)
-                                l = (bern.spatial_labels(lut, c, [(None, 0, len(c))],
-                                                         len(pat.MARKS), bins=spatial_bins)
-                                     if spatial_bins > 1 else lut[c])
+                                l = lut[c]
                                 if ratio > 1:
                                     l = np.repeat(l, ratio)
                                     # Pad to match original hi-lo
@@ -775,9 +750,8 @@ def run(out_root=None, seed=SEED, states=N_STATES, learn_chroms=LEARN_CHROMS,
                              "n_samples": len(incoming), "wall": annotate_wall,
                              "cpu": float("nan"), "peak_mb": float("nan"),
                              "cached": False, "command": "lut[codes]"}]
-                        own = pat.own_marks(params)
                         m_tables["states"] += [{"method": arm, "state": state,
-                                                **{mark: float(own[j, i])
+                                                **{mark: float(params[j, i])
                                                    for i, mark in enumerate(pat.MARKS)}}
                                                for j, state in enumerate(m_models[arm]["names"])]
                         m_tables["cross_sample"] += cross_sample_rows(
@@ -1101,44 +1075,44 @@ def plots(frames, summary, outdir):
 
 METHOD_OF = {
     INIT_ARM: "chromhmm", UPDATED: "chromhmm", REFIT: "chromhmm",
-    BMM3_INIT: "omni_bmm3", BMM3_UPDATED: "omni_bmm3",
-    BMM3_REFIT: "omni_bmm3",
+    BMM_INIT: "omni_bmm", BMM_UPDATED: "omni_bmm",
+    BMM_REFIT: "omni_bmm",
     KM_INIT: "omni_kmeans", KM_UPDATED: "omni_kmeans",
     KM_REFIT: "omni_kmeans",
     HOMER_KM_INIT: "homer_kmeans", HOMER_KM_UPDATED: "homer_kmeans",
     HOMER_KM_REFIT: "homer_kmeans",
-    HOMER_BMM3_INIT: "homer_bmm3", HOMER_BMM3_UPDATED: "homer_bmm3",
-    HOMER_BMM3_REFIT: "homer_bmm3",
+    HOMER_BMM_INIT: "homer_bmm", HOMER_BMM_UPDATED: "homer_bmm",
+    HOMER_BMM_REFIT: "homer_bmm",
     MACS2_KM_INIT: "macs2_kmeans", MACS2_KM_UPDATED: "macs2_kmeans",
     MACS2_KM_REFIT: "macs2_kmeans",
-    MACS2_BMM3_INIT: "macs2_bmm3", MACS2_BMM3_UPDATED: "macs2_bmm3",
-    MACS2_BMM3_REFIT: "macs2_bmm3"}
+    MACS2_BMM_INIT: "macs2_bmm", MACS2_BMM_UPDATED: "macs2_bmm",
+    MACS2_BMM_REFIT: "macs2_bmm"}
 SCENARIO_OF = {
     INIT_ARM: "init", UPDATED: "updated", REFIT: "refit",
-    BMM3_INIT: "init", BMM3_UPDATED: "updated", BMM3_REFIT: "refit",
+    BMM_INIT: "init", BMM_UPDATED: "updated", BMM_REFIT: "refit",
     KM_INIT: "init", KM_UPDATED: "updated", KM_REFIT: "refit",
     HOMER_KM_INIT: "init", HOMER_KM_UPDATED: "updated",
     HOMER_KM_REFIT: "refit",
-    HOMER_BMM3_INIT: "init", HOMER_BMM3_UPDATED: "updated",
-    HOMER_BMM3_REFIT: "refit",
+    HOMER_BMM_INIT: "init", HOMER_BMM_UPDATED: "updated",
+    HOMER_BMM_REFIT: "refit",
     MACS2_KM_INIT: "init", MACS2_KM_UPDATED: "updated",
     MACS2_KM_REFIT: "refit",
-    MACS2_BMM3_INIT: "init", MACS2_BMM3_UPDATED: "updated",
-    MACS2_BMM3_REFIT: "refit"}
+    MACS2_BMM_INIT: "init", MACS2_BMM_UPDATED: "updated",
+    MACS2_BMM_REFIT: "refit"}
 
 
 INIT_ARMS = {METHOD_OF[arm]: arm
-             for arm in (KM_INIT, BMM3_INIT, HOMER_KM_INIT,
-                         HOMER_BMM3_INIT, MACS2_KM_INIT,
-                         MACS2_BMM3_INIT, INIT_ARM)}
+             for arm in (KM_INIT, BMM_INIT, HOMER_KM_INIT,
+                         HOMER_BMM_INIT, MACS2_KM_INIT,
+                         MACS2_BMM_INIT, INIT_ARM)}
 UPDATED_ARMS = {METHOD_OF[arm]: arm
-                for arm in (KM_UPDATED, BMM3_UPDATED, HOMER_KM_UPDATED,
-                            HOMER_BMM3_UPDATED, MACS2_KM_UPDATED,
-                            MACS2_BMM3_UPDATED, UPDATED)}
+                for arm in (KM_UPDATED, BMM_UPDATED, HOMER_KM_UPDATED,
+                            HOMER_BMM_UPDATED, MACS2_KM_UPDATED,
+                            MACS2_BMM_UPDATED, UPDATED)}
 REFIT_ARMS = {METHOD_OF[arm]: arm
-              for arm in (KM_REFIT, BMM3_REFIT, HOMER_KM_REFIT,
-                          HOMER_BMM3_REFIT, MACS2_KM_REFIT,
-                          MACS2_BMM3_REFIT, REFIT)}
+              for arm in (KM_REFIT, BMM_REFIT, HOMER_KM_REFIT,
+                          HOMER_BMM_REFIT, MACS2_KM_REFIT,
+                          MACS2_BMM_REFIT, REFIT)}
 # Every scenario that has a refit to be compared against, in plot order.
 ARMS_OF_SCENARIO = {"init": INIT_ARMS, "updated": UPDATED_ARMS}
 
@@ -1167,34 +1141,34 @@ def comparison_scenario(comparison):
 
 METHOD_COLORS = {
     "omni_kmeans":   utils.method_color(utils.KMEANS_OMNI),
-    "omni_bmm3":     utils.method_color(utils.BMM3_OMNI),
+    "omni_bmm":     utils.method_color(utils.BMM_OMNI),
     "chromhmm":      utils.method_color(utils.CHROMHMM_DEFAULT),
     "homer_kmeans":  utils.method_color(utils.KMEANS_HOMER),
-    "homer_bmm3":    utils.method_color(utils.BMM3_HOMER),
+    "homer_bmm":    utils.method_color(utils.BMM_HOMER),
     "macs2_kmeans":  utils.method_color(utils.KMEANS_MACS2),
-    "macs2_bmm3":    utils.method_color(utils.BMM3_MACS2),
+    "macs2_bmm":    utils.method_color(utils.BMM_MACS2),
 }
 METHOD_LABEL = {"omni_kmeans": "KMeans (Omni)",
-                "omni_bmm3": "BMM3 (Omni)",
+                "omni_bmm": "BMM (Omni)",
                 "chromhmm": "ChromHMM",
                 "homer_kmeans": "KMeans (HOMER)",
-                "homer_bmm3": "BMM3 (HOMER)",
+                "homer_bmm": "BMM (HOMER)",
                 "macs2_kmeans": "KMeans (MACS2)",
-                "macs2_bmm3": "BMM3 (MACS2)"}
+                "macs2_bmm": "BMM (MACS2)"}
 SCENARIO_HATCH = {"init": "xx", "updated": "..", "refit": None}
 SCENARIO_LABEL = {"init": "Initial", "updated": "Updated",
                   "refit": "Refit"}
 METHOD_PLOT_ORDER = (KM_INIT, KM_UPDATED, KM_REFIT,
-                     BMM3_INIT, BMM3_UPDATED, BMM3_REFIT,
+                     BMM_INIT, BMM_UPDATED, BMM_REFIT,
                      INIT_ARM, UPDATED, REFIT,
                      HOMER_KM_INIT, HOMER_KM_UPDATED, HOMER_KM_REFIT,
-                     HOMER_BMM3_INIT, HOMER_BMM3_UPDATED, HOMER_BMM3_REFIT,
+                     HOMER_BMM_INIT, HOMER_BMM_UPDATED, HOMER_BMM_REFIT,
                      MACS2_KM_INIT, MACS2_KM_UPDATED, MACS2_KM_REFIT,
-                     MACS2_BMM3_INIT, MACS2_BMM3_UPDATED, MACS2_BMM3_REFIT)
+                     MACS2_BMM_INIT, MACS2_BMM_UPDATED, MACS2_BMM_REFIT)
 SHORT_LABEL = {arm: f"{METHOD_LABEL[METHOD_OF[arm]]} {SCENARIO_LABEL[SCENARIO_OF[arm]]}"
                for arm in METHOD_PLOT_ORDER}
-PLOT_METHODS = ("omni_kmeans", "omni_bmm3", "chromhmm",
-                "homer_kmeans", "homer_bmm3", "macs2_kmeans", "macs2_bmm3")
+PLOT_METHODS = ("omni_kmeans", "omni_bmm", "chromhmm",
+                "homer_kmeans", "homer_bmm", "macs2_kmeans", "macs2_bmm")
 def comparison_series(scenario):
     """One entry per method, in plot order.
 
