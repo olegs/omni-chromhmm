@@ -9,6 +9,12 @@ mkdir -p $DIR
 
 cd $DIR
 
+#KMeans states preprocessing
+CHROMSIZES=hg19.chrom.sizes;
+BIN=100;
+
+
+
 # Prepare file names.txt - is a list with names from E001 to E120
 
 # Download 1000 epigenomes datasets
@@ -101,10 +107,6 @@ for E in $(cat names.txt); do echo $E; mkdir -p $E/homer;
   pos2bed.pl $E/homer/${E}-${m}_homer.txt > $E/homer/${E}-${m}_homer.bed; 
  done
 done
-
-#KMeans states preprocessing
-CHROMSIZES=hg19.chrom.sizes;
-BIN=100;
 
 #KMeans states processing
 for E in $(cat names.txt); do echo "===================="; echo $E;

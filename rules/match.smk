@@ -1,9 +1,8 @@
 # State matching: relabel segmentations to the ENCODE reference.
 #
 # Strategy: Hungarian assignment over Jaccard plus emission-profile
-# similarity, taken to a concave power so the largest states do not decide
-# the whole mapping; driven by match.py. The result is a bijection; pairs
-# that score poorly are named anyway and flagged in the .mapping.tsv.
+# similarity, driven by match.py.
+# The result is a bijection. See match.md.
 
 
 def _binarized_files(bedpath):

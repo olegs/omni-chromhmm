@@ -212,14 +212,23 @@ def state_colors(ref_segs):
 
 
 
-# Weights for hybrid composite utility function:
-# Quality = Jaccard * beta + EmissionSim * gamma
-# Jaccard provides physical overlap concordance; emissions provide biochemical matching.
-JACCARD_WEIGHT = 0.80
-EMISSION_WEIGHT = 0.20
+# Match quality = Jaccard * alpha + EmissionSim * beta. Jaccard provides physical
+# overlap concordance; emissions provide biochemical matching.
+JACCARD_WEIGHT = 0.8
+EMISSION_WEIGHT = 0.2
 
-# Weights when emission matrices are absent/unavailable:
-JACCARD_WEIGHT_NO_EMISSION = 1.0
+
+def jaccard_matrix(overlap, lengths_w, lengths_r, work_states, ref_states):
+    """Pairwise Jaccard similarity of work and ref states in [0, 1]."""
+    mat = np.zeros((len(work_states), len(ref_states)), dtype=float)
+    for i, w in enumerate(work_states):
+        lw = lengths_w.get(w, 0)
+        for j, r in enumerate(ref_states):
+            ov = overlap.get((w, r), 0)
+            union = lw + lengths_r.get(r, 0) - ov
+            if union > 0:
+                mat[i, j] = ov / union
+    return mat
 
 
 def best_mapping(overlap, work_states, ref_states):
@@ -233,22 +242,6 @@ def best_mapping(overlap, work_states, ref_states):
     for w in work_states:
         mapping.setdefault(w, w)
     return mapping
-
-
-def jaccard_matrix(overlap, lengths_w, lengths_r, work_states, ref_states):
-    """Pairwise Jaccard similarity of work and ref states in [0, 1]."""
-    n_w = len(work_states)
-    n_r = len(ref_states)
-    mat = np.zeros((n_w, n_r), dtype=float)
-    for i, w in enumerate(work_states):
-        lw = lengths_w.get(w, 0)
-        for j, r in enumerate(ref_states):
-            lr = lengths_r.get(r, 0)
-            ov = overlap.get((w, r), 0)
-            union = lw + lr - ov
-            if union > 0:
-                mat[i, j] = ov / union
-    return mat
 
 
 def _natural_sort_key(s):
@@ -271,25 +264,6 @@ def _cosine_matrix(mat1, mat2):
     return sim
 
 
-def _profile_overlap_matrix(mat1, mat2):
-    """Pairwise histogram intersection overlap of normalized row profiles in [0, 1]."""
-    def _profile(mat):
-        mat = np.asarray(mat, dtype=float)
-        total = mat.sum(axis=1, keepdims=True)
-        return np.divide(mat, total, out=np.zeros_like(mat), where=total > 0)
-
-    p1, p2 = _profile(mat1), _profile(mat2)
-    return np.minimum(p1[:, None, :], p2[None, :, :]).sum(axis=-1)
-
-
-def _profile_less(mat):
-    """Boolean mask of states whose max mark signal is zero."""
-    mat = np.asarray(mat, dtype=float)
-    if mat.size == 0 or mat.shape[1] == 0:
-        return np.ones(mat.shape[0], dtype=bool)
-    return mat.max(axis=1) <= 0
-
-
 def background_augmented(mat):
     """Emission vectors with a 1 - max(mark) background component appended."""
     if mat.size == 0 or mat.shape[1] == 0 or mat.max() > 1.0 or mat.min() < 0.0:
@@ -302,23 +276,46 @@ def _is_binarized(mat):
     return mat.size > 0 and mat.max() <= 1.01 and mat.min() >= -0.01
 
 
-def emission_similarity(mat_w, mat_r):
-    """Pairwise similarity of two aligned emission matrices in [0, 1]."""
-    sim = _profile_overlap_matrix(mat_w, mat_r)
-    blank_w, blank_r = _profile_less(mat_w), _profile_less(mat_r)
-    if not (blank_w.any() or blank_r.any()):
-        return sim
+# Bigwig signal -> expected binarized fraction, fitted on ChromHMM segmentations
+# that have both: fraction = sigmoid(log2(signal / background) + intercept).
+# The background is the least-marked state of each mark; half of the bins are
+# called present at ~15x over it. Slope ~1 in every ENCODE dataset.
+BIGWIG_PRESENCE_INTERCEPT = -3.9
+# Floor of the background, relative to the mark's maximum, for marks with a zero state.
+BIGWIG_BACKGROUND_FLOOR = 1e-3
 
-    def _augment(mat):
-        if not _is_binarized(mat):
-            mark_max = np.max(mat, axis=0)
-            mat = mat / np.where(mark_max > 0, mark_max, 1.0)
-        return background_augmented(mat)
 
-    cosine = _cosine_matrix(_augment(mat_w), _augment(mat_r))
-    sim[blank_w, :] = cosine[blank_w, :]
-    sim[:, blank_r] = cosine[:, blank_r]
-    return sim
+def bigwig_presence(mat):
+    """Bigwig emissions converted to the binarized scale, per mark."""
+    mat = np.maximum(np.asarray(mat, dtype=float), 0.0)
+    if mat.size == 0:
+        return mat
+    mark_max = mat.max(axis=0)
+    background = np.maximum(mat.min(axis=0), BIGWIG_BACKGROUND_FLOOR * mark_max)
+    background = np.where(background > 0, background, 1.0)
+    fold = np.log2(np.maximum(mat, 1e-12) / background)
+    presence = 1.0 / (1.0 + np.exp(-(fold + BIGWIG_PRESENCE_INTERCEPT)))
+    return np.where(mark_max > 0, presence, 0.0)
+
+
+def emission_similarity(mat_w, mat_r, binarized_w=None, binarized_r=None):
+    """Pairwise similarity of two aligned emission matrices in [0, 1].
+
+    Cosine of the background-augmented vectors: the 1 - max(mark) column keeps
+    the signal level, so a near-empty state is not similar to an all-high one.
+    Bigwig signal is first converted to the binarized scale (bigwig_presence),
+    so bigwig and binarized emissions can be compared with each other.
+    binarized_* says which a matrix holds; None guesses from its value range.
+    """
+    def _augment(mat, binarized):
+        mat = np.asarray(mat, dtype=float)
+        if binarized is None:
+            binarized = _is_binarized(mat)
+        if not binarized:
+            mat = bigwig_presence(mat)
+        return background_augmented(np.clip(mat, 0.0, 1.0))
+
+    return _cosine_matrix(_augment(mat_w, binarized_w), _augment(mat_r, binarized_r))
 
 
 def emission_cosine_mapping(states1, mat1, states2, mat2):
@@ -388,15 +385,15 @@ def _load_emissions_npz(path):
 
 
 def _save_match_matrices(out_prefix, work_states, ref_states, mapping,
-                         scores=None, jaccard=None, quality=None):
+                         jaccard=None, emission=None, quality=None):
     """Persist work→ref matching matrices and chosen mapping.
 
     Writes:
-      {out_prefix}.score.tsv     raw overlap as a share of the genome
-      {out_prefix}.jaccard.tsv   Jaccard similarity matrix
-      {out_prefix}.quality.tsv   match quality matrix (composite utility)
-      {out_prefix}.mapping.tsv   state mapping with individual scores
-      {out_prefix}.png           annotated heatmap of match quality / score
+      {out_prefix}.jaccard.tsv     Jaccard similarity matrix
+      {out_prefix}.emission.tsv    emission similarity matrix
+      {out_prefix}.quality.tsv     match quality matrix (composite utility)
+      {out_prefix}.mapping.tsv     state mapping with individual scores
+      {out_prefix}.png             annotated heatmap of match quality / Jaccard
     """
     out_dir = os.path.dirname(os.path.abspath(out_prefix))
     if out_dir:
@@ -409,20 +406,20 @@ def _save_match_matrices(out_prefix, work_states, ref_states, mapping,
                 row = [str(w)] + [f"{mat[i, j]:.4f}" for j in range(len(ref_states))]
                 f.write("\t".join(row) + "\n")
 
-    if jaccard is not None:
-        _save_tsv(jaccard, out_prefix + ".jaccard.tsv")
+    if emission is not None:
+        _save_tsv(emission, out_prefix + ".emission.tsv")
     if quality is not None:
         _save_tsv(quality, out_prefix + ".quality.tsv")
-    if scores is None:
+    if jaccard is None:
         return
-    _save_tsv(scores, out_prefix + ".score.tsv")
+    _save_tsv(jaccard, out_prefix + ".jaccard.tsv")
 
     w_idx = {s: i for i, s in enumerate(work_states)}
     r_idx = {s: i for i, s in enumerate(ref_states)}
     with open(out_prefix + ".mapping.tsv", "w") as f:
-        cols = ["work_state", "ref_state", "score"]
-        if jaccard is not None:
-            cols.append("jaccard")
+        cols = ["work_state", "ref_state", "jaccard"]
+        if emission is not None:
+            cols.append("emission")
         if quality is not None:
             cols.append("quality")
         f.write("\t".join(cols) + "\n")
@@ -433,9 +430,9 @@ def _save_match_matrices(out_prefix, work_states, ref_states, mapping,
                 f.write("\t".join([str(w), "(unassigned)"] + [""] * (len(cols) - 2)) + "\n")
                 continue
             wi, ri = w_idx[w], r_idx[r]
-            row = [str(w), str(r), f"{scores[wi, ri]:.4f}"]
-            if jaccard is not None:
-                row.append(f"{jaccard[wi, ri]:.4f}")
+            row = [str(w), str(r), f"{jaccard[wi, ri]:.4f}"]
+            if emission is not None:
+                row.append(f"{emission[wi, ri]:.4f}")
             if quality is not None:
                 row.append(f"{quality[wi, ri]:.4f}")
             f.write("\t".join(row) + "\n")
@@ -443,7 +440,7 @@ def _save_match_matrices(out_prefix, work_states, ref_states, mapping,
     fig, ax = plt.subplots(figsize=(max(6, len(ref_states) * 0.5),
                                     max(6, len(work_states) * 0.4)))
     # Row-normalize for the heatmap to make states with small coverage visible.
-    plot_scores = (scores if quality is None else quality).copy()
+    plot_scores = (jaccard if quality is None else quality).copy()
     row_max = plot_scores.max(axis=1, keepdims=True)
     row_max[row_max == 0] = 1.0
     plot_scores /= row_max
@@ -455,7 +452,7 @@ def _save_match_matrices(out_prefix, work_states, ref_states, mapping,
     ax.set_yticklabels(work_states, fontsize=utils.TICK_FONTSIZE)
     ax.set_xlabel("Reference state", fontsize=utils.AXIS_FONTSIZE)
     ax.set_ylabel("Work state", fontsize=utils.AXIS_FONTSIZE)
-    ax.set_title("Per-state matching score (work → reference)"
+    ax.set_title("Per-state Jaccard (work → reference)"
                  if quality is None else
                  "Per-state match quality: composite utility (work → reference)",
                  **utils.TITLE_STYLE)
@@ -470,61 +467,117 @@ def _save_match_matrices(out_prefix, work_states, ref_states, mapping,
     plt.close(fig)
 
 
-def _align_emissions(w_names, w_marks, w_mat, r_names, r_marks, r_mat):
-    """Align work and reference emission matrices to common marks and sorted states.
+def _emission_rows(names, mat, states):
+    """Rows of mat for states, looked up by name; None for a state with no row.
 
-    Returns (aligned_w_mat, aligned_r_mat, common_marks).
+    Handles numeric equivalence such as "1.0" vs "1".
+    """
+    def _key(name):
+        try:
+            return str(int(float(name)))
+        except (TypeError, ValueError):
+            return str(name)
+    by_name = {}
+    for i, name in enumerate(names):
+        by_name.setdefault(str(name), i)
+        by_name.setdefault(_key(name), i)
+    rows = []
+    for s in states:
+        i = by_name.get(str(s), by_name.get(_key(s)))
+        rows.append(None if i is None else mat[i])
+    return rows
+
+
+def _align_emissions(w_names, w_marks, w_mat, r_names, r_marks, r_mat,
+                     work_states, ref_states):
+    """Emission rows of work_states and ref_states, by state name, on common marks.
+
+    Returns (aligned_w_mat, aligned_r_mat, common_marks, w_found, r_found), where
+    the *_found boolean masks mark the states the emission files have a row for.
     """
     # Fuzzy match marks: H3K4me3_100 -> H3K4me3
-    def _base(m): return m.split('_')[0].upper()
-    w_base = {_base(m): m for m in w_marks}
-    r_base = {_base(m): m for m in r_marks}
-    common_base = sorted(list(set(w_base.keys()) & set(r_base.keys())))
-    
+    def _base(m): return str(m).split('_')[0].upper()
+    w_base = {_base(m): i for i, m in enumerate(w_marks)}
+    r_base = {_base(m): i for i, m in enumerate(r_marks)}
+    common_base = sorted(set(w_base) & set(r_base))
     if not common_base:
-        return None, None, []
-        
-    w_idx = [list(w_marks).index(w_base[b]) for b in common_base]
-    r_idx = [list(r_marks).index(r_base[b]) for b in common_base]
-    
-    # Sort states by natural order as they appear in match_states
-    w_states_sorted = sorted(w_names, key=_natural_sort_key)
-    r_states_sorted = sorted(r_names, key=_natural_sort_key)
-    
-    w_idx_map = {name: i for i, name in enumerate(w_names)}
-    aligned_w = np.zeros((len(w_states_sorted), len(common_base)))
-    for i, w in enumerate(w_states_sorted):
-        aligned_w[i] = w_mat[w_idx_map[w]][w_idx]
-        
-    r_idx_map = {name: i for i, name in enumerate(r_names)}
-    aligned_r = np.zeros((len(r_states_sorted), len(common_base)))
-    for i, r in enumerate(r_states_sorted):
-        aligned_r[i] = r_mat[r_idx_map[r]][r_idx]
-        
-    return aligned_w, aligned_r, common_base
+        return None, None, [], None, None
+
+    w_cols = [w_base[b] for b in common_base]
+    r_cols = [r_base[b] for b in common_base]
+
+    def _aligned(names, mat, cols, states):
+        mat = np.asarray(mat, dtype=float)
+        rows = _emission_rows(names, mat, states)
+        found = np.array([r is not None for r in rows], dtype=bool)
+        out = np.zeros((len(states), len(cols)))
+        for i, r in enumerate(rows):
+            if r is not None:
+                out[i] = r[cols]
+        return out, found
+
+    aligned_w, w_found = _aligned(w_names, w_mat, w_cols, work_states)
+    aligned_r, r_found = _aligned(r_names, r_mat, r_cols, ref_states)
+    return aligned_w, aligned_r, common_base, w_found, r_found
 
 
-def _load_emission_similarity(work_path, ref_path, n_w, n_r):
-    """Load and compute emission_similarity() from work and ref emission .npz files."""
+def _emissions_binarized(path):
+    """Whether an emission .npz holds binarized fractions, from its name; None if unknown."""
+    name = os.path.basename(path)
+    if "bin_emissions" in name:
+        return True
+    if "bw_emissions" in name:
+        return False
+    return None
+
+
+def _load_emission_similarity(work_path, ref_path, work_states, ref_states):
+    """emission_similarity() of work_states x ref_states from emission .npz files.
+
+    None when the files are missing, share no marks, or cover no state on a side.
+    States absent from an emission file get the mean similarity, so they neither
+    win nor lose a match on emissions.
+    """
     if not (work_path and ref_path):
         return None
     try:
         w_names, w_marks, w_mat = _load_emissions_npz(work_path)
         r_names, r_marks, r_mat = _load_emissions_npz(ref_path)
-        aligned_w, aligned_r, common = _align_emissions(w_names, w_marks, w_mat,
-                                                        r_names, r_marks, r_mat)
-        if not common:
-            return None
-        print(f"Incorporating emission similarity (marks: {common})", file=sys.stderr)
-        return emission_similarity(aligned_w, aligned_r)
     except Exception as e:
-        print(f"Warning: could not load/use emissions for matching: {e}", file=sys.stderr)
+        print(f"Warning: could not load emissions for matching: {e}", file=sys.stderr)
         return None
+    aligned_w, aligned_r, common, w_found, r_found = _align_emissions(
+        w_names, w_marks, w_mat, r_names, r_marks, r_mat, work_states, ref_states)
+    if not common:
+        print("Warning: emission files share no marks, matching on Jaccard only",
+              file=sys.stderr)
+        return None
+    if not w_found.any() or not r_found.any():
+        print("Warning: emission state names match no segmentation state, "
+              "matching on Jaccard only", file=sys.stderr)
+        return None
+    for side, states, found in (("work", work_states, w_found), ("reference", ref_states, r_found)):
+        missing = [s for s, f in zip(states, found) if not f]
+        if missing:
+            print(f"Warning: no {side} emissions for states {missing}", file=sys.stderr)
+
+    kinds = {True: "binarized", False: "bigwig", None: "unknown type"}
+    print(f"Incorporating emission similarity (marks: {common}; work "
+          f"{kinds[_emissions_binarized(work_path)]}, reference "
+          f"{kinds[_emissions_binarized(ref_path)]})", file=sys.stderr)
+    sim = emission_similarity(aligned_w, aligned_r,
+                              _emissions_binarized(work_path), _emissions_binarized(ref_path))
+    known = np.outer(w_found, r_found)
+    sim[~known] = sim[known].mean()
+    return sim
 
 
 def match_states(ref_segs_list, work_segs_list, matrix_out=None,
                  work_emissions_path=None, ref_emissions_path=None):
-    """Match work states to reference states using Hungarian assignment on hybrid composite utility.
+    """Match work states to reference states by Hungarian assignment on match quality.
+
+    Quality is JACCARD_WEIGHT * Jaccard + EMISSION_WEIGHT * emission similarity,
+    or Jaccard alone when no usable emissions are given.
 
     Returns bijection mapping {work_state: ref_state}.
     """
@@ -559,24 +612,15 @@ def match_states(ref_segs_list, work_segs_list, matrix_out=None,
     n_r = len(ref_states_sorted)
 
     genome_len = sum(total_ref_len.values()) or 1
-    scores = np.zeros((n_w, n_r))
-    for i, w in enumerate(work_states_sorted):
-        for j, r in enumerate(ref_states_sorted):
-            scores[i, j] = total_overlap.get((w, r), 0) / genome_len
-
     jaccard = jaccard_matrix(total_overlap, total_work_len, total_ref_len,
                              work_states_sorted, ref_states_sorted)
 
     emission_sim = _load_emission_similarity(work_emissions_path, ref_emissions_path,
-                                             n_w, n_r)
+                                             work_states_sorted, ref_states_sorted)
     if emission_sim is not None:
-        quality = (
-                JACCARD_WEIGHT * jaccard +
-                EMISSION_WEIGHT * emission_sim
-        )
+        quality = JACCARD_WEIGHT * jaccard + EMISSION_WEIGHT * emission_sim
     else:
-        emission_sim = np.zeros((n_w, n_r))
-        quality = JACCARD_WEIGHT_NO_EMISSION * jaccard
+        quality = jaccard
 
     row_ind, col_ind = linear_sum_assignment(-quality)
 
@@ -594,43 +638,42 @@ def match_states(ref_segs_list, work_segs_list, matrix_out=None,
     if matched:
         rows = [w_idx[w] for w in matched]
         cols = [r_idx[mapping[w]] for w in matched]
+        emission_avg = (f"{emission_sim[rows, cols].mean():.4f} (emission) "
+                        if emission_sim is not None else "")
+        bp_accuracy = sum(total_overlap.get((w, mapping[w]), 0) for w in matched) / genome_len
         print(f"avg_similarity = {jaccard[rows, cols].mean():.4f} (jaccard) "
-              f"{emission_sim[rows, cols].mean():.4f} (emission) "
+              f"{emission_avg}"
               f"{quality[rows, cols].mean():.4f} (quality) "
-              f"over {len(matched)}/{n_w} matched states",
+              f"over {len(matched)}/{n_w} matched states, "
+              f"bp accuracy {bp_accuracy:.4f}",
               file=sys.stderr)
     for w in matched:
         r = mapping[w]
         wi, ri = w_idx[w], r_idx[r]
-        print(f"  {w} -> {r}  (jaccard={jaccard[wi, ri]:.4f}, "
-              f"emission={emission_sim[wi, ri]:.4f}, "
+        emission = (f"emission={emission_sim[wi, ri]:.4f}, "
+                    if emission_sim is not None else "")
+        print(f"  {w} -> {r}  (jaccard={jaccard[wi, ri]:.4f}, {emission}"
               f"quality={quality[wi, ri]:.4f})", file=sys.stderr)
 
     if matrix_out:
         _save_match_matrices(matrix_out, work_states_sorted, ref_states_sorted,
-                             mapping, scores=scores, jaccard=jaccard,
-                             quality=quality)
+                             mapping, jaccard=jaccard,
+                             emission=emission_sim, quality=quality)
     return mapping
 
 
 def _pick_emissions(args):
-    """The work and reference emission files to match on, as (work, ref)."""
+    """The work and reference emission files to match on, as (work, ref).
+
+    Binarized emissions are preferred on each side: emission_similarity() puts
+    bigwig ones on the binarized scale, so the two sides need not be the same type.
+    """
     work_bw = args.work_emissions[0] if args.work_emissions else None
     work_bin = args.work_bin_emissions[0] if args.work_bin_emissions else None
-
-    if args.work_em_type or args.ref_em_type:
-        work = {"bw": work_bw, "bin": work_bin}.get(args.work_em_type,
-                                                    work_bin or work_bw)
-        ref = {"bw": args.ref_bw_emissions,
-               "bin": args.ref_bin_emissions}.get(args.ref_em_type,
-                                                  args.ref_bin_emissions or args.ref_bw_emissions)
-        return work, ref
-
-    if work_bin and args.ref_bin_emissions:
-        return work_bin, args.ref_bin_emissions
-    if work_bw and args.ref_bw_emissions:
-        return work_bw, args.ref_bw_emissions
-    return work_bin or work_bw, args.ref_bin_emissions or args.ref_bw_emissions
+    work = {"bw": work_bw, "bin": work_bin}.get(args.work_em_type) or work_bin or work_bw
+    ref = ({"bw": args.ref_bw_emissions, "bin": args.ref_bin_emissions}.get(args.ref_em_type)
+           or args.ref_bin_emissions or args.ref_bw_emissions)
+    return work, ref
 
 
 def main():
@@ -654,7 +697,7 @@ def main():
                     help="Write Jaccard heatmap to this directory instead of rewriting BED")
     ap.add_argument("--matrix-out",     default=None, dest="matrix_out",
                     help="Path prefix to persist the per-state matching matrices "
-                         "(.score.tsv/.jaccard.tsv/.quality.tsv/.mapping.tsv/.png)")
+                         "(.jaccard.tsv/.emission.tsv/.quality.tsv/.mapping.tsv/.png)")
     ap.add_argument("--work-em-type",   default=None, choices=["bw", "bin"],
                     help="Preferred emission type for work segmentation")
     ap.add_argument("--ref-em-type",    default=None, choices=["bw", "bin"],
