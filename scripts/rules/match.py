@@ -214,8 +214,8 @@ def state_colors(ref_segs):
 
 # Match quality = Jaccard * alpha + EmissionSim * beta.
 # Jaccard provides physical overlap concordance; emissions provide biochemical matching.
-JACCARD_WEIGHT = 0.6
-EMISSION_WEIGHT = 0.4
+JACCARD_WEIGHT = 0.8
+EMISSION_WEIGHT = 0.2
 
 
 def jaccard_matrix(overlap, lengths_w, lengths_r, work_states, ref_states):
