@@ -212,10 +212,10 @@ def state_colors(ref_segs):
 
 
 
-# Match quality = Jaccard * alpha + EmissionSim * beta. Jaccard provides physical
-# overlap concordance; emissions provide biochemical matching.
-JACCARD_WEIGHT = 0.8
-EMISSION_WEIGHT = 0.2
+# Match quality = Jaccard * alpha + EmissionSim * beta.
+# Jaccard provides physical overlap concordance; emissions provide biochemical matching.
+JACCARD_WEIGHT = 0.6
+EMISSION_WEIGHT = 0.4
 
 
 def jaccard_matrix(overlap, lengths_w, lengths_r, work_states, ref_states):
@@ -577,7 +577,8 @@ def match_states(ref_segs_list, work_segs_list, matrix_out=None,
     """Match work states to reference states by Hungarian assignment on match quality.
 
     Quality is JACCARD_WEIGHT * Jaccard + EMISSION_WEIGHT * emission similarity,
-    or Jaccard alone when no usable emissions are given.
+    or Jaccard alone when no usable emissions are given. Utility applies square root
+    to Jaccard to lift low-overlap focal states.
 
     Returns bijection mapping {work_state: ref_state}.
     """
@@ -619,10 +620,14 @@ def match_states(ref_segs_list, work_segs_list, matrix_out=None,
                                              work_states_sorted, ref_states_sorted)
     if emission_sim is not None:
         quality = JACCARD_WEIGHT * jaccard + EMISSION_WEIGHT * emission_sim
+        utility = JACCARD_WEIGHT * np.sqrt(np.maximum(jaccard, 0.0)) + EMISSION_WEIGHT * emission_sim
     else:
         quality = jaccard
+        utility = np.sqrt(np.maximum(jaccard, 0.0))
 
-    row_ind, col_ind = linear_sum_assignment(-quality)
+    # Concave transformation: diminishing marginal returns (square root utility on Jaccard) prioritize
+    # lifting worst-off states while preserving polynomial-time Hungarian assignment.
+    row_ind, col_ind = linear_sum_assignment(-utility)
 
     w_idx = {s: i for i, s in enumerate(work_states_sorted)}
     r_idx = {s: i for i, s in enumerate(ref_states_sorted)}

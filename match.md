@@ -15,14 +15,20 @@ De novo chromatin state models (ChromHMM, K-means, Bernoulli mixtures) learn sta
 1. **Jaccard.** For every work × reference state pair, the shared base pairs over the union of the two states (§2.3). When several segmentations are passed together, overlaps and state lengths are summed over all of them first (§2.6). Saved as `PREFIX.jaccard.tsv`.
 2. **Emission similarity**, when emission files are given (§2.4). Saved as `PREFIX.emission.tsv`.
 3. **Match quality**, the weighted sum of the two terms (§2.2). Saved as `PREFIX.quality.tsv`.
-4. **Assignment.** A single Hungarian assignment maximises total quality. The result is a strict bijection: every work state gets a distinct reference label; if there are more work states than reference states, the surplus keeps its own name.
+4. **Assignment.** A single Hungarian assignment maximises total concave utility $U(w, r) = \alpha \sqrt{\text{Jaccard}(w, r)} + \beta \cdot \text{EmissionSim}(w, r)$ (§2.2, §3.3). The result is a strict bijection: every work state gets a distinct reference label; if there are more work states than reference states, the surplus keeps its own name.
 5. **Output.** Each work BED is rewritten with the reference names (normalised) and colours, and the work emission files are renamed to match. `PREFIX.mapping.tsv` lists each chosen pair with its scores, and `PREFIX.png` shows the quality heatmap. The log reports the same per pair, plus the bp accuracy of the assignment.
 
-### 2.2. Match Quality
+### 2.2. Match Quality and Concave Utility
 
 $$\text{Quality}(w, r) = \alpha \cdot \text{Jaccard}(w, r) + \beta \cdot \text{EmissionSim}(w, r)$$
 
 The weights $\alpha$, $\beta$ are set in `match.py`. Without usable emissions (missing files, no shared marks, or no state name in common), quality is Jaccard alone.
+
+To prioritize fair coverage across all states and lift poorly matched states with diminishing marginal returns, the Hungarian algorithm optimizes concave square-root utility on spatial overlap combined with linear emission similarity:
+
+$$U(w, r) = \alpha \sqrt{\text{Jaccard}(w, r)} + \beta \cdot \text{EmissionSim}(w, r)$$
+
+(or $U(w, r) = \sqrt{\text{Jaccard}(w, r)}$ without emissions).
 
 ### 2.3. Jaccard
 
@@ -40,15 +46,11 @@ Jaccard is normalised by the size of both states, so a promoter pair and a `Quie
    $$\text{EmissionSim}(w, r) = \cos\big([P_w, b_w], [P_r, b_r]\big) \quad \in [0, 1]$$
    The background column keeps the signal level, so an empty `Quies`-like state is not similar to a state with every mark high.
 
-### 2.5. Surplus States
-
-A bijection only chooses which name sits on which state; it never changes a state's size. When a model splits the background more finely than the reference (ChromHMM Default often has several quiescent-like states against one `Quies`), the surplus states must take leftover labels they barely overlap. Their Jaccard with any leftover label is near zero, so emissions pick among those labels, and a large, nearly empty state can end up named as a promoter or enhancer. Such exiled states show up in `PREFIX.jaccard.tsv` as an assigned Jaccard near zero compared with the row maximum. They cannot be removed: under a strict bijection some state must wear a label it does not match.
-
-### 2.6. Joint Matching
+### 2.5. Joint Matching
 
 `--ref` and `--work` accept several files, paired in order; a single reference is reused for every work file. Overlaps and state lengths are summed over all pairs before the assignment, so one shared mapping is solved and applied to every work segmentation. This keeps state names consistent across biological replicates of a joint model and across the epigenomes of a joint epi1000 model. Emissions for matching come from the first work emission file.
 
-### 2.7. Usage
+### 2.6. Usage
 
 ```bash
 python scripts/rules/match.py --ref REF.bed --work WORK.bed --out WORK_matched.bed \
@@ -68,8 +70,16 @@ Jaccard measures positional agreement relative to the size of both states. Every
 
 A state is defined by its combinatorial mark signature (H3K4me3 promoters, H3K27ac/H3K4me1 enhancers, H3K36me3 transcription, H3K27me3 Polycomb, H3K9me3 heterochromatin). Emissions resolve spatially adjacent states with similar overlap (`Tss` vs. `TssFlnk`, `Enh` vs. `EnhG`), penalise biochemically incompatible pairs, and stay informative across cell types and assays where spatial concordance is weaker.
 
-### 3.3. Alternatives Not Used
+### 3.3. Concave Utility (Diminishing Marginal Returns)
 
+Instead of a standard linear sum $\max_{\pi} \sum_i Q(i, \pi(i))$, the assignment optimizes total utility $\max_{\pi} \sum_i (\alpha \sqrt{J(i, \pi(i))} + \beta E(i, \pi(i)))$ with square-root transformation applied to Jaccard overlap.
+
+Because square-root utility exhibits diminishing marginal returns on spatial overlap, improving a poorly matched state from agreement $0.01$ to $0.16$ yields a $+0.30$ gain in $\sqrt{J}$ ($\sqrt{0.16} - \sqrt{0.01} = 0.40 - 0.10 = 0.30$), whereas the same $+0.15$ gain for an already well-matched state from $0.81$ to $0.96$ yields only $+0.08$ utility. Separating $\sqrt{J}$ from emission similarity prevents high baseline emission scores from dampening the concave expansion of low-Jaccard focal states, ensuring that rare functional elements (TSS, enhancers) compete effectively while emissions maintain biochemical disambiguation, all while remaining solvable in a single polynomial-time Hungarian assignment pass.
+
+### 3.4. Alternatives Not Used
+
+- **Pure linear sum maximization.** Maximises the net aggregate sum, but allows strong states to greedily capture labels for minor incremental gains while stranding weaker states with near-zero concordance.
+- **Strict bottleneck matching (Maximin LBAP).** Maximises the worst-case single state agreement $\max \min_i Q(i, \pi(i))$, but can sacrifice net genomic fidelity and disrupt multiple high-confidence states just to marginally improve an unmatchable or noisy surplus state.
 - **Overlap share** (shared bp as a share of the genome). Maximises bp accuracy, but large domains dominate it and small-state labels are left almost entirely to emissions.
 - **State size similarity term.** Steers large states towards large labels; without emissions it outweighs the overlap of every small state and labels them by length.
 - **Two-stage assignment** (longest states matched first among the longest reference states). A hard size cut: it removes the worst exiles, but mid-sized states on either side of the cut get wrong labels.

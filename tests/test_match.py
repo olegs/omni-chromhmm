@@ -313,3 +313,45 @@ def test_jaccard_matrix():
     mat = match.jaccard_matrix(overlap, {"E1": 5000, "E2": 5000}, {"A": 9000, "B": 1000},
                                ["E1", "E2"], ["A", "B"])
     assert np.allclose(mat, [[5000 / 9000, 0.0], [0.4, 0.2]])
+
+
+def test_match_states_concave_scoring_lifts_worst_off_state():
+    # Demonstrates that concave utility prioritizes lifting the worst-off state (E2)
+    # rather than letting E1 greedily capture A for a minor gain while exiling E2 to ~0 overlap.
+    ref_segs = [
+        ("chr1", 0, 1000, "A", "0,0,0"),
+        ("chr1", 1000, 2000, "B", "0,0,0"),
+    ]
+    work_segs = [
+        ("chr1", 0, 800, "E1", "0,0,0"),
+        ("chr1", 1000, 1600, "E1", "0,0,0"),
+        ("chr1", 800, 1000, "E2", "0,0,0"),
+        ("chr1", 1600, 1610, "E2", "0,0,0"),
+        ("chr1", 2000, 2790, "E2", "0,0,0"),
+    ]
+    mapping = match.match_states([ref_segs], [work_segs])
+    assert mapping == {"E1": "B", "E2": "A"}
+
+
+def test_match_states_separate_sqrt_jaccard_with_emissions():
+    # E1 is a focal state with low raw Jaccard (0.04 vs 0.0) with A, and high emission with A (1.0 vs 0.0).
+    # E2 is a broad state with moderate Jaccard with B.
+    # Checks that utility combines 0.8 * sqrt(J) + 0.2 * E appropriately.
+    ref_segs = [
+        ("chr1", 0, 100, "Focal_Ref", "0,0,0"),
+        ("chr1", 100, 10000, "Broad_Ref", "0,0,0"),
+    ]
+    work_segs = [
+        ("chr1", 0, 100, "E_focal", "0,0,0"),
+        ("chr1", 100, 10000, "E_broad", "0,0,0"),
+    ]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        work_em = os.path.join(tmpdir, "work.npz")
+        ref_em = os.path.join(tmpdir, "ref.npz")
+        match._save_emissions_npz(work_em, ["E_focal", "E_broad"], ["H3K4me3"],
+                                  np.array([[1.0], [0.0]]))
+        match._save_emissions_npz(ref_em, ["Focal_Ref", "Broad_Ref"], ["H3K4me3"],
+                                  np.array([[1.0], [0.0]]))
+        mapping = match.match_states([ref_segs], [work_segs],
+                                     work_emissions_path=work_em, ref_emissions_path=ref_em)
+        assert mapping == {"E_focal": "Focal_Ref", "E_broad": "Broad_Ref"}
