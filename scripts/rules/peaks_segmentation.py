@@ -10,7 +10,9 @@ import matplotlib.pyplot as plt
 
 # Add analysis dir to path to import bernoulli
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "analysis"))
-from bernoulli import BernoulliMixture, pattern_histogram, track_labels
+from bernoulli import (BernoulliMixture, DEFAULT_SPATIAL_BINS,
+                       sparse_spatial_histogram, spatial_pattern_labels,
+                       to_pattern_codes)
 
 def read_chrom_sizes(path):
     df = pd.read_csv(path, sep='\t', header=None, names=['chrom', 'size'])
@@ -79,20 +81,6 @@ def write_binary_files(per_chrom, marks, cell, outdir):
             f.write(f"{cell}\t{chrom}\n")
             df.to_csv(f, sep='\t', index=False)
 
-def mixture_states(states, hist):
-    """States the mixture can be fitted with on this pattern table.
-
-    Every pattern is labelled with a single state, so a track showing fewer
-    distinct patterns than `states` (a degenerate binarization, e.g. a mark
-    with a handful of peaks) can never realize more states than patterns, and
-    K-means cannot seed more components than it has points.
-    """
-    n_patterns = int(np.count_nonzero(hist))
-    if n_patterns < states:
-        print(f"  WARNING: only {n_patterns} distinct patterns, fitting "
-              f"{n_patterns} states instead of {states}", file=sys.stderr)
-    return max(1, min(states, n_patterns))
-
 def segments_from_labels(chrom, labels, bin_size):
     if len(labels) == 0: return
     # Efficient RLE using numpy
@@ -113,7 +101,12 @@ def main():
     parser.add_argument("--out", help="Output BED file (stdout if omitted)")
     parser.add_argument("--save-binary", help="Optional directory to save ChromHMM binary files")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for KMeans/BMM")
-    parser.add_argument("--mixture", action="store_true", help="Use the Bernoulli Mixture Model instead of KMeans")
+    parser.add_argument("--mixture", action="store_true", help="Use the Bernoulli Mixture Model instead of KMeans; it reads --spatial-bins bins per observation")
+    parser.add_argument("--spatial-bins", type=int, default=DEFAULT_SPATIAL_BINS,
+                        choices=(1, 2, 3),
+                        help="Bins a mixture observation spans: 1 the bin itself, "
+                             "2 the previous bin and itself, "
+                             "3 (default, BMM3) also the next one")
 
     args = parser.parse_args()
     
@@ -138,20 +131,33 @@ def main():
         return
         
     if args.mixture:
-        print(f"Fitting Bernoulli Mixture with {args.states} states...",
+        bins = args.spatial_bins
+        window = "" if bins == 1 else f"{bins}-bin spatial "
+        print(f"Fitting {window}Bernoulli Mixture with {args.states} states...",
               file=sys.stderr)
-        # The mixture is fitted on the pattern table of the track rather than
-        # on its rows: at most 2^marks distinct patterns, weighted by their bins.
+        # The mixture reads a bin together with its neighbours, so it is fitted
+        # on the spatial patterns of the track rather than on its rows: the
+        # vocabulary is 2^(bins * marks) wide - 2^26 at the 13 marks of a
+        # SAGAconf dataset - so only the patterns the track shows are counted
+        # and scored.  Neighbours never cross a chromosome boundary, hence one
+        # slice per chromosome.
         n_marks = len(marks)
-        hist = pattern_histogram(data_matrix)
-        print(f"  {np.count_nonzero(hist)} distinct patterns", file=sys.stderr)
+        slices = []
+        offset = 0
+        for chrom, data in per_chrom:
+            slices.append((chrom, offset, offset + data.shape[0]))
+            offset += data.shape[0]
+
+        codes = to_pattern_codes(data_matrix)
+        patterns, counts = sparse_spatial_histogram(codes, slices, n_marks, bins=bins)
+        print(f"  {len(patterns)} distinct spatial patterns", file=sys.stderr)
         means, weights, _ = BernoulliMixture(
-            n_components=mixture_states(args.states, hist),
-            random_state=args.seed, n_init=10
-        ).fit_histogram(hist, n_marks)
+            n_components=args.states, random_state=args.seed, n_init=10
+        ).fit_patterns(patterns, counts, bins * n_marks)
 
         print("Generating labels...", file=sys.stderr)
-        labels = track_labels(means, weights, data_matrix)
+        labels = spatial_pattern_labels(means, weights, codes, slices, n_marks,
+                                        bins=bins)
     else:
         print(f"Fitting KMeans with {args.states} states...", file=sys.stderr)
         model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)

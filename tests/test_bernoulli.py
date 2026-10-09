@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Tests for the weighted Bernoulli mixture and its pattern forms.
+"""Tests for the weighted Bernoulli mixture and its spatial pattern forms.
 
 Every claim bernoulli.py makes about its own representation is a claim that two
-computations agree: the collapsed fit is the fit on the rows, the blocked
-histogram and lookup are the unblocked ones, the logit/offset algebra is the
-Bernoulli log density.  So the tests here are mostly equivalences, checked
-against a naive reference written out in full - the explicit
+computations agree: the collapsed fit is the fit on the rows, the sparse
+histogram is the dense one, the blocked lookup is the unblocked one, the
+logit/offset algebra is the Bernoulli log density.  So the tests here are
+mostly equivalences, checked against a naive reference written out in full -
+per-bin Python loops for the spatial codes, the explicit
 `x log p + (1-x) log(1-p)` for the density, scipy for logsumexp.  The
 references are slow and obviously right; the module is fast and has to match.
 
@@ -29,10 +30,48 @@ SEED = 0
 
 # --- naive references ------------------------------------------------------
 
+def ref_spatial_codes(block, n_marks, bins=3):
+    """block_spatial_codes() as a per-bin Python loop, in exact integers.
+
+    Python ints do not wrap, so this also pins the layout independently of the
+    uint32/uint64 the module picks.
+    """
+    codes = []
+    for i in range(len(block)):
+        if bins == 1:
+            codes.append(int(block[i]))
+            continue
+        previous = int(block[i - 1]) if i > 0 else 0
+        following = int(block[i + 1]) if i + 1 < len(block) else 0
+        code = previous | (int(block[i]) << n_marks)
+        if bins == 3:
+            code |= following << 2 * n_marks
+        codes.append(code)
+    return codes
+
+
 def ref_log_joint(X, probs, weights):
     """log p(x, component) written out, without the logit/offset rearrangement."""
     return (X @ np.log(probs).T + (1 - X) @ np.log1p(-probs).T
             + np.log(weights))
+
+
+def ref_labels(codes, slices, n_marks, probs, weights, bins=3):
+    """The spatial annotation, one bin at a time through the naive reference."""
+    labels = np.zeros(len(codes), dtype=np.int64)
+    for _, lo, hi in slices:
+        for i, code in enumerate(ref_spatial_codes(codes[lo:hi], n_marks,
+                                                   bins=bins)):
+            row = np.array([(code >> b) & 1 for b in range(bins * n_marks)],
+                           dtype=float)
+            labels[lo + i] = np.argmax(ref_log_joint(row[np.newaxis],
+                                                     probs, weights))
+    return labels
+
+
+def as_ints(codes):
+    """A code array as exact Python ints, so a uint64 wrap cannot hide."""
+    return [int(c) for c in codes]
 
 
 # --- fixtures --------------------------------------------------------------
@@ -47,6 +86,33 @@ def random_params(n_components, n_features, seed=SEED):
     rng = np.random.default_rng(seed)
     return (rng.uniform(0.05, 0.95, (n_components, n_features)),
             rng.dirichlet(np.ones(n_components)))
+
+
+def peaky_codes(n_bins, n_marks, seed=SEED):
+    """A track whose marks sit in contiguous runs, as real peak calls do.
+
+    Chromatin marks are correlated and clustered, which is what keeps the
+    spatial vocabulary small enough to fit sparsely; independent coin flips per
+    bin would not exercise the same regime.
+    """
+    rng = np.random.default_rng(seed)
+    codes = np.zeros(n_bins, dtype=np.int64)
+    for mark in range(n_marks):
+        coverage = 0.01 + 0.005 * mark
+        column = np.zeros(n_bins, dtype=bool)
+        n_peaks = max(1, int(n_bins * coverage / 15))
+        for start, length in zip(rng.integers(0, n_bins - 30, n_peaks),
+                                 rng.integers(5, 26, n_peaks)):
+            column[start:start + length] = True
+        codes |= column.astype(np.int64) << mark
+    return codes
+
+
+def even_slices(n_bins, n_slices):
+    """`n_slices` contiguous blocks covering [0, n_bins), as chromosomes are."""
+    edges = np.linspace(0, n_bins, n_slices + 1).astype(int)
+    return [(f"chr{i + 1}", int(lo), int(hi))
+            for i, (lo, hi) in enumerate(zip(edges[:-1], edges[1:]))]
 
 
 # --- the pattern representation --------------------------------------------
@@ -85,13 +151,13 @@ def test_pattern_rows_inverts_to_pattern_codes():
 
 
 def test_pattern_rows_decodes_codes_past_32_bits():
-    """Codes can arrive unsigned and wider than an int32; the bits must still
-    come back in order."""
+    """Spatial codes arrive unsigned and wider than an int32; the bits must
+    still come back in order."""
     n_features = 40
     codes = np.array([0, 1, 1 << 39, (1 << 40) - 1, 0b1010 << 30],
                      dtype=np.uint64)
     rows = bern.pattern_rows(n_features, codes)
-    for row, code in zip(rows, (int(c) for c in codes)):
+    for row, code in zip(rows, as_ints(codes)):
         assert np.array_equal(row, [(code >> b) & 1
                                     for b in range(n_features)])
 
@@ -118,18 +184,252 @@ def test_collapse_declines_when_it_would_not_pay():
     assert bern._collapse(np.zeros((10, 30)), weight) is None
 
 
+# --- spatial patterns ------------------------------------------------------
+
+def test_block_spatial_codes_matches_the_naive_layout():
+    rng = np.random.default_rng(SEED)
+    for n_marks in (1, 2, 3, 5, 8, 11):
+        block = rng.integers(0, 1 << n_marks, size=37)
+        assert as_ints(bern.block_spatial_codes(block, n_marks)) \
+            == ref_spatial_codes(block, n_marks)
+
+
+def test_block_spatial_codes_holds_every_bit_it_promises():
+    """All-ones bins are the widest code a vocabulary allows: 3 * n_marks set
+    bits.  This is what catches a dtype too narrow for the layout."""
+    for n_marks in (1, 10, 11, 21):
+        block = np.full(5, (1 << n_marks) - 1)
+        codes = bern.block_spatial_codes(block, n_marks)
+        assert as_ints(codes) == ref_spatial_codes(block, n_marks)
+        # The interior bins carry the previous, own and next marks all set.
+        assert int(codes[2]) == (1 << 3 * n_marks) - 1
+
+
+def test_block_spatial_codes_reads_off_the_ends_as_zero():
+    n_marks = 4
+    block = np.array([0b1111, 0b0001, 0b1000])
+    codes = as_ints(bern.block_spatial_codes(block, n_marks))
+    # First bin: no predecessor.
+    assert codes[0] >> 0 & 0b1111 == 0
+    assert codes[0] >> n_marks & 0b1111 == 0b1111
+    # Last bin: no successor.
+    assert codes[-1] >> 2 * n_marks & 0b1111 == 0
+    assert codes[-1] >> n_marks & 0b1111 == 0b1000
+
+
+def test_slices_keep_neighbours_from_crossing_a_chromosome_boundary():
+    """The spatial window is what makes boundaries matter: without per-slice
+    blocking the last bin of a chromosome would become the predecessor of the
+    first bin of the next one."""
+    n_marks = 4
+    left = np.array([0b0001, 0b0010])
+    right = np.array([0b0100, 0b1000])
+    codes = np.concatenate((left, right))
+    slices = [("chr1", 0, 2), ("chr2", 2, 4)]
+
+    separate = (ref_spatial_codes(left, n_marks)
+                + ref_spatial_codes(right, n_marks))
+    labelled = np.concatenate([
+        bern.block_spatial_codes(codes[lo:hi], n_marks)
+        for _, lo, hi in slices])
+    assert as_ints(labelled) == separate
+
+    # And the joined-up track really would have leaked, so the test has teeth.
+    assert as_ints(bern.block_spatial_codes(codes, n_marks)) != separate
+
+
+def test_spatial_histogram_matches_the_naive_reference():
+    n_marks = 3
+    codes = np.random.default_rng(SEED).integers(0, 1 << n_marks, size=400)
+    slices = even_slices(400, 4)
+
+    expected = np.zeros(1 << 3 * n_marks, dtype=np.int64)
+    for _, lo, hi in slices:
+        for code in ref_spatial_codes(codes[lo:hi], n_marks):
+            expected[code] += 1
+    assert np.array_equal(bern.spatial_histogram(codes, slices, n_marks),
+                          expected)
+
+
+def test_histograms_accept_a_binary_matrix_as_well_as_codes():
+    n_marks = 4
+    codes = peaky_codes(1200, n_marks)
+    X = bern.pattern_rows(n_marks, codes)
+    slices = even_slices(1200, 2)
+
+    assert np.array_equal(bern.spatial_histogram(X, slices, n_marks),
+                          bern.spatial_histogram(codes, slices, n_marks))
+
+
+def test_histograms_count_only_the_slices_given():
+    """Restricting the slices to the training chromosomes has to restrict the
+    counts, not just the work."""
+    n_marks = 4
+    codes = peaky_codes(3000, n_marks)
+    every = even_slices(3000, 3)
+
+    for slices in ([every[0]], every[:2], every):
+        counted = sum(hi - lo for _, lo, hi in slices)
+        assert bern.spatial_histogram(codes, slices, n_marks).sum() == counted
+
+
+def test_histograms_tolerate_empty_and_degenerate_slices():
+    n_marks = 3
+    codes = peaky_codes(100, n_marks)
+    for slices in ([], [("chr1", 5, 5)], [("chr1", 0, 1)]):
+        counted = sum(hi - lo for _, lo, hi in slices)
+        assert bern.spatial_histogram(codes, slices, n_marks).sum() == counted
+
+
+def test_the_two_bin_window_holds_the_previous_bin_and_the_bin_itself():
+    """What the pipeline's mixture reads: no successor, and half the bits of
+    the 3-bin window."""
+    n_marks = 4
+    block = np.array([0b1111, 0b0001, 0b1000])
+    codes = as_ints(bern.block_spatial_codes(block, n_marks, bins=2))
+    assert codes == ref_spatial_codes(block, n_marks, bins=2)
+    # First bin: no predecessor; every bin: its own marks above it.
+    assert codes[0] == 0b1111 << n_marks
+    assert codes[1] == 0b1111 | (0b0001 << n_marks)
+    # And nothing above the two bins the window spans.
+    assert max(codes) < 1 << 2 * n_marks
+
+
+def test_every_window_width_matches_the_naive_layout():
+    rng = np.random.default_rng(SEED)
+    for bins in (1, 2, 3):
+        for n_marks in (1, 3, 11, 13):
+            block = rng.integers(0, 1 << n_marks, size=37)
+            assert as_ints(bern.block_spatial_codes(block, n_marks, bins=bins)) \
+                == ref_spatial_codes(block, n_marks, bins=bins)
+
+
+def test_a_window_of_no_width_is_refused():
+    for bins in (0, 4, -1):
+        try:
+            bern.block_spatial_codes(np.zeros(4, dtype=np.int64), 3, bins=bins)
+        except ValueError as error:
+            assert "1, 2 or 3 bins" in str(error)
+            continue
+        raise AssertionError(f"bins={bins} was accepted")
+
+
+def test_the_sparse_histogram_is_the_dense_one_without_the_zeros():
+    for bins in (1, 2, 3):
+        n_marks = 4
+        codes = peaky_codes(2000, n_marks)
+        slices = even_slices(2000, 3)
+
+        dense = bern.spatial_histogram(codes, slices, n_marks, bins=bins)
+        keys, counts = bern.sparse_spatial_histogram(codes, slices, n_marks,
+                                                     bins=bins)
+        assert np.array_equal(keys, np.flatnonzero(dense))
+        assert np.array_equal(counts, dense[np.flatnonzero(dense)])
+
+
+def test_the_sparse_histogram_spans_a_vocabulary_no_array_could():
+    """13 marks of 2-bin pattern is 2^26 counters and 11 marks of 3-bin one is
+    2^33: the dense form refuses both, and the sparse form is what makes the
+    SAGAconf datasets fittable."""
+    for n_marks, bins in ((13, 2), (11, 3)):
+        codes = peaky_codes(3000, n_marks)
+        slices = even_slices(3000, 2)
+        keys, counts = bern.sparse_spatial_histogram(codes, slices, n_marks,
+                                                     bins=bins)
+        assert counts.sum() == 3000
+        assert len(keys) <= 3000
+        assert int(keys.max()) < 1 << bins * n_marks
+
+
+def test_the_sparse_histogram_counts_only_the_slices_given():
+    n_marks = 5
+    codes = peaky_codes(3000, n_marks)
+    every = even_slices(3000, 3)
+    for slices in ([], [("chr1", 5, 5)], [every[0]], every[:2], every):
+        _, counts = bern.sparse_spatial_histogram(codes, slices, n_marks, bins=2)
+        assert counts.sum() == sum(hi - lo for _, lo, hi in slices)
+
+
+def test_the_sparse_annotation_agrees_with_the_reference():
+    for bins in (1, 2, 3):
+        n_marks = 4
+        probs, weights = random_params(5, bins * n_marks)
+        codes = peaky_codes(600, n_marks)
+        slices = even_slices(600, 3)
+
+        assert np.array_equal(
+            bern.spatial_pattern_labels(probs, weights, codes, slices, n_marks,
+                                        bins=bins, dtype=np.int64),
+            ref_labels(codes, slices, n_marks, probs, weights, bins=bins))
+
+
+def test_the_sparse_annotation_is_the_dense_lookup_without_the_table():
+    """Same labels as spatial_labels() through a whole-vocabulary table, for a
+    vocabulary small enough that both forms can be run."""
+    n_marks = 4
+    probs, weights = random_params(6, 2 * n_marks)
+    codes = peaky_codes(1500, n_marks)
+    slices = even_slices(1500, 3)
+
+    table = bern.lookup_table(probs, weights, dtype=np.int64)
+    assert np.array_equal(
+        bern.spatial_labels(table, codes, slices, n_marks, bins=2),
+        bern.spatial_pattern_labels(probs, weights, codes, slices, n_marks,
+                                    bins=2, dtype=np.int64))
+
+
+def test_the_sparse_annotation_does_not_depend_on_the_block_size():
+    n_marks = 4
+    probs, weights = random_params(5, 2 * n_marks)
+    codes = peaky_codes(900, n_marks)
+    slices = even_slices(900, 2)
+
+    original = bern.PATTERN_BLOCK
+    try:
+        labels = bern.spatial_pattern_labels(probs, weights, codes, slices,
+                                             n_marks, bins=2, dtype=np.int64)
+        for block in (1, 7, 128):
+            bern.PATTERN_BLOCK = block
+            assert np.array_equal(
+                bern.spatial_pattern_labels(probs, weights, codes, slices,
+                                            n_marks, bins=2, dtype=np.int64),
+                labels)
+    finally:
+        bern.PATTERN_BLOCK = original
+
+
+def test_a_one_bin_window_fits_what_the_plain_mixture_fits():
+    """bins=1 is the unwidened bin, so the sparse route has to reproduce the
+    plain pattern histogram and the plain labels."""
+    n_marks = 5
+    codes = peaky_codes(2000, n_marks)
+    slices = even_slices(2000, 3)
+
+    keys, counts = bern.sparse_spatial_histogram(codes, slices, n_marks, bins=1)
+    plain = np.bincount(codes, minlength=1 << n_marks)
+    assert np.array_equal(keys, np.flatnonzero(plain))
+    assert np.array_equal(counts, plain[np.flatnonzero(plain)])
+
+    probs, weights = random_params(4, n_marks)
+    assert np.array_equal(
+        bern.spatial_pattern_labels(probs, weights, codes, slices, n_marks,
+                                    bins=1, dtype=np.int64),
+        bern.lookup_table(probs, weights, dtype=np.int64)[codes])
+
+
 # --- the dense guard -------------------------------------------------------
 
 def test_dense_forms_refuse_a_vocabulary_they_cannot_span():
     """Past MAX_DENSE_PATTERN_BITS an array indexed by pattern code stops
-    fitting in memory, so the dense entry points have to refuse rather than
-    ask for it."""
+    fitting in memory - 11 marks of spatial pattern is 2^33 counters - so the
+    dense entry points have to refuse rather than ask for it."""
     over = bern.MAX_DENSE_PATTERN_BITS + 1
     probs, weights = random_params(3, over)
     cases = [
         lambda: bern.pattern_rows(over),
         lambda: bern.lookup_table(probs, weights),
-        lambda: bern.pattern_histogram(np.zeros((10, over), dtype=np.uint8)),
+        lambda: bern.spatial_histogram(np.zeros(10, dtype=np.int64),
+                                       [("chr1", 0, 10)], 11),
     ]
     for call in cases:
         try:
@@ -160,48 +460,26 @@ def test_blocking_does_not_change_the_annotation():
         bern.PATTERN_BLOCK = original
 
 
-# --- genome-wide tracks ----------------------------------------------------
+def test_spatial_annotation_agrees_with_the_reference():
+    n_marks = 4
+    probs, weights = random_params(5, 3 * n_marks)
+    codes = peaky_codes(600, n_marks)
+    slices = even_slices(600, 3)
 
-def test_pattern_histogram_counts_every_bin_once():
-    X = random_binary(10_001, 6)
-    assert np.array_equal(bern.pattern_histogram(X),
-                          np.bincount(bern.to_pattern_codes(X),
-                                      minlength=1 << 6))
-
-
-def test_pattern_histogram_does_not_depend_on_the_block_size():
-    X = random_binary(5000, 5)
-    whole = bern.pattern_histogram(X)
-    for block in (1, 7, 999, 5000, 10_000):
-        assert np.array_equal(bern.pattern_histogram(X, block=block), whole)
+    table = bern.lookup_table(probs, weights, dtype=np.int64)
+    assert np.array_equal(bern.spatial_labels(table, codes, slices, n_marks),
+                          ref_labels(codes, slices, n_marks, probs, weights))
 
 
-def test_pattern_histogram_of_no_bins_is_empty():
-    assert bern.pattern_histogram(np.zeros((0, 4), dtype=np.uint8)).sum() == 0
-
-
-def test_track_labels_are_the_brute_force_argmax():
-    X = random_binary(3000, 5)
-    probs, weights = random_params(4, 5)
-    assert np.array_equal(
-        bern.track_labels(probs, weights, X, block=101, dtype=np.int64),
-        np.argmax(ref_log_joint(X, probs, weights), axis=1))
-
-
-def test_track_labels_do_not_depend_on_the_block_size():
-    X = random_binary(4000, 6)
-    probs, weights = random_params(5, 6)
-    whole = bern.track_labels(probs, weights, X)
-    for block in (1, 13, 4000, 8000):
-        assert np.array_equal(bern.track_labels(probs, weights, X, block=block),
-                              whole)
-
-
-def test_track_labels_keep_the_requested_dtype():
-    X = random_binary(200, 4)
-    probs, weights = random_params(3, 4)
+def test_spatial_labels_keeps_the_lookup_tables_dtype():
+    n_marks = 3
+    probs, weights = random_params(4, 3 * n_marks)
+    codes = peaky_codes(200, n_marks)
+    slices = even_slices(200, 2)
     for dtype in (np.int8, np.int32, np.int64):
-        assert bern.track_labels(probs, weights, X, dtype=dtype).dtype == dtype
+        table = bern.lookup_table(probs, weights, dtype=dtype)
+        assert bern.spatial_labels(table, codes, slices,
+                                   n_marks).dtype == dtype
 
 
 # --- the log density -------------------------------------------------------
@@ -633,6 +911,61 @@ def test_a_planted_mixture_is_recovered():
     # And the fit explains the sample at least as well as the truth does.
     assert bern.log_likelihood(hist, probs, weights) >= \
         bern.log_likelihood(hist, true_probs, true_weights)
+
+
+def test_a_planted_spatial_mixture_beats_a_non_spatial_one():
+    """A spatial fit sees each bin with its neighbours, so on a track whose
+    structure is in the runs it has to explain the data better per bin than the
+    same number of states fitted on single bins."""
+    n_marks, n_bins = 5, 40_000
+    codes = peaky_codes(n_bins, n_marks)
+    slices = even_slices(n_bins, 4)
+
+    plain = np.bincount(codes, minlength=1 << n_marks).astype(float)
+    flat = bern.BernoulliMixture(n_components=6, n_init=3,
+                                 random_state=SEED).fit_histogram(plain,
+                                                                  n_marks)
+    hist = bern.spatial_histogram(codes, slices, n_marks)
+    spatial = bern.BernoulliMixture(n_components=6, n_init=3,
+                                    random_state=SEED).fit_histogram(
+        hist, 3 * n_marks)
+    assert spatial[2] < flat[2]        # per-bin loglik over a wider vocabulary
+
+
+def test_the_spatial_window_separates_bins_their_own_marks_cannot():
+    """The defining property of the spatial variant, and the only thing it can
+    do that a single-bin model cannot: two bins with identical marks of their
+    own get different states when their neighbours differ.  A flat model reads
+    a bin through its own marks alone, so it assigns one state per mark pattern
+    by construction - an empty bin beside a peak and an empty bin in the middle
+    of nowhere are the same call.  Here they need not be.
+    """
+    n_marks, n_bins = 5, 40_000
+    codes = peaky_codes(n_bins, n_marks)
+    slices = even_slices(n_bins, 4)
+
+    hist = bern.spatial_histogram(codes, slices, n_marks)
+    probs, weights, _ = bern.BernoulliMixture(
+        n_components=6, n_init=3, random_state=SEED).fit_histogram(
+        hist, 3 * n_marks)
+    labels = bern.spatial_labels(
+        bern.lookup_table(probs, weights, dtype=np.int64), codes, slices,
+        n_marks)
+
+    observed = np.unique(codes)
+    split = [code for code in observed
+             if len(np.unique(labels[codes == code])) > 1]
+    assert len(split) > 0.2 * len(observed)
+    # The empty bin is the clearest case: context alone has to move it.
+    assert len(np.unique(labels[codes == 0])) > 1
+
+    # A flat model over the same track cannot split any mark pattern at all.
+    plain = np.bincount(codes, minlength=1 << n_marks).astype(float)
+    flat_probs, flat_weights, _ = bern.BernoulliMixture(
+        n_components=6, n_init=3, random_state=SEED).fit_histogram(plain,
+                                                                   n_marks)
+    flat = bern.lookup_table(flat_probs, flat_weights, dtype=np.int64)[codes]
+    assert all(len(np.unique(flat[codes == code])) == 1 for code in observed)
 
 
 # --- standalone runner -----------------------------------------------------

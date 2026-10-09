@@ -8,7 +8,7 @@
 # subdir) and a {caller} wildcard (omni | homer).
 # This file owns:
 #   - KMeans segmentation:    {folder}/{caller}/{caller}_kmeans_states.bed
-#   - BMM segmentation:       {folder}/{caller}/{caller}_bmm_states.bed
+#   - BMM3 segmentation:      {folder}/{caller}/{caller}_bmm3_states.bed
 
 rule binarize_peaks:
     """Binarize peaks for a given caller and folder."""
@@ -56,17 +56,20 @@ rule kmeans_states:
         "> {log} 2>&1"
 
 
-rule bmm_states:
-    """Run BMM clustering on binarized peaks."""
+rule bmm3_states:
+    """Run the 3-bin spatial BMM clustering on binarized peaks."""
     input:
         peaks=lambda w: [ancient(peak_file(w.folder, w.caller, m)) for m in get_marks_for_folder(w.folder)],
         cs=ancient(TOOLS["chromsizes"]),
         bins=expand("{{folder}}/{{caller}}/chromhmm_peaks/{chr}_binary.txt.gz", chr=CHROMS)
     output:
-        bmm="{folder}/{caller}/{caller}_bmm_states.bed",
-    log: "{folder}/{caller}/{caller}_bmm_states.log"
+        bmm="{folder}/{caller}/{caller}_bmm3_states.bed",
+    log: "{folder}/{caller}/{caller}_bmm3_states.log"
     conda: "../envs/python.yaml"
-    resources: mem_mb=4000
+    # The spatial fit holds the binarization, its pattern codes and the table
+    # of the patterns the track shows - at the 13 marks and 100 bp bins of a
+    # SAGAconf replicate that is well past what the plain mixture needed.
+    resources: mem_mb=8000
     params:
         bin=lambda w: CALLER_BIN[w.caller],
         n=NSTATES,
@@ -76,5 +79,5 @@ rule bmm_states:
         "python {SCRIPTS_DIR}/peaks_segmentation.py "
         "--bin {params.bin} --chromsizes {input.cs} --marks {params.marks} "
         "--peaks {input.peaks} --states {params.n} --out {output.bmm} "
-        "--cell {params.cell} --mixture "
+        "--cell {params.cell} --mixture --spatial-bins 3 "
         "> {log} 2>&1"

@@ -29,11 +29,15 @@ if _rules_dir not in sys.path:
 MARKS = ("H3K4me3", "H3K4me1", "H3K36me3", "H3K9me3", "H3K27me3", "H3K27ac")
 N_STATES = 15
 SEED = 42
-# Random restarts of a fresh fit; at 10 of them the best-known optimum of a
-# 15-state chr1 fit is not reliably reached.
+# Random restarts of a fresh fit.  A restart of the spatial mixture costs
+# ~0.07 s, and at 10 of them the best-known optimum of a 15-state chr1 fit is
+# essentially never reached: the restarts span 4.7% of the log-likelihood.
 N_INIT = 50
 KMEANS_N_INIT = 3000  # restarts of the K-means seeding, where it is stable
 N_PATTERNS = 1 << len(MARKS)
+SPATIAL_BINS = bern.SPATIAL_BINS       # previous, current and next bin
+N_SPATIAL_MARKS = len(MARKS) * SPATIAL_BINS
+N_PATTERNS_SPATIAL = 1 << N_SPATIAL_MARKS
 
 # Chromosomes no mark is called on; keeping them would only add all-zero bins.
 EXCLUDED_CHROMS = ("chrY", "chrM", "chrEBV")
@@ -168,12 +172,34 @@ class Cache:
 
 # --- weighted Bernoulli mixture on the pattern counts ----------------------
 
+def _slices(mask, chroms=None):
+    """The mask's chromosome blocks, restricted to `chroms` when given."""
+    return [s for s in mask.slices() if chroms is None or s[0] in chroms]
+
+
+def spatial_histogram(codes, mask, chroms=None, bins=SPATIAL_BINS):
+    """Spatial pattern counts over `chroms` (the whole mask by default).
+
+    A spatial pattern is a bin widened to the marks of its previous, own and
+    next bin (bins=3) or previous and own bin (bins=2).
+    """
+    return bern.spatial_histogram(codes, _slices(mask, chroms), len(MARKS),
+                                  bins=bins)
+
+
+def spatial_labels(lut, codes, mask, chroms=None, bins=SPATIAL_BINS):
+    """Annotate a track through a spatial lookup table: `lut[spatial code]`."""
+    return bern.spatial_labels(lut, codes, _slices(mask, chroms), len(MARKS),
+                               bins=bins)
+
+
 def fit_bernoulli(hist, init=None, k=N_STATES, seed=SEED, n_init=N_INIT):
     """Weighted Bernoulli-mixture EM over the pattern table.
 
-    `hist` holds the 2^6 counts of the mark patterns of a bin.  Everything the
-    EM itself is tuned by - iterations, polish, tolerance, floor - stays at the
-    bernoulli defaults; only the restarts differ here.
+    `hist` decides the vocabulary: 2^6 counts is the plain mark pattern of a
+    bin, 2^18 the spatial pattern of spatial_histogram().  Everything the EM
+    itself is tuned by - iterations, polish, tolerance, floor - stays at the
+    bernoulli defaults; only the vocabulary and the restarts differ here.
     """
     return bern.fit_bernoulli(hist, init=init, k=k, seed=seed, n_init=n_init)
 
@@ -256,6 +282,20 @@ def state_mapping(table):
 
 # --- biological interpretation, fixed on the initial training fit ----------
 
+def own_marks(values):
+    """The bin's own mark columns of a fit, in MARKS order.
+
+    A spatial centroid carries several bins side by side; the state is defined
+    by the "current" one, the same one interpret_centroids() names it after.
+    Works on a single row and on a states x marks matrix alike.
+    """
+    values = np.asarray(values)
+    width = values.shape[-1]
+    if width == N_SPATIAL_MARKS:        # 3 bins: prev, curr, next
+        return values[..., len(MARKS):2 * len(MARKS)]
+    return values
+
+
 _RULES = (
     (("H3K4me3", "H3K27me3"), (), "TssBiv"),
     (("H3K4me3", "H3K27ac"), (), "Tss"),
@@ -300,7 +340,7 @@ FAMILIES = {"promoter": PROMOTER_FAMILY, "transcribed": TX_FAMILY,
 
 def _base_name(presence):
     """Base state name of a centroid's mark-presence pattern."""
-    present = {m for m, flag in zip(MARKS, presence) if flag}
+    present = {m for m, flag in zip(MARKS, own_marks(presence)) if flag}
     for required, forbidden, name in _RULES:
         if present.issuperset(required) and not present.intersection(forbidden):
             return name

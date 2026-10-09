@@ -49,7 +49,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
    --peaks $ALL_PEAKS --states 15 --outdir joint_kmeans/$PC;
   python "$ROOT/scripts/rules/joint_peaks_segmentation.py" \
    --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --cells "$REPS" \
-   --peaks $ALL_PEAKS --states 15 --outdir joint_bmm/$PC --mixture;
+   --peaks $ALL_PEAKS --states 15 --outdir joint_bmm3/$PC --mixture --spatial-bins 3;
  done
 done
 
@@ -63,7 +63,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   BIN=$(get_bin_size "$PC")
   for R in rep1 rep2; do
    match_states "joint_kmeans/$PC/${R}_kmeans_joint_states.bed" "$R/$PC/${PC}_kmeans_states.bed" "$PC" "$BIN" "$R"
-   match_states "joint_bmm/$PC/${R}_bmm_joint_states.bed" "$R/$PC/${PC}_bmm_states.bed" "$PC" "$BIN" "$R"
+   match_states "joint_bmm3/$PC/${R}_bmm3_joint_states.bed" "$R/$PC/${PC}_bmm3_states.bed" "$PC" "$BIN" "$R"
   done
  done
 done
