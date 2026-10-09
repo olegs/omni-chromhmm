@@ -173,13 +173,13 @@ def load_emissions(path):
 # Samples of the same organ move together, so a unit rather than a sample is
 # what a split draws.
 
-UNITS = (("monocytes",), ("spleen",), ("neurosphere",), ("imr90",),
+UNITS = (("monocytes",), ("spleen",), ("imr90",),
          ("sigmoid_colon",), ("adrenal_gland",), ("tibial_nerve",),
          ("heart_left_ventricle", "heart_right_ventricle"),
          ("substantia_nigra", "temporal_lobe"))
 ALL_SAMPLES = tuple(s for unit in UNITS for s in unit)
 
-N_INCOMING = 4          # 4 incoming, the remaining 7 initial
+N_INCOMING = 4          # 4 incoming, the remaining 6 initial
 N_SPLITS = 7            # how many splits a run evaluates by default
 
 
@@ -222,7 +222,7 @@ def choose_splits(datasets, n_splits=N_SPLITS, n_incoming=N_INCOMING, seed=42):
 
 
 INITIAL = ("monocytes", "spleen", "heart_left_ventricle", "heart_right_ventricle",
-           "neurosphere", "substantia_nigra", "temporal_lobe")
+           "substantia_nigra", "temporal_lobe")
 INCOMING = ("imr90", "sigmoid_colon", "adrenal_gland", "tibial_nerve")
 
 # How the mixture arms are fitted, and how much endpoint loss still counts as
@@ -258,9 +258,9 @@ def setup(data_dir=DATA_DIR):
     data_dir = os.path.expanduser(data_dir)
     out_root = os.path.join(data_dir, "out", "transfer_cache")
     os.makedirs(out_root, exist_ok=True)
-    excluded = set(config.get("outliers") or ()).intersection(INITIAL + INCOMING)
+    excluded = set(config.get("outliers") or ()).intersection(ALL_SAMPLES + INITIAL + INCOMING)
     if excluded:
-        raise ValueError(f"split contains datasets the config marks as outliers: "
+        raise ValueError(f"the splits draw on datasets the config marks as outliers: "
                          f"{sorted(excluded)}")
     mask = pat.Mask(os.path.join(data_dir, "hg38.chrom.sizes"),
                     bin_size=config["params"]["omni_bin"])

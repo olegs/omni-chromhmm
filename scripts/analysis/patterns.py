@@ -289,10 +289,13 @@ _VARIANTS = {
 # rather than on the names interpret_centroids() gives it: utils.PROMOTER_STATES,
 # utils.TX_STATES and utils.ACTIVE_STATES, spelled out here so that importing
 # this module costs a measured fit nothing (see the label alignment section).
-FAMILIES = {"promoter": utils.PROMOTER_STATES,
-            "transcribed": utils.TX_STATES,
-            "enhancer": utils.ENHANCER_STATES,
-            "active": utils.PROMOTER_STATES + utils.ENHANCER_STATES}
+PROMOTER_FAMILY = ("Tss", "TssA", "TssAFlnk", "TssFlnkU", "TssFlnk", "TssFlnkD")
+TX_FAMILY = ("Tx", "TxA", "TxWk", "TxFlnk")
+ENHANCER_FAMILY = ("Enh", "EnhA", "EnhAFlnk", "Enh1", "Enh2",
+                   "EnhG", "EnhG1", "EnhG2", "EnhLo")
+FAMILIES = {"promoter": PROMOTER_FAMILY, "transcribed": TX_FAMILY,
+            "enhancer": ENHANCER_FAMILY,
+            "active": PROMOTER_FAMILY + ENHANCER_FAMILY}
 
 
 def _base_name(presence):

@@ -27,13 +27,16 @@ params:
   work_em_type: bin       # preferred work emission type for matching
   ref_em_type: bw         # preferred reference emission type for matching
 
-# Datasets excluded from every analysis: the broad marks of these two are not
-# usable (uterus H3K36me3 is called with 19 peaks), see the H3K27me3/H3K36me3/
-# H3K9me3 tracks in outliers.yaml. They are still processed by the pipeline.
-# analysis_encode.ipynb carries its own copy of this list as OUTLIERS.
+# Datasets excluded from every analysis; they are still processed by the
+# pipeline. Every notebook and transfer.py read this list.
+#  - uterus, thyroid_gland: broad marks not usable (uterus H3K36me3 is called
+#    with 19 peaks), see the H3K27me3/H3K36me3/H3K9me3 tracks in outliers.yaml.
+#  - neurosphere: its RNA-seq top 12,000 genes are half non-coding, so its
+#    expressed TSS and gene body annotations are not comparable to the rest.
 outliers:
   - uterus
   - thyroid_gland
+  - neurosphere
 
 datasets:
 

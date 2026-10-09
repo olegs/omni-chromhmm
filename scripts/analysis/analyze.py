@@ -197,8 +197,33 @@ _FAMILIES = {
 }
 
 
-def load_gene_tpms(rnaseq_path, top_n=12000):
-    """Parse ENCODE RNA-seq quantification TSV; return {gene ID: TPM} and top expressed gene ID set."""
+def load_gtf_gene_ids(gtf_path):
+    """Every gene ID of a GENCODE GTF, with and without its version, and every
+    gene name: what load_gene_coords() can match an RNA-seq gene against."""
+    ids = set()
+    with open_text(gtf_path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) < 9 or cols[2] != "gene":
+                continue
+            for attr in cols[8].split(";"):
+                attr = attr.strip()
+                if attr.startswith("gene_id") or attr.startswith("gene_name"):
+                    value = attr.split('"')[1] if '"' in attr else attr.split()[-1]
+                    ids.add(value)
+                    ids.add(value.split(".")[0])
+    return ids
+
+
+def load_gene_tpms(rnaseq_path, top_n=12000, known_ids=None):
+    """Parse ENCODE RNA-seq quantification TSV; return {gene ID: TPM} and top expressed gene ID set.
+
+    known_ids (load_gtf_gene_ids()) restricts the ranking to genes the GTF has:
+    spike-ins (gSpikein_ERCC-*) and IDs retired from the annotation would
+    otherwise take places among the top_n without ever getting a TSS.
+    """
     raw_tpms = {}
     with open(rnaseq_path) as f:
         reader = csv.DictReader(f, delimiter="\t")
@@ -212,7 +237,9 @@ def load_gene_tpms(rnaseq_path, top_n=12000):
 
     # Rank genes descending by TPM
     sorted_genes = sorted(
-        [(gid, tpm) for gid, tpm in raw_tpms.items() if tpm > 0],
+        [(gid, tpm) for gid, tpm in raw_tpms.items()
+         if tpm > 0 and (known_ids is None or gid in known_ids
+                         or gid.split(".")[0] in known_ids)],
         key=lambda x: x[1],
         reverse=True
     )
@@ -297,7 +324,8 @@ def load_gene_coords(gtf_path, gene_tpms, top_expressed_ids=None, exp_thresh=1.0
 
 def make_expressed_annotations(rnaseq_path, gtf_path, top_expressed=12000, nonexp_thresh=0.1):
     """Build expressed and non-expressed gene body/TSS BED annotations."""
-    gene_tpms, top_exp_ids = load_gene_tpms(rnaseq_path, top_n=top_expressed)
+    gene_tpms, top_exp_ids = load_gene_tpms(rnaseq_path, top_n=top_expressed,
+                                            known_ids=load_gtf_gene_ids(gtf_path))
     exp_b, exp_t, nonexp_b, nonexp_t = load_gene_coords(
         gtf_path, gene_tpms, top_expressed_ids=top_exp_ids, nonexp_thresh=nonexp_thresh
     )

@@ -270,122 +270,66 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             row[f"enrich_Tss_RefSeqTSS{suffix}"] = _get_val(enrichment, "Tss", f"RefSeqTSS{suffix}.hg38")
         row["enrich_Enh1_ExpressedTSS"] = _get_val(enrichment, "Enh1", "ExpressedTSS")
 
-        # ATAC-seq validation (pooled active states).
+        # Functional validation: a state family pooled against an annotation,
+        # summed from the per-state rows rather than read off the POOL: rows,
+        # so the table does not depend on how analyze.py pooled when it ran.
         coverage = load_coverage(_adir(method), method)
         sensitivity = load_sensitivity(_adir(method), method)
 
-        atac_label = None
-        for st_data in enrichment.values():
-            atac_label = next((l for l in st_data if l.startswith("atac_")), None)
-            if atac_label:
-                break
-            
-        if atac_label:
-            # ann_frac (ann_bp / total_bp) is recoverable from any state with fold > 0.
-            ann_frac = np.nan
-            for st in enrichment:
-                if atac_label in enrichment[st] and atac_label in coverage.get(st, {}):
-                    f = enrichment[st][atac_label]
-                    c = coverage[st][atac_label]
-                    if f > 0:
-                        ann_frac = c / f
-                        break
-            
-            for pool_name, check_fn in [("Tss", utils.is_promoter_core), 
-                                       ("Enh", utils.is_distal_enhancer), 
-                                       ("Active", utils.is_active_open),
-                                       ("Quies", utils.is_noqh)]:
-                pool_key = f"POOL:{pool_name}"
-                if pool_key in sensitivity and atac_label in sensitivity[pool_key]:
-                    row[f"sensitivity_{pool_name}_ATAC"] = sensitivity[pool_key][atac_label]
-                if pool_key in coverage and atac_label in coverage[pool_key]:
-                    row[f"coverage_{pool_name}_ATAC"] = coverage[pool_key][atac_label]
-                
-                pooled_states = [st for st in enrichment if check_fn(st) and not st.startswith("POOL:")]
-                
-                if pooled_states:
-                    overlap_sum = 0
-                    state_bp_sum = 0
-                    for st in pooled_states:
-                        st_bp = report.get(st, {}).get("total_bp", 0)
-                        st_cov = coverage.get(st, {}).get(atac_label, 0)
-                        overlap_sum += st_cov * st_bp
-                        state_bp_sum += st_bp
-                    
-                    if state_bp_sum > 0:
-                        pooled_cov = overlap_sum / state_bp_sum
-                        if f"coverage_{pool_name}_ATAC" not in row:
-                            row[f"coverage_{pool_name}_ATAC"] = pooled_cov
-                        
-                        if not np.isnan(ann_frac) and ann_frac > 0:
-                            ann_bp = ann_frac * total_bp
-                            row[f"enrich_{pool_name}_ATAC"] = pooled_cov / ann_frac
-                            # Fraction of ATAC peaks covered by these states.
-                            if f"sensitivity_{pool_name}_ATAC" not in row:
-                                row[f"sensitivity_{pool_name}_ATAC"] = overlap_sum / ann_bp
+        def _find_ann(name, prefix=False):
+            """The annotation label `name` stands for: the label itself, one it
+            starts (prefix=True), or one sharing its base ("RefSeqTSS2kb.hg38"
+            -> "RefSeqTSS2kb")."""
+            labels = {l for st_data in enrichment.values() for l in st_data}
+            if prefix:
+                return next((l for l in sorted(labels) if l.startswith(name)), None)
+            if name in labels:
+                return name
+            base = name.split(".")[0]
+            return next((l for l in sorted(labels) if l.split(".")[0] == base), None)
 
-        # Biological validation: fraction of each annotation covered by states.
+        def _pool(check_fn, ann, col_prefix):
+            """Sensitivity, coverage and enrichment of a family against `ann`."""
+            states = [st for st in enrichment
+                      if not st.startswith("POOL:") and check_fn(st)]
+            state_bp = sum(report.get(st, {}).get("total_bp", 0) for st in states)
+            if state_bp <= 0:
+                return
+            overlap = sum(coverage.get(st, {}).get(ann, 0) * report.get(st, {}).get("total_bp", 0)
+                          for st in states)
+            # The share of the genome the annotation takes, recoverable from any
+            # state that overlaps it at all.
+            ann_frac = next((coverage[st][ann] / enrichment[st][ann] for st in enrichment
+                             if enrichment[st].get(ann, 0) > 0 and ann in coverage.get(st, {})),
+                            np.nan)
+            row[f"sensitivity_{col_prefix}"] = sum(sensitivity.get(st, {}).get(ann, 0)
+                                                   for st in states)
+            row[f"coverage_{col_prefix}"] = overlap / state_bp
+            if ann_frac > 0:
+                row[f"enrich_{col_prefix}"] = overlap / state_bp / ann_frac
+
+        atac_label = _find_ann("atac_", prefix=True)
+        if atac_label:
+            for pool_name, check_fn in [("Tss", utils.is_promoter_core),
+                                        ("Enh", utils.is_distal_enhancer),
+                                        ("Active", utils.is_active_open),
+                                        ("Quies", utils.is_noqh)]:
+                _pool(check_fn, atac_label, f"{pool_name}_ATAC")
+
         val_targets = [
-            ("Tx", utils.is_tx, "ExpressedGeneBodies", "Tx_ExpressedGeneBodies"),
-            ("Active", utils.is_active_open, "NonExpressedGeneBodies", "Active_NonExpGeneBodies"),
-            ("Quies", utils.is_noqh, "NonExpressedGeneBodies", "Quies_NonExpGeneBodies"),
-            ("Active", utils.is_active_open, "ExpressedTSS", "Active_ExpressedTSS"),
+            (utils.is_tx, "ExpressedGeneBodies", "Tx_ExpressedGeneBodies"),
+            (utils.is_active_open, "NonExpressedGeneBodies", "Active_NonExpGeneBodies"),
+            (utils.is_noqh, "NonExpressedGeneBodies", "Quies_NonExpGeneBodies"),
+            (utils.is_active_open, "ExpressedTSS", "Active_ExpressedTSS"),
         ]
         for suffix in ("2kb",):
-            val_targets.append(("Tss", utils.is_promoter_core, f"RefSeqTSS{suffix}.hg38", f"Tss_RefSeqTSS{suffix}"))
-            val_targets.append(("Tss", utils.is_promoter_core, f"ExpressedTSS{suffix}", f"Tss_ExpressedTSS{suffix}"))
+            val_targets.append((utils.is_promoter_core, f"RefSeqTSS{suffix}.hg38", f"Tss_RefSeqTSS{suffix}"))
+            val_targets.append((utils.is_promoter_core, f"ExpressedTSS{suffix}", f"Tss_ExpressedTSS{suffix}"))
 
-        for pool_name, check_fn, ann_name, col_prefix in val_targets:
-            target_ann = None
-            for st in enrichment:
-                if ann_name in enrichment[st]:
-                    target_ann = ann_name
-                    break
-            if not target_ann:
-                base = ann_name.split(".")[0]
-                for st in enrichment:
-                    for k in enrichment[st]:
-                        if k.split(".")[0] == base:
-                            target_ann = k
-                            break
-                    if target_ann: break
-            
+        for check_fn, ann_name, col_prefix in val_targets:
+            target_ann = _find_ann(ann_name)
             if target_ann and total_bp > 0:
-                pool_key = f"POOL:{pool_name}"
-                val_sens = _get_val(sensitivity, pool_key, target_ann)
-                val_cov = _get_val(coverage, pool_key, target_ann)
-                
-                if not np.isnan(val_sens):
-                    row[f"sensitivity_{col_prefix}"] = val_sens
-                if not np.isnan(val_cov):
-                    row[f"coverage_{col_prefix}"] = val_cov
-
-                ann_frac = np.nan
-                for st in enrichment:
-                    if target_ann in enrichment[st] and target_ann in coverage.get(st, {}):
-                        f = enrichment[st][target_ann]
-                        c = coverage[st][target_ann]
-                        if f > 0:
-                            ann_frac = c / f
-                            break
-                
-                if not np.isnan(ann_frac) and ann_frac > 0:
-                    pooled_states = [st for st in enrichment if check_fn(st) and not st.startswith("POOL:")]
-                    if pooled_states:
-                        overlap_sum = 0
-                        state_bp_sum = 0
-                        for st in pooled_states:
-                            st_bp = report.get(st, {}).get("total_bp", 0)
-                            st_cov = coverage.get(st, {}).get(target_ann, 0)
-                            overlap_sum += st_cov * st_bp
-                            state_bp_sum += st_bp
-                        
-                        ann_bp = ann_frac * total_bp
-                        if f"sensitivity_{col_prefix}" not in row:
-                            row[f"sensitivity_{col_prefix}"] = overlap_sum / ann_bp
-                        if f"coverage_{col_prefix}" not in row:
-                            row[f"coverage_{col_prefix}"] = overlap_sum / state_bp_sum if state_bp_sum > 0 else np.nan
-                        row[f"enrich_{col_prefix}"] = (overlap_sum / state_bp_sum) / ann_frac if state_bp_sum > 0 else np.nan
+                _pool(check_fn, target_ann, col_prefix)
 
         rows.append(row)
 

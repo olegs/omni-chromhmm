@@ -88,6 +88,26 @@ def test_load_gene_tpms_zero_tpm_cutoff():
         assert "ENSG00000002" not in top_exp
 
 
+def test_load_gene_tpms_ranks_only_annotated_genes():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rnaseq_file = os.path.join(tmpdir, "rnaseq.tsv")
+        rows = [
+            {"gene_id": "gSpikein_ERCC-00130", "TPM": "900.0"},
+            {"gene_id": "ENSG00000009.3", "TPM": "500.0"},   # retired from the GTF
+            {"gene_id": "ENSG00000001.1", "TPM": "50.0"},
+            {"gene_id": "ENSG00000002.1", "TPM": "10.0"},
+        ]
+        write_rnaseq_tsv(rnaseq_file, rows)
+
+        # The GTF knows the genes under another version: matched on the base ID.
+        known = {"ENSG00000001.4", "ENSG00000001", "ENSG00000002.7", "ENSG00000002"}
+        tpms, top_exp = analyze.load_gene_tpms(rnaseq_file, top_n=2, known_ids=known)
+        assert top_exp == {"ENSG00000001.1", "ENSG00000001",
+                           "ENSG00000002.1", "ENSG00000002"}
+        # Unranked genes keep their TPM.
+        assert tpms["gSpikein_ERCC-00130"] == pytest.approx(900.0)
+
+
 def test_load_gene_coords_top_expressed_and_nonexpressed():
     with tempfile.TemporaryDirectory() as tmpdir:
         gtf_file = os.path.join(tmpdir, "genes.gtf")
