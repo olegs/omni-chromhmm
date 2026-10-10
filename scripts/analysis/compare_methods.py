@@ -7,6 +7,7 @@ per-metric PNG plots to {outdir}.
 """
 
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -454,6 +455,13 @@ def run_compare_methods(analysis_dir, comparison_dir, outdir, ref_dir=None):
 
     df = build_table(analysis_dir, comparison_dir, ref_dir=ref_dir)
     table_path = os.path.join(outdir, "comparison_table.tsv")
+    if df.empty:
+        # No table rather than a header-less one, and no stale one either.
+        print(f"  WARNING: no methods found in {analysis_dir}, no table written",
+              file=sys.stderr)
+        if os.path.exists(table_path):
+            os.remove(table_path)
+        return
     df.to_csv(table_path, sep="\t", index=False, float_format="%.4f")
     print(f"  saved {table_path}")
     print(df.to_string(index=False))

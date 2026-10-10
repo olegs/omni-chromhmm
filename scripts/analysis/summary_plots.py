@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
                    strip_points, method_color, save_fig,
                    group_methods, group_xticks,
-                   is_joint, JOINT_HATCH,
+                   is_joint, is_replicate, JOINT_HATCH,
                    CHROMHMM_DEFAULT, CHROMHMM_HOMER, CHROMHMM_MACS2, CHROMHMM_OMNI,
                    KMEANS_HOMER, KMEANS_MACS2, KMEANS_OMNI,
                    BMM3_HOMER, BMM3_MACS2, BMM3_OMNI,
@@ -255,7 +255,17 @@ def _load_comparison_table(methods_dir):
     path = os.path.join(methods_dir, "comparison_table.tsv")
     if not os.path.exists(path):
         return None
-    df = pd.read_csv(path, sep="\t")
+    try:
+        df = pd.read_csv(path, sep="\t")
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, OSError) as e:
+        print(f"  WARNING: could not load {path}: {e}", file=sys.stderr)
+        return None
+    if df.empty or "method" not in df.columns:
+        return None
+    # Old tables have no replicate column, backfill it as compare_methods does.
+    if "replicate" not in df.columns:
+        df["replicate"] = df["method"].map(
+            lambda m: METHOD_INFO.get(m, (None, None, None))[2] or "")
     return df[df["replicate"].fillna("") == ""].copy()
 
 
@@ -452,9 +462,21 @@ def _collect_per_state_metrics(datasets, analysis_dirs, match_method):
             try:
                 df = pd.read_csv(metrics_path, sep="\t")
                 if not df.empty:
-                    df["dataset"] = ds
-                    all_stacked.append(df)
-                    continue
+                    if "method" in df.columns:
+                        df["dataset"] = ds
+                        all_stacked.append(df)
+                        continue
+                    elif "seg1" in df.columns and "seg2" in df.columns:
+                        # The pairs against the reference, keyed by the other side.
+                        s1, s2 = df["seg1"].astype(str), df["seg2"].astype(str)
+                        ref1 = s1.str.startswith("ENCFF") | (s1 == "ref")
+                        ref2 = s2.str.startswith("ENCFF") | (s2 == "ref")
+                        vs_ref = df[ref1 ^ ref2].copy()
+                        vs_ref["method"] = s2.where(ref1, s1)[ref1 ^ ref2]
+                        vs_ref["dataset"] = ds
+                        if not vs_ref.empty:
+                            all_stacked.append(vs_ref.drop(columns=["seg1", "seg2"]))
+                            continue
             except Exception as e:
                 print(f"  WARNING: could not load {metrics_path}: {e}", file=sys.stderr)
 
@@ -477,8 +499,11 @@ def _collect_per_state_metrics(datasets, analysis_dirs, match_method):
 
     if not all_stacked:
         return pd.DataFrame()
-    
-    return pd.concat(all_stacked, ignore_index=True)
+
+    # Keep the pooled models only, should a replicate segmentation be compared
+    # to the reference, so each method counts once per dataset.
+    df = pd.concat(all_stacked, ignore_index=True)
+    return df[~df["method"].astype(str).map(is_replicate)].reset_index(drop=True)
 
 
 def _save_metric_heatmap(df, title, outfile, metric_label):
@@ -1253,9 +1278,9 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
             n = len(mat)
             for i in range(n):
                 for j in range(i + 1, n):
+                    ds_i = _ds_name(mat.index[i])
+                    ds_j = _ds_name(mat.index[j])
                     if group_a is not None and group_b is not None:
-                        ds_i = _ds_name(mat.index[i])
-                        ds_j = _ds_name(mat.index[j])
                         if not ((ds_i in group_a and ds_j in group_b) or
                                 (ds_i in group_b and ds_j in group_a)):
                             continue
@@ -1548,6 +1573,17 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         method_sim_dist_filtered_outfile=method_sim_dist_filtered_outfile,
         method_sim_dist_filtered_noqh_outfile=method_sim_dist_filtered_noqh_outfile)
 
+    # --methods narrows the module-level method lists for this call only.
+    global INTER_DS_METHODS, METHOD_PALETTE, METHODS_POOLED
+    saved = INTER_DS_METHODS, METHOD_PALETTE, METHODS_POOLED
+    try:
+        _run_summary_plots(args)
+    finally:
+        INTER_DS_METHODS, METHOD_PALETTE, METHODS_POOLED = saved
+
+
+def _run_summary_plots(args):
+    """The plot groups run_summary_plots selected, from its arguments."""
     if args.methods:
         # Narrow the global method lists/palettes to the requested subset.
         global INTER_DS_METHODS, METHOD_PALETTE, METHODS_POOLED

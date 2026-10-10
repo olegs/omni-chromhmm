@@ -112,3 +112,57 @@ def test_plot_reference_distribution_combined(tmp_path):
         ref_dist_combined_outfile=outfile,
     )
     assert os.path.exists(outfile)
+
+
+def test_plot_method_similarity_distribution(tmp_path):
+    method_dir = tmp_path / "chromhmm"
+    method_dir.mkdir()
+    matrix_content = "\tds1:chromhmm\tds2:chromhmm\nds1:chromhmm\t1.0\t0.75\nds2:chromhmm\t0.75\t1.0\n"
+    for filename in ["composition_similarity_matrix.tsv", "kappa_matrix.tsv", "jaccard_similarity_matrix.tsv"]:
+        with open(method_dir / filename, "w") as f:
+            f.write(matrix_content)
+
+    outfile = str(tmp_path / "method_sim.png")
+    summary_plots._plot_method_similarity_distribution(
+        methods=["chromhmm"],
+        inter_ds_dir=str(tmp_path),
+        outfile=outfile,
+        noqh=False,
+    )
+    assert os.path.exists(outfile)
+
+
+def test_plot_replicate_consistency_bars(tmp_path):
+    ds1_dir = tmp_path / "ds1"
+    ds1_dir.mkdir()
+    comp_table = ds1_dir / "comparison_table.tsv"
+    with open(comp_table, "w") as f:
+        f.write("method\tdisplay_name\treplicate\tkappa_rep1_vs_rep2\tkappa_noqh_rep1_vs_rep2\tjaccard_rep1_vs_rep2\tjaccard_noqh_rep1_vs_rep2\n")
+        f.write("chromhmm_default\tChromHMM\t\t0.85\t0.70\t0.80\t0.65\n")
+
+    outdir = str(tmp_path / "out")
+    summary_plots._plot_rep_consistency(
+        datasets=["ds1"],
+        methods_dirs=[str(ds1_dir)],
+        outdir=outdir,
+    )
+    assert os.path.exists(os.path.join(outdir, "rep_consistency_kappa_rep1_vs_rep2.png"))
+    assert os.path.exists(os.path.join(outdir, "rep_consistency_kappa_noqh_rep1_vs_rep2.png"))
+    assert os.path.exists(os.path.join(outdir, "rep_consistency_jaccard_rep1_vs_rep2.png"))
+    assert os.path.exists(os.path.join(outdir, "rep_consistency_jaccard_noqh_rep1_vs_rep2.png"))
+
+
+def test_collect_per_state_metrics_keeps_pooled_vs_ref(tmp_path):
+    comp_dir = tmp_path / "ds1" / "comparison"
+    comp_dir.mkdir(parents=True)
+    with open(comp_dir / "per_state_metrics.tsv", "w") as f:
+        f.write("seg1\tseg2\tstate\tkappa\tjaccard\n")
+        f.write("ENCFF000AAA\tchromhmm_default\tTssA\t0.8\t0.7\n")
+        f.write("ENCFF000AAA\tchromhmm_default_rep1\tTssA\t0.6\t0.5\n")
+        f.write("kmeans_omni\tENCFF000AAA\tTssA\t0.4\t0.3\n")
+        f.write("chromhmm_default\tkmeans_omni\tTssA\t0.2\t0.1\n")
+
+    df = summary_plots._collect_per_state_metrics(
+        ["ds1"], [str(tmp_path / "ds1")], "jaccard")
+    assert sorted(df["method"]) == ["chromhmm_default", "kmeans_omni"]
+    assert df.set_index("method").loc["kmeans_omni", "kappa"] == 0.4
