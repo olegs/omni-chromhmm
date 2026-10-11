@@ -346,6 +346,29 @@ def make_expressed_annotations(rnaseq_path, gtf_path, top_expressed=12000, nonex
     return result
 
 
+def segments_to_codes(segs, bin_size, code_of):
+    """{chrom: int32 array with one state code per bin, -1 where no segment}.
+
+    A segment covers bins s // bin_size .. e // bin_size - 1; code_of maps a
+    state name to its code, or to -1 to leave the segment out.
+    """
+    by_chrom = defaultdict(list)
+    for row in segs:
+        chrom, s, e, state = row[:4]
+        code = code_of(state)
+        if code >= 0 and e // bin_size > s // bin_size:
+            by_chrom[chrom].append((s // bin_size, e // bin_size, code))
+    out = {}
+    for chrom, rows in by_chrom.items():
+        a = np.array(rows, dtype=np.int64)
+        lengths = a[:, 1] - a[:, 0]
+        offsets = np.repeat(a[:, 0] - (np.cumsum(lengths) - lengths), lengths)
+        codes = np.full(int(a[:, 1].max()), -1, dtype=np.int32)
+        codes[np.arange(int(lengths.sum())) + offsets] = np.repeat(a[:, 2], lengths)
+        out[chrom] = codes
+    return out
+
+
 def build_transition_matrix(segs, bin_size, exclude_states=None, mapping=None):
     """Build empirical transition count matrix at bin resolution."""
     exclude = set(exclude_states or [])
@@ -357,34 +380,23 @@ def build_transition_matrix(segs, bin_size, exclude_states=None, mapping=None):
             return utils.is_noqh(s)
         return False
 
-    by_chrom = defaultdict(dict)
-    for row in segs:
-        chrom, s, e, state = row[:4]
-        if _is_excluded(state):
-            continue
-        st = mapping.get(state, state) if mapping else state
-        for b in range(s // bin_size, e // bin_size):
-            by_chrom[chrom][b] = st
-
-    all_states = sorted(
-        {mapping.get(row[3], row[3]) if mapping else row[3]
-         for row in segs if not _is_excluded(row[3])},
-        key=_natural_sort_key)
+    names = {row[3] for row in segs}
+    mapped = {s: mapping.get(s, s) if mapping else s
+              for s in names if not _is_excluded(s)}
+    all_states = sorted(set(mapped.values()), key=_natural_sort_key)
     state_idx = {s: i for i, s in enumerate(all_states)}
+    code = {s: state_idx[m] for s, m in mapped.items()}
     n = len(all_states)
-    counts = np.zeros((n, n), dtype=np.float64)
+    counts = np.zeros(n * n, dtype=np.float64)
     state_bp = np.zeros(n, dtype=np.float64)
 
-    for chrom, bins in by_chrom.items():
-        sorted_idxs = sorted(bins.keys())
-        for k, b in enumerate(sorted_idxs):
-            st = bins[b]
-            state_bp[state_idx[st]] += bin_size
-            if k > 0 and sorted_idxs[k - 1] == b - 1:
-                prev_st = bins[sorted_idxs[k - 1]]
-                counts[state_idx[prev_st], state_idx[st]] += 1
+    for codes in segments_to_codes(segs, bin_size, lambda s: code.get(s, -1)).values():
+        state_bp += np.bincount(codes[codes >= 0], minlength=n) * bin_size
+        prev, cur = codes[:-1], codes[1:]
+        both = (prev >= 0) & (cur >= 0)
+        counts += np.bincount(prev[both] * n + cur[both], minlength=n * n)
 
-    return all_states, counts, state_bp
+    return all_states, counts.reshape(n, n), state_bp
 
 
 def transition_entropy(states, counts, state_bp):

@@ -20,7 +20,8 @@ if _analysis_dir not in sys.path:
     sys.path.insert(0, _analysis_dir)
 
 from analyze import (load_bed, _natural_sort_key, _load_seg_full,
-                     build_transition_matrix, transition_entropy)
+                     build_transition_matrix, transition_entropy,
+                     segments_to_codes)
 
 _rules_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "rules"))
 if _rules_dir not in sys.path:
@@ -165,104 +166,65 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
     save_fig(fig, os.path.join(outdir, "entropy_summary_combined.png"))
 
 
-def segmentation_to_bins(segs, bin_size):
-    """Convert a segmentation to {chrom: {bin_index: state}}."""
-    bins = defaultdict(dict)
-    for row in segs:
-        chrom, s, e, state = row[:4]
-        for b in range(s // bin_size, e // bin_size):
-            bins[chrom][b] = state
-    return bins
+def _is_excluded_state(s, exclude_states):
+    """True when state *s* falls in *exclude_states* (NOQH also by state type)."""
+    if s in exclude_states: return True
+    if utils.normalize_state_name(s) in exclude_states: return True
+    if exclude_states is utils.NOQH_STATES:
+        return utils.is_noqh(s)
+    return False
 
 
-def _filter_bins(bins, exclude_states):
-    """Drop all bins carrying a state in *exclude_states*."""
-    if not exclude_states:
-        return bins
-    def _is_excluded(s):
-        if s in exclude_states: return True
-        if utils.normalize_state_name(s) in exclude_states: return True
-        if exclude_states is utils.NOQH_STATES:
-            return utils.is_noqh(s)
-        return False
+def bin_confusion(segs1, segs2, bin_size):
+    """Bin-level confusion of two segmentations over the bins both cover.
 
-    return {chrom: {b: state for b, state in bmap.items()
-                    if not _is_excluded(state)}
-            for chrom, bmap in bins.items()}
-
-
-def _aligned_label_arrays(bins1, bins2):
-    """Aligned label arrays from two bin-level segmentations (shared bins only)."""
-    common_chroms = set(bins1.keys()) & set(bins2.keys())
-    l1, l2 = [], []
-    for chrom in sorted(common_chroms):
-        common_bins = set(bins1[chrom].keys()) & set(bins2[chrom].keys())
-        for b in sorted(common_bins):
-            l1.append(bins1[chrom][b])
-            l2.append(bins2[chrom][b])
-    return np.array(l1), np.array(l2)
+    Returns (states, conf): conf[a, b] counts bins in state states[a] in segs1
+    and states[b] in segs2; states are the union of both, naturally sorted.
+    """
+    states = sorted({row[3] for row in segs1} | {row[3] for row in segs2},
+                    key=_natural_sort_key)
+    idx = {s: i for i, s in enumerate(states)}
+    k = len(states)
+    codes1 = segments_to_codes(segs1, bin_size, idx.__getitem__)
+    codes2 = segments_to_codes(segs2, bin_size, idx.__getitem__)
+    conf = np.zeros(k * k, dtype=np.int64)
+    for chrom in codes1.keys() & codes2.keys():
+        n = min(len(codes1[chrom]), len(codes2[chrom]))
+        a, b = codes1[chrom][:n], codes2[chrom][:n]
+        both = (a >= 0) & (b >= 0)
+        conf += np.bincount(a[both] * k + b[both], minlength=k * k)
+    return states, conf.reshape(k, k)
 
 
-def compute_kappa(bins1, bins2):
-    """Cohen's Kappa; returns (kappa, po, pe, n_bins, confusion_df)."""
-    labels1, labels2 = _aligned_label_arrays(bins1, bins2)
-    n = len(labels1)
+def confusion_metrics(states, conf):
+    """Kappa and Jaccard from a bin-level confusion matrix.
+
+    Returns {kappa, po, pe, n_bins, jaccard, per_state_kappa, per_state_jaccard};
+    the per-state dicts cover the states present in either segmentation, and
+    jaccard is their mean (one-vs-rest kappa, Jaccard of the two state masks).
+    """
+    n = int(conf.sum())
     if n == 0:
-        return 0.0, 0.0, 0.0, 0, pd.DataFrame()
-
-    all_states = sorted(set(labels1) | set(labels2), key=_natural_sort_key)
-    state_idx = {s: i for i, s in enumerate(all_states)}
-    k = len(all_states)
-
-    conf = np.zeros((k, k), dtype=np.int64)
-    for l1, l2 in zip(labels1, labels2):
-        conf[state_idx[l1], state_idx[l2]] += 1
-
-    po = np.diag(conf).sum() / n
-    p1 = conf.sum(axis=1) / n
-    p2 = conf.sum(axis=0) / n
-    pe = np.dot(p1, p2)
+        return dict(kappa=0.0, po=0.0, pe=0.0, n_bins=0, jaccard=float("nan"),
+                    per_state_kappa={}, per_state_jaccard={})
+    diag = np.diag(conf)
+    rows, cols = conf.sum(axis=1), conf.sum(axis=0)
+    po = diag.sum() / n
+    pe = np.dot(rows / n, cols / n)
     kappa = (po - pe) / (1 - pe) if pe < 1.0 else 1.0
 
-    return kappa, po, pe, n, pd.DataFrame(conf, index=all_states, columns=all_states)
-
-
-def compute_jaccard(bins1, bins2):
-    """Mean per-state Jaccard index between two bin-level segmentations."""
-    return float(np.mean(list(compute_per_state_jaccard(bins1, bins2).values())))
-
-
-def compute_per_state_jaccard(bins1, bins2):
-    """Jaccard similarity for each state present in either segmentation."""
-    labels1, labels2 = _aligned_label_arrays(bins1, bins2)
-    if len(labels1) == 0:
-        return {}
-    states = sorted(set(labels1) | set(labels2), key=_natural_sort_key)
-    out = {}
-    for s in states:
-        a = (labels1 == s)
-        b = (labels2 == s)
-        tp = int((a & b).sum())
-        denom = int((a | b).sum())
-        out[s] = tp / denom if denom > 0 else 1.0
-    return out
-
-
-def compute_per_state_kappa(bins1, bins2):
-    """One-vs-rest Cohen's Kappa for each state present in either segmentation."""
-    labels1, labels2 = _aligned_label_arrays(bins1, bins2)
-    if len(labels1) == 0:
-        return {}
-    states = sorted(set(labels1) | set(labels2), key=_natural_sort_key)
-    out = {}
-    for s in states:
-        a = (labels1 == s)
-        b = (labels2 == s)
-        po = float((a == b).mean())
-        pa, pb = float(a.mean()), float(b.mean())
-        pe = pa * pb + (1 - pa) * (1 - pb)
-        out[s] = (po - pe) / (1 - pe) if pe < 1.0 else 1.0
-    return out
+    present = (rows + cols) > 0
+    union = (rows + cols - diag)[present]
+    jac = diag[present] / union
+    pa, pb = rows[present] / n, cols[present] / n
+    po_s = 1 - (union - diag[present]) / n
+    pe_s = pa * pb + (1 - pa) * (1 - pb)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        kap = np.where(pe_s < 1.0, (po_s - pe_s) / (1 - pe_s), 1.0)
+    names = [s for s, p in zip(states, present) if p]
+    return dict(kappa=kappa, po=po, pe=pe, n_bins=n, jaccard=float(jac.mean()),
+                per_state_kappa=dict(zip(names, kap.tolist())),
+                per_state_jaccard=dict(zip(names, jac.tolist())))
 
 
 def _load_emissions_npz(path):
@@ -315,14 +277,11 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     import match
     match_pair_overlap = match.pair_overlap
     match_best_mapping = match.best_mapping
-    match_remap_bins = match.remap_bins
     match_compare = match.compare
     match_state_lengths = match.state_lengths
     match_emission_cosine_mapping = match.emission_cosine_mapping
 
     bin_size = min(bin_size_i, bin_size_j)
-    segs_i = load_bed(path_i)
-    segs_j = load_bed(path_j)
 
     row = {"seg1": label_i, "seg2": label_j, "_i": i, "_j": j}
 
@@ -338,20 +297,17 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     if not skip_noqh:
         row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES, mapping=None)
 
-    bins_i = segmentation_to_bins(segs_i, bin_size)
-    bins_j = segmentation_to_bins(segs_j, bin_size)
-
-    eff_bins_j = bins_j
-
-    kappa, po, pe, n_bins, _ = compute_kappa(bins_i, eff_bins_j)
-    row.update(kappa=kappa, po=po, pe=pe, n_bins=n_bins)
-    row["_per_state_kappa"] = compute_per_state_kappa(bins_i, eff_bins_j)
+    # One bin-level confusion matrix carries every kappa / Jaccard below.
+    states, conf = bin_confusion(segs_full_i, segs_full_j, bin_size)
+    m = confusion_metrics(states, conf)
+    row.update(kappa=m["kappa"], po=m["po"], pe=m["pe"], n_bins=m["n_bins"])
+    row["_per_state_kappa"] = m["per_state_kappa"]
 
     pair_dir = os.path.join(outdir, "pairs", f"{label_i}_vs_{label_j}")
     match_compare(segs_full_i, segs_full_j, overlap, mapping, pair_dir)
 
-    row["jaccard_similarity"] = compute_jaccard(bins_i, eff_bins_j)
-    row["_per_state_jaccard"] = compute_per_state_jaccard(bins_i, eff_bins_j)
+    row["jaccard_similarity"] = m["jaccard"]
+    row["_per_state_jaccard"] = m["per_state_jaccard"]
 
     # Overlap fraction: genome bp with identical state labels.
     all_ref_states = {x[3] for x in segs_full_i}
@@ -375,12 +331,15 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
         row["bw_emission_similarity"] = avg_bw_sim
 
     if not skip_noqh:
-        bins_i_noqh = _filter_bins(bins_i, _EXCLUDE_STATES)
-        bins_j_noqh = _filter_bins(eff_bins_j, _EXCLUDE_STATES)
-        kappa_noqh, po_noqh, _, _, _ = compute_kappa(bins_i_noqh, bins_j_noqh)
-        row[f"{KAPPA}{NOQH_SUFFIX}"]   = kappa_noqh
-        row[f"overlap{NOQH_SUFFIX}"] = po_noqh
-        row[f"{JACCARD}{NOQH_SUFFIX}"] = compute_jaccard(bins_i_noqh, bins_j_noqh)
+        # Dropping Quies/Het bins on either side keeps the sub-matrix of the
+        # remaining states.
+        keep = [k for k, s in enumerate(states)
+                if not _is_excluded_state(s, _EXCLUDE_STATES)]
+        m_noqh = confusion_metrics([states[k] for k in keep],
+                                   conf[np.ix_(keep, keep)])
+        row[f"{KAPPA}{NOQH_SUFFIX}"]   = m_noqh["kappa"]
+        row[f"overlap{NOQH_SUFFIX}"] = m_noqh["po"]
+        row[f"{JACCARD}{NOQH_SUFFIX}"] = m_noqh["jaccard"]
 
     print(f"  {label_i} vs {label_j}: "
           f"comp_sim={row['composition_similarity']:.4f}, "
