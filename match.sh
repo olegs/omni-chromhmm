@@ -32,7 +32,7 @@ match_states() {
     W_BIN_EMS=""
     R_BIN_EMS=""
     EM="${WORK%.bed}.bin_emissions.npz"
-    if [[ ! -f "$EM" ]] && [[ -n "$PC" ]] && [[ -n "$BIN" ]] && [[ -n "$BINS_DIR" ]]; then
+    if [[ ! -f "$EM" || "$WORK" -nt "$EM" ]] && [[ -n "$PC" ]] && [[ -n "$BIN" ]] && [[ -n "$BINS_DIR" ]]; then
       # Discover binary tracks
       BINS=""
       if [[ "$PC" == "chromhmm" ]]; then
@@ -95,11 +95,14 @@ match_joint() {
     for R in rep1 rep2; do
       if [[ "$R" == "rep1" ]]; then BED="$REP1"; else BED="$REP2"; fi
       EM="${BED%.bed}.bin_emissions.npz"
-      if [[ ! -f "$EM" ]] && [[ -n "$PC" ]] && [[ -n "$BIN" ]]; then
+      if [[ ! -f "$EM" || "$BED" -nt "$EM" ]] && [[ -n "$PC" ]] && [[ -n "$BIN" ]]; then
         # Discover binary tracks
         BINS=""
         if [[ "$PC" == "chromhmm" ]]; then
           BINS=$(ls "$R/chromhmm_default/"*_binary.txt 2>/dev/null)
+          if [[ -z "$BINS" ]]; then
+            BINS=$(ls "$R/chromhmm_binary/"*_binary.txt 2>/dev/null)
+          fi
         else
           BINS=$(ls "$R/$PC/chromhmm_peaks/"*_binary.txt.gz 2>/dev/null)
         fi
