@@ -11,7 +11,6 @@ import sys
 import time
 from bisect import bisect_left
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -538,34 +537,40 @@ def merge_intervals(intervals):
     return merged
 
 
-def _compute_state_consistency_chrom(chrom_data, bin_size, window):
-    chrom_state_depth_counts = {}
-    for state, segs_by_sample in chrom_data.items():
-        events = []
-        for sample_segs in segs_by_sample:
-            if not sample_segs:
-                continue
-            if window > 0:
-                expanded = [(max(0, s[0] - window), s[1] + window) for s in sample_segs]
-                merged = merge_intervals(expanded)
-            else:
-                merged = sample_segs
-            for start, end in merged:
-                events.append((start, 1))
-                events.append((end, -1))
-        if not events:
-            continue
-        events.sort()
-        depth_counts = defaultdict(int)
-        current_depth = 0
-        last_pos = events[0][0]
-        for pos, delta in events:
-            if pos > last_pos and current_depth > 0:
-                depth_counts[current_depth] += (pos - last_pos) // bin_size
-            current_depth += delta
-            last_pos = pos
-        chrom_state_depth_counts[state] = dict(depth_counts)
-    return chrom_state_depth_counts
+def _consistency_depth_bins(starts, ends, states, samples, n_samples, n_states,
+                            bin_size, window):
+    """Per-(state, depth) bin counts of one chromosome, as an (n_states, M + 1) array.
+
+    *states* is the state index of each segment and *samples* its segmentation.
+    Positions are shifted by a per-state offset so one sort sweeps every state.
+    """
+    span = int(ends.max()) + window + 1
+    if window > 0:
+        # Merge each segmentation's expanded segments, so it counts once per bin
+        offset = (states * n_samples + samples) * span
+        s = np.maximum(starts - window, 0) + offset
+        e = ends + window + offset
+        order = np.argsort(s, kind="stable")
+        s, e = s[order], np.maximum.accumulate(e[order])
+        first = np.flatnonzero(np.r_[True, s[1:] > e[:-1]])
+        last = np.r_[first[1:] - 1, len(s) - 1]
+        states = states[order][first]
+        starts = s[first] - offset[order][first]
+        ends = e[last] - offset[order][first]
+
+    # Ends sort before starts at the same position, as in (pos, delta) order
+    offset = states * span
+    keys = np.concatenate([(starts + offset) * 2 + 1, (ends + offset) * 2])
+    order = np.argsort(keys, kind="stable")
+    keys = keys[order] // 2
+    depth = np.cumsum(np.where(order < len(starts), 1, -1))[:-1]
+    bins = np.diff(keys) // bin_size
+    state = np.concatenate([states, states])[order][:-1]
+    covered = depth > 0
+    flat = state[covered] * (n_samples + 1) + depth[covered]
+    counts = np.bincount(flat, weights=bins[covered],
+                         minlength=n_states * (n_samples + 1))
+    return counts.reshape(n_states, n_samples + 1)
 
 
 def compute_state_consistency(segs_list, bin_size=200, window=0, show_progress=False):
@@ -574,46 +579,38 @@ def compute_state_consistency(segs_list, bin_size=200, window=0, show_progress=F
     A bin counts as covered by state Y when some state Y lies within *window*
     distance of it. Returns {state: {depth: cumulative bins}}, depth 1..len(segs_list).
     """
-    # data[chrom][state][sample_idx] = [(start, end), ...]
-    data = defaultdict(lambda: defaultdict(lambda: [[] for _ in range(len(segs_list))]))
-    for i, segs in enumerate(segs_list):
-        for s in segs:
-            data[s[0]][s[3]][i].append((s[1], s[2]))
+    M = len(segs_list)
+    columns = [list(zip(*segs))[:4] for segs in segs_list if segs]
+    if not columns:
+        return {}
+    samples = np.repeat(np.arange(M), [len(segs) for segs in segs_list])
+    chroms, starts, ends, states = (
+        np.concatenate([np.asarray(c[k], dtype=dtype) for c in columns])
+        for k, dtype in enumerate((object, np.int64, np.int64, object)))
+    del columns
+    chrom_codes, chrom_names = pd.factorize(chroms, sort=True)
+    state_codes, state_names = pd.factorize(states)
+    del chroms, states
 
-    all_chroms = sorted(data.keys())
-
-    results = []
-    with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(_compute_state_consistency_chrom,
-                                   {state: list(v) for state, v in data[chrom].items()},
-                                   bin_size, window)
-                   for chrom in all_chroms]
-
-        if show_progress:
-            print(f"  consistency (w={window}) over {len(futures)} chromosomes"
-                  " ... ", end="", flush=True)
-            started = time.perf_counter()
-            results = [f.result() for f in futures]
-            print(f"{time.perf_counter() - started:.1f}s", flush=True)
-        else:
-            results = [f.result() for f in futures]
-
-    state_depth_counts = defaultdict(lambda: defaultdict(int))
-    for res in results:
-        for state, depth_counts in res.items():
-            for d, count in depth_counts.items():
-                state_depth_counts[state][d] += count
+    started = time.perf_counter()
+    if show_progress:
+        print(f"  consistency (w={window}) over {len(chrom_names)} chromosomes"
+              " ... ", end="", flush=True)
+    counts = np.zeros((len(state_names), M + 1))
+    by_chrom = np.argsort(chrom_codes, kind="stable")
+    bounds = np.searchsorted(chrom_codes[by_chrom], np.arange(len(chrom_names) + 1))
+    for lo, hi in zip(bounds[:-1], bounds[1:]):
+        idx = by_chrom[lo:hi]
+        counts += _consistency_depth_bins(
+            starts[idx], ends[idx], state_codes[idx], samples[idx], M,
+            len(state_names), bin_size, window)
+    if show_progress:
+        print(f"{time.perf_counter() - started:.1f}s", flush=True)
 
     # Cumulative counts: supported by <= N segmentations
-    M = len(segs_list)
-    for state in state_depth_counts:
-        depths = state_depth_counts[state]
-        cumulative = 0
-        for d in range(1, M + 1):
-            cumulative += depths[d]
-            depths[d] = cumulative
-
-    return {state: dict(depths) for state, depths in state_depth_counts.items()}
+    cumulative = np.cumsum(np.rint(counts[:, 1:]).astype(np.int64), axis=1)
+    return {state: {d: int(cumulative[i, d - 1]) for d in range(1, M + 1)}
+            for i, state in enumerate(state_names)}
 
 
 def plot_state_consistency(state_depth_counts, title, out_path, colors=None):
