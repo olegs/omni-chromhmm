@@ -18,13 +18,15 @@ from types import SimpleNamespace
 
 import matplotlib
 matplotlib.use("Agg")
-matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from utils import (BIN_COLORS, save_fig, BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE,
-                   TICK_FONTSIZE, LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE)
+                   TICK_FONTSIZE, LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE,
+                   set_style)
+
+set_style()
 
 
 def load_bed_regions(path):
@@ -306,31 +308,31 @@ def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=None):
     print(f"Saved {stats_path}", file=sys.stderr)
 
     _bar_plot(df, "n_peaks", "Number of peaks", "Peak count per mark (pooled)",
-              os.path.join(args.outdir, "n_peaks.png"))
+              os.path.join(args.outdir, "n_peaks.pdf"))
     _bar_plot(df, "mean_length", "Mean peak length (bp)", "Mean peak length per mark (pooled)",
-              os.path.join(args.outdir, "peak_length.png"))
+              os.path.join(args.outdir, "peak_length.pdf"))
     _bar_plot(df, "median_length", "Median length (bp)", "Median peak length (pooled)",
-              os.path.join(args.outdir, "median_length.png"))
+              os.path.join(args.outdir, "median_length.pdf"))
 
     if has_replicates and "jaccard_rep1_vs_rep2" in df.columns:
         _bar_plot(df, "jaccard_rep1_vs_rep2",
                   "Jaccard (rep1 vs rep2)", "Peak Jaccard: rep1 vs rep2",
-                  os.path.join(args.outdir, "jaccard_rep1_vs_rep2.png"))
+                  os.path.join(args.outdir, "jaccard_rep1_vs_rep2.pdf"))
 
     cov_df = binarization_mark_coverage(args.ds, args.cell, workdir=".")
     if not cov_df.empty:
         cov_path = os.path.join(args.outdir, "mark_coverage.tsv")
         cov_df.to_csv(cov_path, sep="\t", index=False, float_format="%.4f")
-        plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage_absolute.png"), relative=False)
-        plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage_relative.png"), relative=True)
-        plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage.png"), relative=True)
+        plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage_absolute.pdf"), relative=False)
+        plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage_relative.pdf"), relative=True)
+        plot_mark_coverage(cov_df, outfile=os.path.join(args.outdir, "mark_coverage.pdf"), relative=True)
 
     comb_df = binarization_mark_combinations(args.ds, args.cell, workdir=".")
     if not comb_df.empty:
         comb_path = os.path.join(args.outdir, "mark_combinations.tsv")
         comb_df.to_csv(comb_path, sep="\t", index=False, float_format="%.4f")
-        plot_mark_combinations(comb_df, outfile=os.path.join(args.outdir, "mark_combinations.png"))
-        plot_mark_combinations(comb_df, outfile=os.path.join(args.outdir, "binarization_mark_combinations.png"))
+        plot_mark_combinations(comb_df, outfile=os.path.join(args.outdir, "mark_combinations.pdf"))
+        plot_mark_combinations(comb_df, outfile=os.path.join(args.outdir, "binarization_mark_combinations.pdf"))
 
     print("Done.", file=sys.stderr)
 
@@ -513,7 +515,7 @@ def binarization_mark_coverage(ds, cell, methods=METHOD_ORDER, workdir="."):
                         mf = []
                         for pat in globs.get(caller, [f"*{m}*"]):
                             cand = sorted(glob.glob(os.path.join(caller_dir, pat.format(mark=m))))
-                            cand = [f for f in cand if not f.endswith(".txt") and not f.endswith(".idx") and not f.endswith(".log") and not f.endswith(".png")]
+                            cand = [f for f in cand if not f.endswith(".txt") and not f.endswith(".idx") and not f.endswith(".log") and not f.endswith((".png", ".pdf"))]
                             if cand:
                                 mf = cand
                                 break
@@ -646,7 +648,7 @@ def binarization_mark_combinations(ds, cell, methods=METHOD_ORDER, workdir="."):
                         mf = []
                         for pat in globs.get(caller, [f"*{mk}*"]):
                             cand = sorted(glob.glob(os.path.join(caller_dir, pat.format(mark=mk))))
-                            cand = [f for f in cand if not f.endswith(".txt") and not f.endswith(".idx") and not f.endswith(".log") and not f.endswith(".png")]
+                            cand = [f for f in cand if not f.endswith(".txt") and not f.endswith(".idx") and not f.endswith(".log") and not f.endswith((".png", ".pdf"))]
                             if cand:
                                 mf = cand
                                 break

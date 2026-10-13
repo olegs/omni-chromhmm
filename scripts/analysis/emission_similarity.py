@@ -24,13 +24,15 @@ import pandas as pd
 import matplotlib
 import seaborn as sns
 matplotlib.use("Agg")
-matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
 from utils import (METHOD_ORDER, DISPLAY_NAMES, scatter_points, strip_points,
                    save_fig, BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE,
-                   LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE)
+                   LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE,
+                   set_style)
+
+set_style()
 
 
 METHODS_POOLED = [m for m in METHOD_ORDER
@@ -487,10 +489,10 @@ def run_emission_similarity(datasets, analysis_dirs, outdir, methods=None,
     for ds in args.datasets:
         df_ds = df[df["dataset"] == ds]
         plot_gini_per_dataset(df_ds, ds,
-            os.path.join(args.outdir, f"emission_gini_{ds}.png"))
+            os.path.join(args.outdir, f"emission_gini_{ds}.pdf"))
 
     plot_gini_summary(df, args.datasets,
-        os.path.join(args.outdir, "emission_gini_summary.png"))
+        os.path.join(args.outdir, "emission_gini_summary.pdf"))
 
     if args.out_binem_outfile or args.cross_assay_binem_outfile:
         print("Collecting inter-dataset binarized emission data ...")

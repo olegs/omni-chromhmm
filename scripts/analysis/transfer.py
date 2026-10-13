@@ -1048,8 +1048,10 @@ ARM_FIG = (9.6, 4.4)
 
 
 def plots(frames, summary, outdir):
-    """Every panel as its own figure, for a notebook that shows them singly."""
+    """Every panel as its own PDF figure under *outdir*; the written paths."""
     import matplotlib.pyplot as plt
+
+    utils.set_style()
 
     os.makedirs(outdir, exist_ok=True)
     written = []
@@ -1057,7 +1059,7 @@ def plots(frames, summary, outdir):
     def draw_fig(name, size, build, tight=True):
         fig = plt.figure(figsize=size)
         build(fig)
-        path = os.path.join(outdir, f"{name}.png")
+        path = os.path.join(outdir, f"{name}.pdf")
         utils.save_fig(fig, path, tight=tight)
         written.append(path)
 

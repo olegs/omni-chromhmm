@@ -16,7 +16,6 @@ import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
-matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -25,6 +24,8 @@ import utils
 from utils import (save_fig, BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE,
                    LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE,
                    ANNOTATION_FONTSIZE)
+
+utils.set_style()
 
 
 def expand_globs(paths):
@@ -519,7 +520,7 @@ def save_transition_entropy(segs, bin_size, outdir, skip_noqh=False):
         ax.set_ylabel("From state", fontsize=AXIS_FONTSIZE)
         ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
         ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
-        save_fig(fig, os.path.join(edir, f"transition_matrix{suffix}.png"),
+        save_fig(fig, os.path.join(edir, f"transition_matrix{suffix}.pdf"),
                  bbox_inches=None)
 
 
@@ -692,7 +693,7 @@ def plot_segment_lengths(segs, outdir):
     ax.set_ylabel("Length (bp)", fontsize=AXIS_FONTSIZE)
     ax.grid(axis="y", alpha=0.3)
     
-    save_fig(fig, os.path.join(outdir, "segment_length.png"))
+    save_fig(fig, os.path.join(outdir, "segment_length.pdf"))
 
 
 MARKS_ORDER = ["H3K4me3", "H3K27ac", "H3K4me1", "H3K36me3", "H3K9me3", "H3K27me3"]
@@ -757,7 +758,7 @@ def save_emissions_table(states, marks, mat, outdir, subdir="bin_emissions"):
 
 
 def plot_emissions(states, marks, mat, outdir, subdir="bin_emissions"):
-    """Plot {subdir}/state_emissions.png heatmap."""
+    """Plot {subdir}/state_emissions.pdf heatmap."""
     edir = os.path.join(outdir, subdir)
     os.makedirs(edir, exist_ok=True)
     
@@ -774,7 +775,7 @@ def plot_emissions(states, marks, mat, outdir, subdir="bin_emissions"):
     plt.xticks(rotation=90, fontsize=TICK_FONTSIZE)
     plt.yticks(rotation=0, fontsize=TICK_FONTSIZE)
     
-    save_fig(fig, os.path.join(edir, "state_emissions.png"))
+    save_fig(fig, os.path.join(edir, "state_emissions.pdf"))
 
 
 ANNOTATIONS_ORDER = [
@@ -1004,7 +1005,7 @@ def _column_minmax_scale(mat):
 
 
 def plot_enrichment(enrich_df, segs, outdir):
-    """Plot enrichment.png: odds ratio heatmap, per-column min-max scaled."""
+    """Plot enrichment.pdf: odds ratio heatmap, per-column min-max scaled."""
     if enrich_df.empty:
         return
     edir = os.path.join(outdir, "enrichment")
@@ -1041,7 +1042,7 @@ def plot_enrichment(enrich_df, segs, outdir):
     plt.xticks(rotation=90, fontsize=TICK_FONTSIZE)
     plt.yticks(rotation=0, fontsize=TICK_FONTSIZE)
     
-    save_fig(fig, os.path.join(edir, "enrichment.png"))
+    save_fig(fig, os.path.join(edir, "enrichment.pdf"))
 
 
 def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,

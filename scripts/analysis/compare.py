@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 
 matplotlib.use("Agg")
-matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -37,6 +36,8 @@ from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
                    JACCARD_DISPLAY, KAPPA_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY, \
                    BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE, \
                    LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE, ANNOTATION_FONTSIZE
+
+utils.set_style()
 
 
 def _build_seg_to_analysis_map(seg_paths, analysis_dir):
@@ -132,7 +133,7 @@ def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
     for i, v in enumerate(df["total_entropy"]):
         ax.text(i, v + yrange * 0.01, f"{v:.3f}", ha="center", va="bottom", fontsize=LABEL_FONTSIZE)
     
-    save_fig(fig, os.path.join(outdir, f"entropy_summary{suffix}.png"))
+    save_fig(fig, os.path.join(outdir, f"entropy_summary{suffix}.pdf"))
 
 
 def _save_entropy_combined_plot(results_full, results_active, outdir):
@@ -151,7 +152,7 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
     fig, ax = plt.subplots(figsize=(max(6, len(df_full) * 0.8), 4.2))
     
     sns.barplot(data=df_combined, x="segmentation", y="total_entropy", hue="Type",
-                ax=ax, palette={FULL_DISPLAY: "#4878CF", NOQH_DISPLAY: "#E8833A"},
+                ax=ax, palette=utils.MODE_COLORS,
                 **BAR_STYLE)
     
     display_names = [_get_method_style(l)[0] for l in df_full["segmentation"]]
@@ -163,7 +164,7 @@ def _save_entropy_combined_plot(results_full, results_active, outdir):
     ax.legend(fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE)
     ax.grid(axis="y", alpha=0.3)
     
-    save_fig(fig, os.path.join(outdir, "entropy_summary_combined.png"))
+    save_fig(fig, os.path.join(outdir, "entropy_summary_combined.pdf"))
 
 
 def _is_excluded_state(s, exclude_states):
@@ -477,7 +478,7 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                 for label in ax.get_xticklabels():
                     label.set_ha("right")
                 ax.tick_params(axis="y", rotation=0, labelsize=TICK_FONTSIZE)
-                save_fig(fig, os.path.join(outdir, f"per_state_{metric}_vs_{ref_label}.png"),
+                save_fig(fig, os.path.join(outdir, f"per_state_{metric}_vs_{ref_label}.pdf"),
                          bbox_inches=None)
 
     pd.DataFrame(comparison_rows).to_csv(
@@ -575,7 +576,7 @@ def _plot_segment_stats(df, outdir, suffix=""):
             fmt = f"{v:.0f}" if v == int(v) else f"{v:.1f}"
             ax.text(i, v + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.01,
                     fmt, ha="center", va="bottom", fontsize=LABEL_FONTSIZE)
-        save_fig(fig, os.path.join(outdir, f"{col}{suffix}.png"), bbox_inches=None)
+        save_fig(fig, os.path.join(outdir, f"{col}{suffix}.pdf"), bbox_inches=None)
 
 
 def run_segment_stats(seg_paths, outdir, analysis_dir=None, skip_noqh=False):

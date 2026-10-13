@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
-matplotlib.rcParams["savefig.dpi"] = 300
 import matplotlib.pyplot as plt
 
 import utils
@@ -23,6 +22,8 @@ from utils import (METHOD_IDX, BIN_COLORS, METHOD_INFO, display_name,
                    COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY,
                    TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE,
                    LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE)
+
+utils.set_style()
 
 
 def _build_analysis_to_seg_map(analysis_dirs, seg_names):
@@ -408,7 +409,7 @@ def plot_comparison(df, outdir):
         if col in df_main.columns and df_main[col].notna().any():
             fig, ax = _make_fig()
             _bar_panel(ax, df_main, col, title, ylabel)
-            save_fig(fig, os.path.join(outdir, f"{col}.png"))
+            save_fig(fig, os.path.join(outdir, f"{col}.pdf"))
 
     plot_targets = [
         ("enrich_Tx_ExpressedGeneBodies",  "Tx enrichment vs expressed gene bodies"),
@@ -446,7 +447,7 @@ def plot_comparison(df, outdir):
         if col in df_main.columns and df_main[col].notna().any():
             fig, ax = _make_fig()
             _bar_panel(ax, df_main, col, title, ylabel)
-            save_fig(fig, os.path.join(outdir, f"{filename}.png"))
+            save_fig(fig, os.path.join(outdir, f"{filename}.pdf"))
 
 
 def run_compare_methods(analysis_dir, comparison_dir, outdir, ref_dir=None):

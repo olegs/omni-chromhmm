@@ -389,6 +389,6 @@ def test_plot_summary_no_legend():
     }, index=["kmeans_homer", "bmm3_macs2"])
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        outpath = os.path.join(tmpdir, "test_summary.png")
+        outpath = os.path.join(tmpdir, "test_summary.pdf")
         summary_plots._plot_summary(df, "Test Title", "Y Label", outpath)
         assert os.path.exists(outpath)

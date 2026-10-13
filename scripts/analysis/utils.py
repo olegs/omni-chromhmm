@@ -27,13 +27,41 @@ import seaborn as sns
 # and notebooks takes the same BAR_STYLE and font sizes below.
 BAR_STYLE = dict(capsize=0.05, errorbar="se", err_kws={"linewidth": 2.0},
                  edgecolor="lightgrey", linewidth=1)
-TITLE_STYLE = dict(fontsize=11, fontweight="bold")
-AXIS_FONTSIZE = 9
-TICK_FONTSIZE = 8
-LEGEND_FONTSIZE = 8
-LEGEND_TITLE_FONTSIZE = 9
-LABEL_FONTSIZE = 7
-ANNOTATION_FONTSIZE = 7
+TITLE_STYLE = dict(fontsize=12, fontweight="bold")
+AXIS_FONTSIZE = 10
+TICK_FONTSIZE = 9
+LEGEND_FONTSIZE = 9
+LEGEND_TITLE_FONTSIZE = 10
+LABEL_FONTSIZE = 8
+ANNOTATION_FONTSIZE = 8
+FIGURE_DPI = 300
+
+
+def set_style():
+    """Put the plot style above into matplotlib's global rcParams.
+
+    Every notebook calls this at the top, after its imports, and every plotting
+    script at import: text a plot leaves unsized (colorbars, heatmap
+    annotations, seaborn's own labels) and a raw savefig() then get the same
+    fonts and output settings as the figures save_fig() writes. Idempotent.
+    """
+    plt.rcParams.update({
+        "font.size": TICK_FONTSIZE,
+        "axes.titlesize": TITLE_STYLE["fontsize"],
+        "axes.titleweight": TITLE_STYLE["fontweight"],
+        "axes.labelsize": AXIS_FONTSIZE,
+        "xtick.labelsize": TICK_FONTSIZE,
+        "ytick.labelsize": TICK_FONTSIZE,
+        "legend.fontsize": LEGEND_FONTSIZE,
+        "legend.title_fontsize": LEGEND_TITLE_FONTSIZE,
+        "figure.titlesize": TITLE_STYLE["fontsize"],
+        "figure.titleweight": TITLE_STYLE["fontweight"],
+        "savefig.format": "pdf",
+        "savefig.dpi": FIGURE_DPI,
+        "savefig.bbox": "tight",
+        # TrueType rather than Type 3 fonts: the text of a PDF stays editable.
+        "pdf.fonttype": 42,
+    })
 
 # Metrics, plus the two comparison domains every agreement is measured in: full
 # over all states, noqh with the Quies/Het background dropped. These are the
@@ -92,6 +120,8 @@ F1_DISPLAY = "F1"
 
 FULL_DISPLAY = "FULL"
 NOQH_DISPLAY = "NOQH"
+# Bar colour of each comparison domain, wherever FULL and NOQH share a plot.
+MODE_COLORS = {FULL_DISPLAY: "#4878CF", NOQH_DISPLAY: "#E8833A"}
 
 METRIC_DISPLAY = {JACCARD: JACCARD_DISPLAY, KAPPA: KAPPA_DISPLAY,
                   COSINE: COSINE_DISPLAY, COMPOSITION: COMPOSITION_DISPLAY}
@@ -475,7 +505,7 @@ FUNCTIONAL_TARGETS = (
 # (key, label, state, annotation label prefix) of the one validation scored on
 # a single state, by annotation_jaccard(): the Tx state itself against the
 # expressed gene bodies, the quantity analysis_encode.ipynb plots as
-# summary_jaccard_tx.png. Apart from FUNCTIONAL_TARGETS because it is neither a
+# summary_jaccard_tx.pdf. Apart from FUNCTIONAL_TARGETS because it is neither a
 # family nor an F1 - swapping the metric on a family would reorder nothing, so
 # what this adds over ("functional_tx", ...) above is the narrower state set:
 # Tx alone, without the TxWk the callers disagree most about.
@@ -561,9 +591,9 @@ def annotation_jaccard(dirpath, state, prefix):
 
 BIN_COLORS = {
     "default":   "#4878CF",
-    "omnipeak":  "#E8833A",
-    "homer":     "#2CA02C",
-    "macs2":     "#9467BD",
+    "omnipeak":  "#2CA02C",
+    "homer":     "#9467BD",
+    "macs2":     "#E8833A",
     "reference": "#888888",
 }
 
@@ -1134,7 +1164,7 @@ def save_fig(fig, path, tight=True, note=None, **kwargs):
     if tight:
         fig.tight_layout()
     kwargs.setdefault("bbox_inches", "tight")
-    kwargs.setdefault("dpi", 200)
+    kwargs.setdefault("dpi", FIGURE_DPI)
     _save(path, lambda p: fig.savefig(p, **kwargs))
     plt.close(fig)
     print(f"  saved {path}{' ' + note if note else ''}")

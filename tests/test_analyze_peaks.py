@@ -92,14 +92,14 @@ def test_binarization_mark_coverage_and_plot():
             assert sub["fraction"].iloc[0] == 1.0
 
         # Plot absolute and relative separately
-        plot_abs_path = os.path.join(tmpdir, "plot_abs.png")
+        plot_abs_path = os.path.join(tmpdir, "plot_abs.pdf")
         fig_abs, ax_abs = analyze_peaks.plot_mark_coverage_absolute(df, outfile=plot_abs_path)
         assert fig_abs is not None
         assert ax_abs is not None
         assert os.path.exists(plot_abs_path)
         assert ax_abs.get_yscale() == "log"
 
-        plot_rel_path = os.path.join(tmpdir, "plot_rel.png")
+        plot_rel_path = os.path.join(tmpdir, "plot_rel.pdf")
         fig_rel, ax_rel = analyze_peaks.plot_mark_coverage_relative(df, outfile=plot_rel_path)
         assert fig_rel is not None
         assert ax_rel is not None
@@ -108,7 +108,7 @@ def test_binarization_mark_coverage_and_plot():
 
         # Test summary_plots integration with mark_coverage_outfile
         import summary_plots
-        summary_out = os.path.join(tmpdir, "summary_cov.png")
+        summary_out = os.path.join(tmpdir, "summary_cov.pdf")
         summary_plots.run_summary_plots(
             datasets=[ds],
             cells=[cell],
@@ -117,7 +117,7 @@ def test_binarization_mark_coverage_and_plot():
         )
         assert os.path.exists(summary_out)
 
-        # Test summary_plots integration with outdir (same folder as summary_2way_tss_exptss.png)
+        # Test summary_plots integration with outdir (same folder as summary_2way_tss_exptss.pdf)
         summary_dir = os.path.join(tmpdir, "summary_plots")
         analysis_dir = os.path.join(tmpdir, "analysis_dir")
         os.makedirs(analysis_dir, exist_ok=True)
@@ -135,10 +135,10 @@ def test_binarization_mark_coverage_and_plot():
             workdir=tmpdir,
             cells=[cell]
         )
-        assert os.path.exists(os.path.join(summary_dir, "summary_2way_tss_exptss.png"))
-        assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage_absolute.png"))
-        assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage_relative.png"))
-        assert os.path.exists(os.path.join(summary_dir, "binarization_mark_combinations.png"))
+        assert os.path.exists(os.path.join(summary_dir, "summary_2way_tss_exptss.pdf"))
+        assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage_absolute.pdf"))
+        assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage_relative.pdf"))
+        assert os.path.exists(os.path.join(summary_dir, "binarization_mark_combinations.pdf"))
 
 
 def test_binarization_mark_coverage_replicates():
@@ -187,13 +187,13 @@ def test_binarization_mark_coverage_replicates():
         summary_dir = os.path.join(tmpdir, "out", "summary_plots")
         os.makedirs(summary_dir, exist_ok=True)
         summary_plots._plot_mark_coverage(
-            [ds], tmpdir, os.path.join(summary_dir, "binarization_mark_coverage_absolute.png"),
+            [ds], tmpdir, os.path.join(summary_dir, "binarization_mark_coverage_absolute.pdf"),
             cells={ds: cell}, relative=False
         )
-        assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage_absolute.png"))
+        assert os.path.exists(os.path.join(summary_dir, "binarization_mark_coverage_absolute.pdf"))
 
         # Test summary_plots._plot_mark_coverage with DataFrame directly
-        df_out = os.path.join(summary_dir, "df_cov_rel.png")
+        df_out = os.path.join(summary_dir, "df_cov_rel.pdf")
         summary_plots._plot_mark_coverage(df, tmpdir, df_out, relative=True)
         assert os.path.exists(df_out)
 
@@ -305,7 +305,7 @@ def test_binarization_mark_combinations_and_plot():
         assert omni_sub[3] == 1
 
         # Plot combinations
-        plot_comb_path = os.path.join(tmpdir, "binarization_mark_combinations.png")
+        plot_comb_path = os.path.join(tmpdir, "binarization_mark_combinations.pdf")
         fig, ax = analyze_peaks.plot_mark_combinations(df, outfile=plot_comb_path)
         assert fig is not None
         assert ax is not None
@@ -313,7 +313,7 @@ def test_binarization_mark_combinations_and_plot():
 
         # Test summary_plots._plot_mark_combinations
         import summary_plots
-        summary_out = os.path.join(tmpdir, "summary_comb.png")
+        summary_out = os.path.join(tmpdir, "summary_comb.pdf")
         summary_plots._plot_mark_combinations(
             [ds], tmpdir, summary_out, cells={ds: cell}
         )

@@ -40,7 +40,7 @@ def test_unknown_state_handling(tmp_path):
         "dataset_a": {"Tss": 0.2, "Tx": 0.3, "Quies": 0.5},
         "dataset_b": {"Tss": 0.1, "Tx": 0.2, "Quies": 0.6, "Unknown": 0.1},
     }
-    outfile = str(tmp_path / "composition_test.png")
+    outfile = str(tmp_path / "composition_test.pdf")
     summary_plots._stacked_composition_chart(
         coverages, ["dataset_a", "dataset_b"], "Test Composition", outfile
     )
@@ -54,7 +54,7 @@ def test_plot_method_composition_with_custom_title(tmp_path):
         f.write("chr1\t0\t1000\tTss\t0\t.\t0\t1000\t255,0,0\n")
         f.write("chr1\t1000\t5000\tQuies\t0\t.\t1000\t5000\t220,220,220\n")
 
-    outfile = str(tmp_path / "method_composition.png")
+    outfile = str(tmp_path / "method_composition.pdf")
     summary_plots.run_summary_plots(
         datasets=["test_ds"],
         cells=["test_cell"],
@@ -83,7 +83,7 @@ def test_plot_per_dataset_method_composition_reference(tmp_path):
         ref_paths=[str(bed_path)],
         method_ds_composition_outdir=outdir,
     )
-    ref_file = os.path.join(outdir, "method_ds_composition_reference.png")
+    ref_file = os.path.join(outdir, "method_ds_composition_reference.pdf")
     assert os.path.exists(ref_file)
 
 
@@ -101,7 +101,7 @@ def test_plot_reference_distribution_combined(tmp_path):
         with open(f, "w") as fp:
             fp.write(matrix_content)
 
-    outfile = str(tmp_path / "similarity_distribution_combined.png")
+    outfile = str(tmp_path / "similarity_distribution_combined.pdf")
     summary_plots.run_summary_plots(
         ref_comp_matrix=str(comp_file),
         ref_kappa_matrix=str(kappa_file),
@@ -122,7 +122,7 @@ def test_plot_method_similarity_distribution(tmp_path):
         with open(method_dir / filename, "w") as f:
             f.write(matrix_content)
 
-    outfile = str(tmp_path / "method_sim.png")
+    outfile = str(tmp_path / "method_sim.pdf")
     summary_plots._plot_method_similarity_distribution(
         methods=["chromhmm"],
         inter_ds_dir=str(tmp_path),
@@ -146,10 +146,10 @@ def test_plot_replicate_consistency_bars(tmp_path):
         methods_dirs=[str(ds1_dir)],
         outdir=outdir,
     )
-    assert os.path.exists(os.path.join(outdir, "rep_consistency_kappa_rep1_vs_rep2.png"))
-    assert os.path.exists(os.path.join(outdir, "rep_consistency_kappa_noqh_rep1_vs_rep2.png"))
-    assert os.path.exists(os.path.join(outdir, "rep_consistency_jaccard_rep1_vs_rep2.png"))
-    assert os.path.exists(os.path.join(outdir, "rep_consistency_jaccard_noqh_rep1_vs_rep2.png"))
+    assert os.path.exists(os.path.join(outdir, "rep_consistency_kappa_rep1_vs_rep2.pdf"))
+    assert os.path.exists(os.path.join(outdir, "rep_consistency_kappa_noqh_rep1_vs_rep2.pdf"))
+    assert os.path.exists(os.path.join(outdir, "rep_consistency_jaccard_rep1_vs_rep2.pdf"))
+    assert os.path.exists(os.path.join(outdir, "rep_consistency_jaccard_noqh_rep1_vs_rep2.pdf"))
 
 
 def test_collect_per_state_metrics_keeps_pooled_vs_ref(tmp_path):
