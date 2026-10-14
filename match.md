@@ -84,3 +84,14 @@ Because square-root utility exhibits diminishing marginal returns on spatial ove
 - **State size similarity term.** Steers large states towards large labels; without emissions it outweighs the overlap of every small state and labels them by length.
 - **Two-stage assignment** (longest states matched first among the longest reference states). A hard size cut: it removes the worst exiles, but mid-sized states on either side of the cut get wrong labels.
 - **Relaxing the bijection** (many-to-one). Not allowed: the mapping must be strictly one-to-one.
+
+## 4. Validation: Cross-Sample Consistency
+
+Matching transfers the reference labels onto each sample, so two samples labelled through the same reference can be compared state by state. `match.ipynb` (§4) checks that this transfer keeps the agreement the two samples actually have, in `out/match/cross_sample_used_vs_ceiling.pdf`. Each point is a pair of datasets (A, B) that share one reference vocabulary:
+
+- **y: via reference.** The bp accuracy of A and B after both are relabelled by `match_states()`, i.e. the genome share where they carry the same reference label.
+- **x: ceiling.** The same accuracy under the best direct bijection between A's and B's own states (Hungarian on their overlap). Two bijections through the reference compose into one bijection A → B, so the reference labels can at best equal it. The distance below $y = x$ is the agreement lost by going through the reference.
+- **Grey: random.** The mean accuracy over random bijections A → B, the level of agreement labels reach by chance.
+- **Colour: ARI** of A and B, which compares the two partitions without any state matching.
+
+Transfer works if the points sit close to the diagonal, well above the random level, and rise with ARI. The check is annotation-free and complements the functional benchmarks: it shows that the labels are consistent across samples, not that they are biologically correct. Pairs across reference vocabularies (ChIP × Mint-ChIP) are left out, because their references name some states differently and would disagree on those labels whatever the mapping.
