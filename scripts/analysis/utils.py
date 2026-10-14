@@ -72,6 +72,7 @@ def set_style():
 JACCARD = "jaccard"
 KAPPA = "kappa"
 COSINE = "cosine"
+ARI = "ari"
 FULL = "full"
 NOQH = "noqh"
 
@@ -86,6 +87,16 @@ NOQH = "noqh"
 # segment lists and writes it as "composition", which is why that spelling is
 # an alias below.
 COMPOSITION = "composition"
+
+# The ARI (adjusted Rand index) compares two segmentations as partitions of the
+# genome and ignores the state names altogether: it asks whether the bp one side
+# puts in the same state are also together on the other side, whatever either
+# side calls that state. Relabelling a side leaves it unchanged, so unlike
+# Jaccard and kappa it does not depend on the state matching, and it stays
+# meaningful for a pair matched to two different references. 1 means identical
+# partitions, 0 the agreement expected by chance at the same state sizes, and it
+# can go below 0. FULL domain only: dropping the background picks bins by state
+# name, which is the matching the index is free of.
 
 # Agreement of the state *signatures* of two segmentations rather than of their
 # placement: the mean cosine of the emission vectors of the states paired up by
@@ -102,6 +113,7 @@ EMISSION = "emission_similarity"
 JACCARD_DISPLAY = "Jaccard"
 KAPPA_DISPLAY = "Kappa"
 COSINE_DISPLAY = "Cosine"
+ARI_DISPLAY = "ARI"
 COMPOSITION_DISPLAY = "Composition"
 EMISSION_DISPLAY = "Emission similarity"
 
@@ -125,7 +137,8 @@ NOQH_DISPLAY = "NOQH"
 MODE_COLORS = {FULL_DISPLAY: "#4878CF", NOQH_DISPLAY: "#E8833A"}
 
 METRIC_DISPLAY = {JACCARD: JACCARD_DISPLAY, KAPPA: KAPPA_DISPLAY,
-                  COSINE: COSINE_DISPLAY, COMPOSITION: COMPOSITION_DISPLAY}
+                  COSINE: COSINE_DISPLAY, ARI: ARI_DISPLAY,
+                  COMPOSITION: COMPOSITION_DISPLAY}
 
 # Every on-disk spelling a metric can appear under, most canonical first: the
 # cosine is written as "cosine" by the notebook agreement caches and as
@@ -140,13 +153,13 @@ TSS_WINDOW = 2000
 
 
 def normalize_metric(name):
-    """Normalize a metric name (jaccard, kappa, cosine) or None when unknown.
+    """Normalize a metric name (jaccard, kappa, cosine, ari) or None when unknown.
 
     The display spellings lowercase to the keys, so a cache column name
     round-trips back to its metric.
     """
     name = str(name).strip().lower()
-    return name if name in (JACCARD, KAPPA, COSINE) else None
+    return name if name in (JACCARD, KAPPA, COSINE, ARI) else None
 
 
 def metric_aliases(name):
@@ -926,6 +939,48 @@ def _bars(ax, data, x, y, order, hue, hue_order, palette, color, hatch, points,
         hatch_all(ax)
 
 
+def close_gaps(ax, n_hue):
+    """Centre the dodged bars under every tick of *ax* on it, over the hue
+    levels drawn there.
+
+    seaborn keeps a slot for each of the *n_hue* levels under every tick and
+    draws no bar for a level with no values, so a tick measured in some of them
+    only - the ARI, FULL but no NOQH - is drawn off-centre next to an empty
+    slot. Each bar keeps its width; its error bar and its points move with it.
+    """
+    ticks = {}
+    for container in ax.containers:  # one per hue level, in hue order
+        for patch in container:
+            centre = patch.get_x() + patch.get_width() / 2
+            ticks.setdefault(int(round(centre)), []).append(patch)
+    shifts = []  # (old centre, half slot width, shift)
+    for tick, patches in ticks.items():
+        if len(patches) >= n_hue:
+            continue
+        for k, patch in enumerate(patches):
+            width = patch.get_width()
+            centre = patch.get_x() + width / 2
+            shift = tick + (k - (len(patches) - 1) / 2) * width - centre
+            shifts.append((centre, width / 2, shift))
+            patch.set_x(patch.get_x() + shift)
+
+    def moved(pos):
+        for centre, half, shift in shifts:
+            if abs(pos - centre) <= half:
+                return pos + shift
+        return pos
+
+    if not shifts:
+        return
+    for line in ax.lines:
+        line.set_xdata([moved(v) for v in line.get_xdata()])
+    for collection in ax.collections:
+        offsets = collection.get_offsets()
+        if len(offsets):
+            offsets[:, 0] = [moved(v) for v in offsets[:, 0]]
+            collection.set_offsets(offsets)
+
+
 def _bar_legend(ax, levels, legend, title, kwargs):
     """Restyle the barplot legend outside the axes, or drop it."""
     if not legend:
@@ -968,7 +1023,7 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
              ylabel=None, xticklabels=None, rotation=45, tick_fontsize=TICK_FONTSIZE,
              ylim=None, log=False, labels=None, label_fontsize=LABEL_FONTSIZE, hatch="joint",
              legend=False, legend_title="Method", legend_kwargs=None, points=None,
-             point_data=None, path=None, **bar_kwargs):
+             point_data=None, gaps=True, path=None, **bar_kwargs):
     """Bar chart of *y* per *x* level, mean +- SE with the observations on top.
 
     *order* fixes the x levels (defaults to their order of appearance) and
@@ -980,8 +1035,9 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
     for hatch_all(), None for neither, and *points* overrides the
     strip_points() keywords. *point_data* draws the points off a frame of its
     own - a subsample of *data*, where a bar holds too many observations to
-    show all of them; the bars stay the mean over *data*. Extra keywords go to
-    sns.barplot().
+    show all of them; the bars stay the mean over *data*. *gaps* False centres
+    the dodged bars of an x level missing some hue levels, close_gaps(). Extra
+    keywords go to sns.barplot().
 
     Writes the figure to *path* and closes it, or returns the axes when *path*
     is None; pass *ax* to draw into an existing figure instead.
@@ -994,6 +1050,8 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
 
     _bars(ax, data, x, y, order, hue, hue_order, palette, color, hatch, points,
           bar_kwargs, point_data=point_data)
+    if not gaps and hue is not None and hue != x:
+        close_gaps(ax, len(hue_order or pd.unique(data[hue])))
 
     if title:
         ax.set_title(title, **TITLE_STYLE)

@@ -151,8 +151,39 @@ def per_state_diagonal(overlap, states, metric):
     return out
 
 
+def adjusted_rand_index(overlap):
+    """Adjusted Rand index of two segmentations, from their overlap table.
+
+    The two segmentations are read as partitions of the genome and the state
+    names play no part: relabelling either side gives the same index, so it
+    needs no state matching. Over the whole genome only - dropping a background
+    picks bins by state name, which is the matching the index is free of.
+
+    Counted over pairs of bp, in the limit C(n, 2) = n^2 / 2 that a genome of
+    millions of bins is in, so the index does not depend on the bin size.
+    """
+    cells = {pair: float(bp) for pair, bp in overlap.items() if bp > 0}
+    total = sum(cells.values())
+    if total == 0:
+        return 0.0
+    a1, a2 = defaultdict(float), defaultdict(float)
+    for (s1, s2), bp in cells.items():
+        a1[s1] += bp
+        a2[s2] += bp
+    index = sum(bp * bp for bp in cells.values())
+    sum1 = sum(bp * bp for bp in a1.values())
+    sum2 = sum(bp * bp for bp in a2.values())
+    expected = sum1 * sum2 / (total * total)
+    maximum = (sum1 + sum2) / 2
+    # Both sides a single state: identical partitions, nothing left to chance.
+    if maximum == expected:
+        return 1.0
+    return (index - expected) / (maximum - expected)
+
+
 def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
-    """Agreement metrics (kappa, jaccard, cosine) of two segmentations."""
+    """Agreement metrics (kappa, jaccard, cosine) of two segmentations, and the
+    ari when *exclude* is empty - adjusted_rand_index() has no excluded domain."""
     all_states = set(lengths1) | set(lengths2)
     def _is_excluded(s):
         if s in exclude: return True
@@ -165,11 +196,14 @@ def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
     states = {s for s in all_states if not _is_excluded(s)}
     total = sum(overlap.get((s1, s2), 0) for s1 in states for s2 in states)
     if not states or total == 0:
-        return {
+        metrics = {
             utils.JACCARD: 0.0,
             utils.KAPPA: 0.0,
             utils.COSINE: 0.0
         }
+        if not exclude:
+            metrics[utils.ARI] = 0.0
+        return metrics
 
     a1 = {s: sum(overlap.get((s, s2), 0) for s2 in states) for s in states}
     a2 = {s: sum(overlap.get((s1, s), 0) for s1 in states) for s in states}
@@ -185,11 +219,14 @@ def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
     v1 = np.array([lengths1.get(s, 0) for s in ordered])
     v2 = np.array([lengths2.get(s, 0) for s in ordered])
     norms = np.linalg.norm(v1) * np.linalg.norm(v2)
-    return {
+    metrics = {
         utils.JACCARD: float(np.mean(jaccards)) if jaccards else 0.0,
         utils.KAPPA: kappa,
         utils.COSINE: float(np.dot(v1, v2) / norms) if norms > 0 else 0.0,
     }
+    if not exclude:
+        metrics[utils.ARI] = adjusted_rand_index(overlap)
+    return metrics
 
 
 def agreement_by_mode(overlap, lengths1, lengths2, background=()):

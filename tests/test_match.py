@@ -69,6 +69,57 @@ def test_agreement_metrics():
     assert np.isclose(metrics[utils.JACCARD], 1.0)
     assert np.isclose(metrics[utils.KAPPA], 1.0)
     assert np.isclose(metrics[utils.COSINE], 1.0)
+    assert np.isclose(metrics[utils.ARI], 1.0)
+
+
+def test_ari_ignores_state_names():
+    segs1 = [
+        ("chr1", 0, 1000, "Tss", "0,0,0"),
+        ("chr1", 1000, 5000, "Tx", "0,0,0"),
+        ("chr1", 5000, 10000, "Quies", "0,0,0"),
+    ]
+    # The same partition under other names: no state matching, a perfect ARI,
+    # where kappa on the names sees no agreement at all.
+    segs2 = [(c, s, e, {"Tss": "E3", "Tx": "E1", "Quies": "E2"}[n], col)
+             for c, s, e, n, col in segs1]
+    overlap = match.pair_overlap(segs2, segs1)
+    metrics = match.agreement_metrics(overlap, match.state_lengths(segs1),
+                                      match.state_lengths(segs2))
+    assert np.isclose(metrics[utils.ARI], 1.0)
+    assert metrics[utils.KAPPA] < 0.1
+
+
+def test_ari_matches_pair_counting():
+    # The exact pair-counting ARI of a bin-level contingency table: the bp
+    # version reads it in the n^2 / 2 limit, so the two agree on a large table.
+    rng = np.random.default_rng(0)
+    table = rng.integers(0, 50_000, size=(5, 4))
+    overlap = {(i, j): int(table[i, j]) * 200
+               for i in range(5) for j in range(4)}
+
+    def pairs(x):
+        return x * (x - 1) / 2
+
+    n = table.sum()
+    index = pairs(table).sum()
+    a, b = pairs(table.sum(axis=1)).sum(), pairs(table.sum(axis=0)).sum()
+    expected = a * b / pairs(n)
+    exact = (index - expected) / ((a + b) / 2 - expected)
+    assert np.isclose(match.adjusted_rand_index(overlap), exact, atol=1e-4)
+
+
+def test_ari_independent_partitions():
+    overlap = {("A", "X"): 100, ("A", "Y"): 100, ("B", "X"): 100, ("B", "Y"): 100}
+    assert np.isclose(match.adjusted_rand_index(overlap), 0.0)
+
+
+def test_ari_full_domain_only():
+    overlap = {("Tss", "Tss"): 100, ("Quies", "Quies"): 500}
+    lengths = {"Tss": 100, "Quies": 500}
+    modes = match.agreement_by_mode(overlap, lengths, lengths,
+                                    background={"Quies"})
+    assert np.isclose(modes[utils.FULL][utils.ARI], 1.0)
+    assert utils.ARI not in modes[utils.NOQH]
 
 
 def test_emission_similarity_keeps_signal_level():
