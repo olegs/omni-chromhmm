@@ -24,7 +24,7 @@ import seaborn as sns
 
 sys.path.insert(0, os.path.dirname(__file__))
 from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
-                   strip_points, method_color, save_fig,
+                   strip_points, method_color, save_fig, widen_bars,
                    group_methods, group_xticks,
                    is_joint, is_replicate, JOINT_HATCH,
                    CHROMHMM_DEFAULT, CHROMHMM_HOMER, CHROMHMM_MACS2, CHROMHMM_OMNI,
@@ -1070,6 +1070,7 @@ def _stacked_composition_chart(coverages, labels, title, outfile,
 
     figw = max(8, len(labels) * 0.8)
     fig, ax = plt.subplots(figsize=(figw, 5))
+    widen_bars(ax)
     x = np.arange(len(labels))
     bottom = np.zeros(len(labels))
 

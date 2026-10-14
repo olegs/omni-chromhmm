@@ -1259,8 +1259,8 @@ def _legend(ax, scenarios=("init", "updated", "refit")):
                        + [Patch(facecolor="#DDDDDD", edgecolor="white",
                                 hatch=SCENARIO_HATCH[s], label=SCENARIO_LABEL[s])
                           for s in scenarios],
-               loc="upper left", ncol=5, frameon=False, fontsize=utils.LEGEND_FONTSIZE,
-               handlelength=1.4, columnspacing=0.8)
+               loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0,
+               frameon=False, fontsize=utils.LEGEND_FONTSIZE, handlelength=1.4)
 
 
 
@@ -1342,7 +1342,7 @@ def _state_agreement_summary_panel(ax, state_jaccard, metric=utils.KAPPA,
             utils.scatter_points(ax, x + offset, values, jitter=0.08, size=9)
             ax.annotate(f"{values.mean():.3f}", (x + offset, float(values.mean())),
                         textcoords="offset points", xytext=(0, 3), ha="center",
-                        fontsize=utils.LABEL_FONTSIZE)
+                        fontsize=utils.LABEL_FONTSIZE, rotation=90)
     first_series = comparison_series(scenarios[0])
     ax.set_xticks(range(len(first_series)))
     ax.set_xticklabels([label for _, _, label in first_series], rotation=45, ha="right", fontsize=utils.TICK_FONTSIZE)
@@ -1368,7 +1368,7 @@ def _stability_panel(ax, stability, metric, domain, scenarios=("init", "updated"
             utils.scatter_points(ax, x + offset, values, jitter=0.08, size=9)
             ax.annotate(f"{values.mean():.3f}", (x + offset, float(values.mean())),
                         textcoords="offset points", xytext=(0, 3), ha="center",
-                        fontsize=utils.LABEL_FONTSIZE)
+                        fontsize=utils.LABEL_FONTSIZE, rotation=90)
     first_series = comparison_series(scenarios[0])
     ax.set_xticks(range(len(first_series)))
     ax.set_xticklabels([label for _, _, label in first_series], rotation=45, ha="right", fontsize=utils.TICK_FONTSIZE)

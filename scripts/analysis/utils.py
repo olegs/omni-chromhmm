@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.container import BarContainer
 from matplotlib.transforms import blended_transform_factory, offset_copy
 import seaborn as sns
 
@@ -1023,6 +1024,22 @@ def bar_plot(data, x, y, order=None, hue=None, hue_order=None, palette=None,
     return ax
 
 
+def break_marks(ax_top, ax_bot, size=10):
+    """Diagonal marks on both ends of the break between *ax_top* and *ax_bot*.
+
+    A marker in axes coordinates, so the marks keep their size in points and
+    stay on the corners however the figure is resized afterwards.
+    """
+    style = dict(marker=[(-1, -0.5), (1, 0.5)], markersize=size, linestyle="none",
+                 color="k", mec="k", mew=0.8, clip_on=False)
+    # seaborn leaves autoscaling on, and a new line would rescale the x range
+    # of the categorical axes to the bars plus margins.
+    for ax in (ax_top, ax_bot):
+        ax.set_autoscale_on(False)
+    ax_top.plot([0, 1], [0, 0], transform=ax_top.transAxes, **style)
+    ax_bot.plot([0, 1], [1, 1], transform=ax_bot.transAxes, **style)
+
+
 def broken_bar_plot(data, x, y, order, break_low=0.20, break_high=0.40, top=1.02,
                     height_ratios=(1, 4), figsize=(12, 6), title=None, xlabel=None,
                     ylabel=None, xticklabels=None, rotation=45,
@@ -1048,16 +1065,9 @@ def broken_bar_plot(data, x, y, order, break_low=0.20, break_high=0.40, top=1.02
     ax_top.spines["bottom"].set_visible(False)
     ax_bot.spines["top"].set_visible(False)
     ax_top.tick_params(axis="x", bottom=False)
-
-    d = 0.012   # half-length of a break mark, in figure coordinates
-    for ax, sign in ((ax_top, -1), (ax_bot, 1)):
-        pos = ax.get_position()
-        y_fig = pos.y0 if sign == 1 else pos.y1
-        for x_fig in (pos.x0, pos.x1):
-            fig.add_artist(plt.Line2D([x_fig - d, x_fig + d],
-                                      [y_fig + sign * d * 1.5, y_fig - sign * d * 1.5],
-                                      transform=fig.transFigure, color="k",
-                                      clip_on=False, linewidth=0.8))
+    for ax in (ax_top, ax_bot):
+        widen_bars(ax)
+    break_marks(ax_top, ax_bot)
 
     if title:
         ax_top.set_title(title, **TITLE_STYLE)
@@ -1066,7 +1076,7 @@ def broken_bar_plot(data, x, y, order, break_low=0.20, break_high=0.40, top=1.02
     ax_top.set_ylabel("")
     ax_bot.set_ylabel(ylabel or "", fontsize=AXIS_FONTSIZE)
     if path is not None:
-        # tight_layout() would move the axes the break marks are placed against.
+        # tight_layout() would reset the narrow gap between the two axes.
         save_fig(fig, path, tight=False)
         return None
     return ax_top, ax_bot
@@ -1085,6 +1095,7 @@ def stacked_bar_plot(pivot, colors=None, figsize=(15, 6), width=0.8, title=None,
     in bar_plot(), "group" included.
     """
     fig, ax = plt.subplots(figsize=figsize)
+    widen_bars(ax)
     pivot.plot(kind="bar", stacked=True, ax=ax, width=width, color=colors, linewidth=0)
     # Drawn after the stack so ax.legend() below picks up the components only.
     pivot.sum(axis=1).plot(kind="bar", ax=ax, width=width, facecolor="none",
@@ -1155,13 +1166,139 @@ def keyed_cache(path, keys, compute, label=None, valid=None, progress=None):
     return {key: cache[key] for key in keys}
 
 
-def save_fig(fig, path, tight=True, note=None, **kwargs):
+# A bar is BAR_INCHES[1] wide on a chart of up to BAR_FEW bars, narrowing as
+# (n / BAR_FEW) ** -BAR_SHRINK down to BAR_INCHES[0] for the busiest ones: a
+# 4-bar and a 40-bar chart stay within 2.3x of each other in bar width
+# instead of the 10x a fixed figure width gives. Bars dodged into touching
+# clusters are sized by cluster instead: a cluster of k bars is as wide as
+# sqrt(k) lone bars of a chart with that many clusters, so its bars get
+# thinner, down to BAR_CLUSTER_INCHES, and the clusters stay close together.
+# An axes is never narrower than BAR_AXES_INCHES[0], padding the x range
+# around a lone bar instead, nor wider than BAR_AXES_INCHES[1], where the bars
+# of the widest charts get thinner.
+BAR_INCHES = (0.22, 0.5)
+BAR_FEW = 4
+BAR_SHRINK = 0.35
+BAR_CLUSTER_INCHES = 0.12
+BAR_AXES_INCHES = (1.5, 20.0)
+# State composition charts, whose thin state slices need the room, are drawn
+# COMPOSITION_WIDEN times wider than that, their axes cap included.
+COMPOSITION_WIDEN = 1.3
+
+
+def bar_inches(n_bars, cluster=1):
+    """Physical width of one bar on a chart of *n_bars* bars, dodged into
+    clusters of *cluster* touching bars."""
+    low, high = BAR_INCHES
+    n_groups = -(-max(n_bars, 1) // max(cluster, 1))
+    inches = float(np.clip(high * (n_groups / BAR_FEW) ** -BAR_SHRINK, low, high))
+    if cluster <= 1:
+        return inches
+    return max(inches / np.sqrt(cluster), BAR_CLUSTER_INCHES)
+
+
+def _bar_geometry(ax):
+    """(bars, bars per cluster, bar width in x units) of the vertical bars of
+    *ax*, or None.
+
+    Bars are counted by position, so a stack or an outline over the stack is
+    one bar. A cluster is a run of bars that touch, which is what a dodged
+    chart draws; a missing hue level splits one, so the largest is its size.
+    """
+    patches = [p for c in ax.containers if isinstance(c, BarContainer)
+               and getattr(c, "orientation", "vertical") != "horizontal"
+               for p in c.patches]
+    widths = [p.get_width() for p in patches if p.get_width() > 0]
+    if not widths:
+        return None
+    width = float(np.median(widths))
+    centres = sorted({round(p.get_x() + p.get_width() / 2, 6) for p in patches})
+    cluster, run = 1, 1
+    for left, right in zip(centres, centres[1:]):
+        run = run + 1 if right - left <= width * 1.05 else 1
+        cluster = max(cluster, run)
+    return len(centres), cluster, width
+
+
+def widen_bars(ax, factor=COMPOSITION_WIDEN):
+    """Have fit_bar_widths() draw the bars of *ax* *factor* times wider."""
+    ax._bar_widen = factor
+    return ax
+
+
+def _bar_axes(fig):
+    """{axes: (bar inches, bar width in x units, widen factor)} of the bar
+    charts of *fig*."""
+    found = {}
+    for ax in fig.axes:
+        geometry = _bar_geometry(ax)
+        if geometry is not None:
+            n_bars, cluster, width = geometry
+            widen = getattr(ax, "_bar_widen", 1.0)
+            found[ax] = (bar_inches(n_bars, cluster) * widen, width, widen)
+    return found
+
+
+def fit_bar_widths(fig, tight=True, rounds=8, tolerance=0.03):
+    """Resize the width of *fig* so its bars come out bar_inches() wide.
+
+    With *tight* the layout is re-run every round, whose margins stay put in
+    inches, so the figure grows by what the bars lack; without it the axes keep
+    their share of the figure, which scales instead. Every row of axes gets
+    its bars at least that wide; an axes left wider than its bars need - a lone
+    bar, a row with fewer bars than the widest one - pads its x range.
+    """
+    bars = _bar_axes(fig)
+    if not bars:
+        if tight:
+            fig.tight_layout()
+        return
+
+    def need(ax):
+        inches, width, widen = bars[ax]
+        lo, hi = ax.get_xlim()
+        low, high = BAR_AXES_INCHES
+        return float(np.clip(inches * (hi - lo) / width, low, high * widen))
+
+    for _ in range(rounds):
+        if tight:
+            fig.tight_layout()
+        fig_width = fig.get_figwidth()
+        have = {ax: ax.get_position().width * fig_width for ax in bars}
+        rows = {}
+        for ax in bars:
+            pos = ax.get_position()
+            row = (round(pos.y0, 3), round(pos.y1, 3))
+            rows[row] = rows.get(row, 0.0) + need(ax) - have[ax]
+        delta = max(rows.values())
+        if abs(delta) < tolerance * fig_width:
+            break
+        if tight:
+            fig.set_figwidth(max(fig_width + delta, 1.0))
+        else:
+            fig.set_figwidth(fig_width * max(need(ax) / have[ax] for ax in bars))
+
+    fig_width = fig.get_figwidth()
+    for ax, (inches, width, _) in bars.items():
+        have = ax.get_position().width * fig_width
+        lo, hi = ax.get_xlim()
+        span = have * width / inches
+        if span > (hi - lo) * (1 + tolerance):
+            mid = (lo + hi) / 2
+            ax.set_xlim(mid - span / 2, mid + span / 2)
+
+
+def save_fig(fig, path, tight=True, note=None, bar_width=True, **kwargs):
     """Write *fig* to *path*, then close it and report the file.
 
     *tight* runs tight_layout() first — pass False for a figure that manages
-    its own layout. Extra keywords go to fig.savefig().
+    its own layout. A figure with vertical bars is resized by fit_bar_widths()
+    unless *bar_width* is False, so a bar is about as wide on every chart.
+    Extra keywords go to fig.savefig().
     """
-    if tight:
+    if bar_width:
+        fit_bar_widths(fig, tight=tight)
+    elif tight:
         fig.tight_layout()
     kwargs.setdefault("bbox_inches", "tight")
     kwargs.setdefault("dpi", FIGURE_DPI)
