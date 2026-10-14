@@ -77,7 +77,7 @@ wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.5.6815.jar
 for E in $(cat names.txt); do echo $E; mkdir -p $E/omni;
  for m in H3K4me1 H3K4me3 H3K9me3 H3K27ac H3K27me3 H3K36me3; do
   echo $m;
-   java --add-modules=jdk.incubator.vector  -Xmx8G  -jar /home/oshpynov/omnipeak-1.4.6808.jar \
+   java --add-modules=jdk.incubator.vector  -Xmx8G  -jar /home/oshpynov/omnipeak-1.5.6815.jar \
     analyze -t $E-$m.tagAlign.gz -c $E-Input.tagAlign.gz --cs hg19.chrom.sizes --peak $E/omni/$E-$m.peak –-bigwig;
  done
 done
