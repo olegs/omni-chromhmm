@@ -191,6 +191,22 @@ rule index_folder_bam:
     shell: "samtools index {input}"
 
 
+rule filter_bam_chr1:
+    """Filter a mark BAM to chromosome 1."""
+    input: ancient("{folder}/bams/{mark}.bam")
+    output: "{folder}/bams_chr1/{mark}.bam"
+    conda: "../envs/bio.yaml"
+    shell: "samtools view -b {input} chr1 > {output} && samtools index {output}"
+
+
+rule filter_control_chr1:
+    """Filter a control BAM to chromosome 1."""
+    input: ancient("{folder}/controls/{mark}.bam")
+    output: "{folder}/controls_chr1/{mark}.bam"
+    conda: "../envs/bio.yaml"
+    shell: "samtools view -b {input} chr1 > {output} && samtools index {output}"
+
+
 rule bam_coverage_bw:
     """BigWig track for each mark BAM, produced next to the bams/ folder."""
     input:

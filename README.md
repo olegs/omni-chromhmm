@@ -81,6 +81,26 @@ joint state space:
 bash process_encode.sh
 ```
 
+### ENCODE Chromosome 1 BAM extraction (Parameter Variance Analysis)
+
+To extract chromosome 1 signal and control BAMs for parameter variance evaluation (`variation.ipynb`):
+
+```bash
+mkdir -p ~/data/2026_segmentations/encode
+cd ~/data/2026_segmentations/encode
+
+REPO=~/work/omni-chromhmm
+for ds in imr90 monocytes adrenal_gland; do
+  snakemake -p \
+    $ds/bams_chr1/{H3K4me3,H3K27ac,H3K4me1,H3K36me3,H3K9me3,H3K27me3}.bam \
+    $ds/controls_chr1/{H3K4me3,H3K27ac,H3K4me1,H3K36me3,H3K9me3,H3K27me3}.bam \
+    --use-conda --cores all --directory $(pwd) \
+    --snakefile $REPO/Snakefile \
+    --configfile $REPO/config_encode.yaml \
+    --rerun-incomplete --rerun-trigger mtime;
+done
+```
+
 ### 1000 epigenomes analysis
  
 [Universal annotation of the human genome through integration of over a thousand epigenomic datasets](https://link.springer.com/article/10.1186/s13059-021-02572-z)
