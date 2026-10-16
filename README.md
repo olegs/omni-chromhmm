@@ -145,10 +145,6 @@ bash process_sagaconf.sh
 
 ## Analysis
 
-0. Launch `transfer.ipynb` for the Init/updated/refitted transfer experiments
-   (see the section below): it runs the integrated comparison - or reads back its
-   tables when the ones on disk were produced by the same settings, recomputing
-   and saying why when they were not - and shows every panel as its own figure.
 1. Launch `analysis_encode.ipynb` for ENCODE analysis, cross-segmentation comparison and inter-dataset summary plots.
 2. Launch `analysis_epi1000.ipynb` for analysis of the 1000 epigenomes dataset.
 3. Launch `analysis_sagaconf.ipynb` for analysis of the SAGAconf dataset.
@@ -158,12 +154,6 @@ bash process_sagaconf.sh
    complexity, functional correspondence, state-space fidelity, segment-count stability) and
    writes the summary ranking and the score profiles to `out/summary`, along with
    the evidence table behind them.
-
-## Init vs updated vs jointly refitted model (ENCODE)
-
-Does a model trained on an initial collection annotate new samples as well as one
-refitted on everything?
-Launch `transfer.ipynb` to analyze the results.
 
 ## Questions?
 Contact Oleg Shpynov (oleg.shpynov@jetbrains.com).
