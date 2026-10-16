@@ -87,11 +87,11 @@ Because square-root utility exhibits diminishing marginal returns on spatial ove
 
 ## 4. Validation: Cross-Sample Consistency
 
-Matching transfers the reference labels onto each sample, so two samples labelled through the same reference can be compared state by state. `match.ipynb` (§4) checks that this transfer keeps the agreement the two samples actually have, in `out/match/cross_sample_used_vs_ceiling.pdf`. Each point is a pair of datasets (A, B) that share one reference vocabulary:
+Matching transfers the reference labels onto each sample, so two samples labelled through the same reference can be compared state by state. `match.ipynb` (§4) checks that this transfer keeps the agreement the two samples actually have. For every pair of datasets (A, B) that share one reference vocabulary it computes:
 
-- **y: via reference.** The bp accuracy of A and B after both are relabelled by `match_states()`, i.e. the genome share where they carry the same reference label.
-- **x: ceiling.** The same accuracy under the best direct bijection between A's and B's own states (Hungarian on their overlap). Two bijections through the reference compose into one bijection A → B, so the reference labels can at best equal it. The distance below $y = x$ is the agreement lost by going through the reference.
-- **Grey: random.** The mean accuracy over random bijections A → B, the level of agreement labels reach by chance.
-- **Colour: ARI** of A and B, which compares the two partitions without any state matching.
+- **Via reference.** The bp accuracy of A and B after both are relabelled by `match_states()`, i.e. the genome share where they carry the same reference label, and its **Kappa**, the same accuracy corrected for the agreement the two label shares reach by chance.
+- **Ceiling.** The same accuracy under the best direct bijection between A's and B's own states (Hungarian on their overlap). Two bijections through the reference compose into one bijection A → B, so the reference labels can at best equal it.
+- **Random.** The mean accuracy and Kappa over random bijections A → B, the level of agreement labels reach by chance.
+- **ARI** of A and B, which compares the two partitions without any state matching.
 
-Transfer works if the points sit close to the diagonal, well above the random level, and rise with ARI. The check is annotation-free and complements the functional benchmarks: it shows that the labels are consistent across samples, not that they are biologically correct. Pairs across reference vocabularies (ChIP × Mint-ChIP) are left out, because their references name some states differently and would disagree on those labels whatever the mapping.
+Two scatterplots, `<workdir>/match/cross_sample_ari_vs_accuracy.pdf` and `<workdir>/match/cross_sample_ari_vs_kappa.pdf`, put bp agreement and Kappa via reference against ARI, each with its Spearman ρ and p-value, the random-bijection level in grey and the line $y = x$; the ceiling is in `cross_sample_summary.tsv`. Transfer works if agreement via reference sits close to the ceiling, well above the random level, and rises with ARI. The check is annotation-free and complements the functional benchmarks: it shows that the labels are consistent across samples, not that they are biologically correct. Pairs across reference vocabularies (ChIP × Mint-ChIP) are left out, because their references name some states differently and would disagree on those labels whatever the mapping.
