@@ -154,6 +154,9 @@ bash process_sagaconf.sh
    complexity, functional correspondence, state-space fidelity, segment-count stability) and
    writes the summary ranking and the score profiles to `out/summary`, along with
    the evidence table behind them.
+5. Launch `match.ipynb` to analyze matching strategies and their qualities.
+6. Launch `parameters.ipynb` to analyze the variation of ChromHMM results by different parameters.
+7. Launch `states.ipynb` to analyze the optimal number of parameters by using TME, Silhoutte, Elbow and BIC methods.
 
 ## Questions?
 Contact Oleg Shpynov (oleg.shpynov@jetbrains.com).
