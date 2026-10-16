@@ -84,7 +84,7 @@ bash process_encode.sh
 
 ### ENCODE Chromosome 1 BAM extraction (Parameter Variance Analysis)
 
-To extract chromosome 1 signal and control BAMs for parameter variance evaluation (`variation.ipynb`):
+To extract chromosome 1 signal and control BAMs for parameter variance evaluation (`parameters.ipynb`):
 
 ```bash
 mkdir -p ~/data/2026_segmentations/encode
