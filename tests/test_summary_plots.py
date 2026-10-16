@@ -166,3 +166,32 @@ def test_collect_per_state_metrics_keeps_pooled_vs_ref(tmp_path):
         ["ds1"], [str(tmp_path / "ds1")], "jaccard")
     assert sorted(df["method"]) == ["chromhmm_default", "kmeans_omni"]
     assert df.set_index("method").loc["kmeans_omni", "kappa"] == 0.4
+
+
+def test_2way_scatter_labels(tmp_path, monkeypatch):
+    import pandas as pd
+    x_data = pd.DataFrame({"ds1": [50.0, 60.0]}, index=["ref", "chromhmm_default"])
+    y_data = pd.DataFrame({"ds1": [40.0, 70.0]}, index=["ref", "chromhmm_default"])
+    outfile = str(tmp_path / "test_2way.pdf")
+
+    captured_labels = {}
+    orig_save = summary_plots.save_fig
+
+    def mock_save_fig(fig, outpath, **kwargs):
+        ax = fig.axes[0]
+        captured_labels["xlabel"] = ax.get_xlabel()
+        captured_labels["ylabel"] = ax.get_ylabel()
+        orig_save(fig, outpath, **kwargs)
+
+    monkeypatch.setattr(summary_plots, "save_fig", mock_save_fig)
+
+    summary_plots._plot_2way_scatter(
+        x_data, y_data,
+        "Test Title",
+        "Expressed gene bodies bp overlap (Sensitivity, %)",
+        "Tx state bp overlap (Precision, %)",
+        outfile
+    )
+    assert os.path.exists(outfile)
+    assert captured_labels["xlabel"] == "Expressed gene bodies bp overlap (Sensitivity, %)"
+    assert captured_labels["ylabel"] == "Tx state bp overlap (Precision, %)"

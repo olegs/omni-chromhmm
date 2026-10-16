@@ -116,6 +116,9 @@ COSINE_DISPLAY = "Cosine"
 ARI_DISPLAY = "ARI"
 COMPOSITION_DISPLAY = "Composition"
 EMISSION_DISPLAY = "Emission similarity"
+SENSITIVITY_DISPLAY = "Sensitivity"
+PRECISION_DISPLAY = "Precision"
+SPECIFICITY_DISPLAY = PRECISION_DISPLAY  # Deprecated alias
 
 # Overlap of a state family with an independent annotation of the same sample:
 # the harmonic mean of the annotated share of the family (precision) and of the
@@ -526,6 +529,50 @@ FUNCTIONAL_TARGETS = (
 FUNCTIONAL_TX_JACCARD = ("functional_tx_jaccard",
                          "Tx state vs expressed gene bodies",
                          "Tx", "ExpressedGeneBodies")
+
+
+def annotation_sensitivity_precision(dirpath, states, prefix):
+    """Sensitivity and precision of the union of `states` against every annotation `prefix` names.
+
+    Read off the enrichment and report tables of one segmentation in
+    `dirpath` ({analysis_dir}/{method}), as [{"Label", SENSITIVITY_DISPLAY, PRECISION_DISPLAY}, ...] - one
+    entry per matching annotation, empty when either table is missing or no
+    annotation matches.
+    """
+    enrichment = os.path.join(dirpath, "enrichment", "enrichment.tsv")
+    report = os.path.join(dirpath, "report.tsv")
+    if not (os.path.exists(enrichment) and os.path.exists(report)):
+        return []
+    enrich = pd.read_csv(enrichment, sep="\t")
+    sizes = pd.read_csv(report, sep="\t").set_index("state")["total_bp"]
+    genome = sizes.sum()
+
+    if isinstance(states, str):
+        states = (states,)
+
+    rows = []
+    for label, group in enrich.groupby("label"):
+        if not str(label).startswith(prefix):
+            continue
+        positive = group[group["fold_enrichment"] > 0]
+        if positive.empty:
+            continue
+        annotation = float(np.median(positive["coverage"]
+                                     / positive["fold_enrichment"])) * genome
+        family = group[group["state"].isin(states)]
+        family_bp = float(sizes.reindex(family["state"]).sum())
+        if annotation <= 0 or family_bp <= 0:
+            continue
+        overlap = float((family["coverage"].values
+                         * sizes.reindex(family["state"]).values).sum())
+        rows.append({"Label": str(label),
+                     SENSITIVITY_DISPLAY: overlap / annotation,
+                     PRECISION_DISPLAY: overlap / family_bp})
+    return rows
+
+
+# Deprecated alias
+annotation_sensitivity_specificity = annotation_sensitivity_precision
 
 
 def annotation_f1(dirpath, states, prefix):

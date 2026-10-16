@@ -379,6 +379,34 @@ def test_stacked_bar_plot_xticklabels():
     assert labels == ["Homer KMeans", "MACS2 BMM3"]
 
 
+def test_annotation_sensitivity_precision():
+    import pandas as pd
+    with tempfile.TemporaryDirectory() as tmpdir:
+        enr_dir = os.path.join(tmpdir, "enrichment")
+        os.makedirs(enr_dir)
+        enr_df = pd.DataFrame({
+            "label": ["atac_peaks", "atac_peaks"],
+            "state": ["1_TssA", "2_TssAFlnk"],
+            "fold_enrichment": [2.0, 2.0],
+            "coverage": [0.1, 0.1],
+        })
+        enr_df.to_csv(os.path.join(enr_dir, "enrichment.tsv"), sep="\t", index=False)
+        rep_df = pd.DataFrame({
+            "state": ["1_TssA", "2_TssAFlnk"],
+            "total_bp": [1000, 1000],
+        })
+        rep_df.to_csv(os.path.join(tmpdir, "report.tsv"), sep="\t", index=False)
+
+        res = utils.annotation_sensitivity_precision(tmpdir, ("1_TssA",), "atac_")
+        assert len(res) == 1
+        assert utils.PRECISION_DISPLAY in res[0]
+        assert utils.SENSITIVITY_DISPLAY in res[0]
+        assert res[0]["Label"] == "atac_peaks"
+        # Deprecated alias works identically
+        res_alias = utils.annotation_sensitivity_specificity(tmpdir, ("1_TssA",), "atac_")
+        assert res_alias == res
+
+
 def test_plot_summary_no_legend():
     import pandas as pd
     import summary_plots

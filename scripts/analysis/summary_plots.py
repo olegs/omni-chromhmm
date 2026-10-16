@@ -1674,8 +1674,8 @@ def _run_summary_plots(args):
         tx_cov = _collect_table_col(ds, mdirs, "coverage_Tx_ExpressedGeneBodies", include_ref=True) * 100.0
         _plot_2way_scatter(tx_sens, tx_cov,
                            "Tx state validation (Expressed Gene Bodies)",
-                           "Expressed gene bodies bp overlap (%)",
-                           "Tx state bp overlap (%)",
+                           "Expressed gene bodies bp overlap (Sensitivity, %)",
+                           "Tx state bp overlap (Precision, %)",
                            os.path.join(args.outdir, "summary_2way_tx.pdf"),
                            order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
@@ -1700,8 +1700,8 @@ def _run_summary_plots(args):
             tss_cov = _collect_table_col(ds, mdirs, "coverage_Tss_RefSeqTSS2kb", include_ref=True) * 100.0
             _plot_2way_scatter(tss_sens, tss_cov,
                                "Tss state validation (RefSeq TSS)",
-                               "RefSeq TSS bp overlap (%)",
-                               "Tss state bp overlap (%)",
+                               "RefSeq TSS bp overlap (Sensitivity, %)",
+                               "Tss state bp overlap (Precision, %)",
                                os.path.join(args.outdir, f"summary_2way_tss{suffix}.pdf"),
                                order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
@@ -1728,8 +1728,8 @@ def _run_summary_plots(args):
             exptss_cov = _collect_table_col(ds, mdirs, "coverage_Tss_ExpressedTSS2kb", include_ref=True) * 100.0
             _plot_2way_scatter(exptss_sens, exptss_cov,
                                "Tss state validation (Expressed TSS)",
-                               "Expressed TSS bp overlap (%)",
-                               "Tss state bp overlap (%)",
+                               "Expressed TSS bp overlap (Sensitivity, %)",
+                               "Tss state bp overlap (Precision, %)",
                                os.path.join(args.outdir, f"summary_2way_tss_exptss{suffix}.pdf"),
                                order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
@@ -1763,8 +1763,8 @@ def _run_summary_plots(args):
         atac_cov = _collect_table_col(ds, mdirs, "coverage_Active_ATAC", include_ref=True) * 100.0
         _plot_2way_scatter(atac_sens, atac_cov,
                            "Active chromatin validation (ATAC-seq)",
-                           "ATAC-seq peaks bp overlap (%)",
-                           "Active states bp overlap (%)",
+                           "ATAC-seq peaks bp overlap (Sensitivity, %)",
+                           "Active states bp overlap (Precision, %)",
                            os.path.join(args.outdir, "summary_2way_active_atac.pdf"),
                            order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
