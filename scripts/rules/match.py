@@ -313,26 +313,19 @@ def _is_binarized(mat):
     return mat.size > 0 and mat.max() <= 1.01 and mat.min() >= -0.01
 
 
-# Bigwig signal -> expected binarized fraction, fitted on ChromHMM segmentations
-# that have both: fraction = sigmoid(log2(signal / background) + intercept).
-# The background is the least-marked state of each mark; half of the bins are
-# called present at ~15x over it. Slope ~1 in every ENCODE dataset.
-BIGWIG_PRESENCE_INTERCEPT = -3.9
-# Floor of the background, relative to the mark's maximum, for marks with a zero state.
-BIGWIG_BACKGROUND_FLOOR = 1e-3
+def bigwig_scaled(mat):
+    """Bigwig emissions on the binarized [0, 1] scale, per mark.
 
-
-def bigwig_presence(mat):
-    """Bigwig emissions converted to the binarized scale, per mark."""
-    mat = np.maximum(np.asarray(mat, dtype=float), 0.0)
+    Log signal minus the median state (the background most states sit at),
+    divided by the most marked state; states at or below background get 0.
+    """
+    mat = np.log1p(np.maximum(np.asarray(mat, dtype=float), 0.0))
     if mat.size == 0:
         return mat
-    mark_max = mat.max(axis=0)
-    background = np.maximum(mat.min(axis=0), BIGWIG_BACKGROUND_FLOOR * mark_max)
-    background = np.where(background > 0, background, 1.0)
-    fold = np.log2(np.maximum(mat, 1e-12) / background)
-    presence = 1.0 / (1.0 + np.exp(-(fold + BIGWIG_PRESENCE_INTERCEPT)))
-    return np.where(mark_max > 0, presence, 0.0)
+    background = np.median(mat, axis=0)
+    span = mat.max(axis=0) - background
+    scaled = (mat - background) / np.where(span > 0, span, 1.0)
+    return np.where(span > 0, np.clip(scaled, 0.0, 1.0), 0.0)
 
 
 def emission_similarity(mat_w, mat_r, binarized_w=None, binarized_r=None):
@@ -340,7 +333,7 @@ def emission_similarity(mat_w, mat_r, binarized_w=None, binarized_r=None):
 
     Cosine of the background-augmented vectors: the 1 - max(mark) column keeps
     the signal level, so a near-empty state is not similar to an all-high one.
-    Bigwig signal is first converted to the binarized scale (bigwig_presence),
+    Bigwig signal is first scaled to the binarized range (bigwig_scaled),
     so bigwig and binarized emissions can be compared with each other.
     binarized_* says which a matrix holds; None guesses from its value range.
     """
@@ -349,7 +342,7 @@ def emission_similarity(mat_w, mat_r, binarized_w=None, binarized_r=None):
         if binarized is None:
             binarized = _is_binarized(mat)
         if not binarized:
-            mat = bigwig_presence(mat)
+            mat = bigwig_scaled(mat)
         return background_augmented(np.clip(mat, 0.0, 1.0))
 
     return _cosine_matrix(_augment(mat_w, binarized_w), _augment(mat_r, binarized_r))

@@ -38,13 +38,15 @@ Jaccard is normalised by the size of both states, so a promoter pair and a `Quie
 
 ### 2.4. Emission Similarity
 
-1. **Alignment by name.** Emission rows are looked up by state name (`1.0` = `1`) and marks by base name (`H3K4me3_100` = `H3K4me3`). A state missing from its emission file gets the mean similarity of all known pairs, so emissions neither favour nor penalise its candidates; a warning lists such states. If no state name matches at all, the emission term is dropped.
-2. **Bigwig on the binarized scale.** Reference models have bigwig emissions; work segmentations are matched on binarized ones. Bigwig signal is converted to the expected binarized fraction
-   $$P(m) = \sigma\big(\log_2(E(m) / B(m)) + c\big)$$
-   where $B(m)$ is the signal of the least-marked state for mark $m$ (floored at a small fraction of the mark's maximum), $\sigma$ the logistic function and $c < 0$ an intercept fitted on segmentations that have both emission types. The emission type is taken from the file name (`.bin_emissions` / `.bw_emissions`), otherwise guessed from the value range. Binarized emissions are preferred on each side when both exist (overridable with `--work-em-type` / `--ref-em-type`).
-3. **Level-aware cosine.** Each emission vector gets a background component $b = 1 - \max_m P(m)$:
+Each state has an emission vector $E(m)$ over the marks $m$: the share of its bins called present for binarized emissions (`.bin_emissions.npz`), or its mean signal for bigwig ones (`.bw_emissions.npz`).
+
+1. **Inputs.** Binarized emissions are preferred on each side when both exist; `--work-em-type` / `--ref-em-type` override the choice. ENCODE references only have bigwig emissions, so they are usually compared with binarized work emissions. The type is taken from the file name, otherwise guessed from the value range.
+2. **Alignment by name.** Emission rows are looked up by state name (`1.0` = `1`) and marks by base name (`H3K4me3_100` = `H3K4me3`); only marks present on both sides are used. A state missing from its emission file gets the mean similarity of all known pairs, so emissions neither favour nor penalise its candidates; a warning lists such states. If no mark or no state name matches, the emission term is dropped.
+3. **Bigwig scaling.** Bigwig signal is brought to the $[0, 1]$ range of binarized emissions by min-max scaling its log, $L = \log(1 + E)$, per mark, with the median state as the minimum:
+   $$P = \operatorname{clip}\left(\frac{L - \operatorname{median} L}{\max L - \operatorname{median} L},\ 0,\ 1\right)$$
+   where median and max are taken over states. A mark with no spread across states gets $P = 0$. Binarized emissions are used as they are, $P = E$.
+4. **Level-aware cosine.** Each vector gets a background component $b = 1 - \max_m P(m)$:
    $$\text{EmissionSim}(w, r) = \cos\big([P_w, b_w], [P_r, b_r]\big) \quad \in [0, 1]$$
-   The background column keeps the signal level, so an empty `Quies`-like state is not similar to a state with every mark high.
 
 ### 2.5. Joint Matching
 
@@ -69,6 +71,14 @@ Jaccard measures positional agreement relative to the size of both states. Every
 ### 3.2. Emissions
 
 A state is defined by its combinatorial mark signature (H3K4me3 promoters, H3K27ac/H3K4me1 enhancers, H3K36me3 transcription, H3K27me3 Polycomb, H3K9me3 heterochromatin). Emissions resolve spatially adjacent states with similar overlap (`Tss` vs. `TssFlnk`, `Enh` vs. `EnhG`), penalise biochemically incompatible pairs, and stay informative across cell types and assays where spatial concordance is weaker.
+
+The bigwig scaling has no fitted parameters:
+
+- **Median as background.** Most states lack any given mark, so the median state sits at its noise level; states at or below it get 0, as they would after binarization.
+- **Log scale.** Some references have an artifact state high on every mark; on a linear scale it would push all other states towards 0.
+- **Per-mark maximum.** Marks differ in signal strength, so each is scaled by its own most marked state, as binarization thresholds each mark separately.
+
+The background component keeps the signal level in the cosine, so an empty `Quies`-like state is not similar to a state with every mark high.
 
 ### 3.3. Concave Utility (Diminishing Marginal Returns)
 

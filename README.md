@@ -26,7 +26,8 @@ peaks converted to ChromHMM binary matrices. Three segmentations per mode: Chrom
 as Omnipeak, providing a caller-independent cross-check.
 
 6. **State matching** (`rules/match.smk`) -- relabel all segmentations to the ENCODE reference label space using overlap or jaccard strategy (`_matched`). 
-Binarize and Bigwig emissions per state are pre-computed and remapped to the matched states.
+Binarized and bigwig emissions per state are pre-computed as raw values (`.bin_emissions.npz` / `.bw_emissions.npz`)
+and remapped to the matched states.
 
 
 ## Processing 

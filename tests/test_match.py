@@ -146,15 +146,15 @@ def test_emission_similarity_raw_signal_is_scaled_per_mark():
     assert sim[0, 1] < 0.1
 
 
-def test_bigwig_presence_is_on_the_binarized_scale():
-    # Fold-enrichment signal over a 0.25 background (state 3).
-    bw = np.array([[25.0, 0.3], [4.0, 0.25], [0.25, 10.0]])
-    presence = match.bigwig_presence(bw)
-    assert presence[0, 0] > 0.9          # 100x: called present almost everywhere
-    assert 0.7 < presence[2, 1] < 0.9    # 40x
-    assert 0.4 < presence[1, 0] < 0.6    # 16x: around half
-    assert presence[2, 0] < 0.05         # background
-    assert presence[1, 1] < 0.05
+def test_bigwig_scaled_is_on_the_binarized_scale():
+    # Fold-enrichment signal: state 1 is the background (median) of both marks.
+    bw = np.array([[25.0, 0.3], [0.25, 0.25], [1.0, 10.0], [0.2, 0.2]])
+    scaled = match.bigwig_scaled(bw)
+    assert scaled.min() >= 0.0 and scaled.max() <= 1.0
+    assert np.allclose(scaled.max(axis=0), 1.0)      # top state of each mark
+    assert np.allclose(scaled[[1, 3]], 0.0)          # background and below
+    assert 0.0 < scaled[2, 0] < 0.25                 # weak signal stays low on the log scale
+    assert np.allclose(match.bigwig_scaled(np.ones((3, 2))), 0.0)   # flat mark: no signal
 
 
 def test_emission_similarity_bigwig_vs_binarized():
@@ -164,9 +164,6 @@ def test_emission_similarity_bigwig_vs_binarized():
     sim = match.emission_similarity(binarized, bigwig, binarized_w=True, binarized_r=False)
     assert list(sim.argmax(axis=1)) == [1, 2, 0]
     assert sim[2, 0] > 0.95
-    # Max scaling alone would leave a 4x-over-background state looking half marked.
-    assert match.emission_similarity(np.array([[0.0, 0.0]]), np.array([[1.0, 0.25], [4.0, 0.25]]),
-                                     binarized_w=True, binarized_r=False)[0, 1] > 0.95
 
 
 def test_match_states_matrix_out():
