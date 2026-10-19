@@ -72,7 +72,7 @@ def set_style():
 JACCARD = "jaccard"
 KAPPA = "kappa"
 COSINE = "cosine"
-ARI = "ari"
+AMI = "ami"
 FULL = "full"
 NOQH = "noqh"
 
@@ -88,14 +88,15 @@ NOQH = "noqh"
 # an alias below.
 COMPOSITION = "composition"
 
-# The ARI (adjusted Rand index) compares two segmentations as partitions of the
-# genome and ignores the state names altogether: it asks whether the bp one side
-# puts in the same state are also together on the other side, whatever either
-# side calls that state. Relabelling a side leaves it unchanged, so unlike
-# Jaccard and kappa it does not depend on the state matching, and it stays
-# meaningful for a pair matched to two different references. 1 means identical
-# partitions, 0 the agreement expected by chance at the same state sizes, and it
-# can go below 0. FULL domain only: dropping the background picks bins by state
+# The AMI (adjusted mutual information) compares two segmentations as
+# partitions of the genome and ignores the state names altogether: it asks how
+# much knowing the state of a bp on one side tells about its state on the other,
+# whatever either side calls that state. Relabelling a side leaves it unchanged,
+# so unlike Jaccard and kappa it does not depend on the state matching, and it
+# stays meaningful for a pair matched to two different references. 1 means
+# identical partitions, 0 the agreement expected by chance. A state weighs by
+# p log p of its genome share, so the small states count and Quies, most of
+# the genome, does not dominate it. FULL domain only: dropping the background picks bins by state
 # name, which is the matching the index is free of.
 
 # Agreement of the state *signatures* of two segmentations rather than of their
@@ -113,7 +114,7 @@ EMISSION = "emission_similarity"
 JACCARD_DISPLAY = "Jaccard"
 KAPPA_DISPLAY = "Kappa"
 COSINE_DISPLAY = "Cosine"
-ARI_DISPLAY = "ARI"
+AMI_DISPLAY = "AMI"
 COMPOSITION_DISPLAY = "Composition"
 EMISSION_DISPLAY = "Emission similarity"
 SENSITIVITY_DISPLAY = "Sensitivity"
@@ -140,7 +141,7 @@ NOQH_DISPLAY = "NOQH"
 MODE_COLORS = {FULL_DISPLAY: "#4878CF", NOQH_DISPLAY: "#E8833A"}
 
 METRIC_DISPLAY = {JACCARD: JACCARD_DISPLAY, KAPPA: KAPPA_DISPLAY,
-                  COSINE: COSINE_DISPLAY, ARI: ARI_DISPLAY,
+                  COSINE: COSINE_DISPLAY, AMI: AMI_DISPLAY,
                   COMPOSITION: COMPOSITION_DISPLAY}
 
 # Every on-disk spelling a metric can appear under, most canonical first: the
@@ -156,13 +157,13 @@ TSS_WINDOW = 2000
 
 
 def normalize_metric(name):
-    """Normalize a metric name (jaccard, kappa, cosine, ari) or None when unknown.
+    """Normalize a metric name (jaccard, kappa, cosine, ami) or None when unknown.
 
     The display spellings lowercase to the keys, so a cache column name
     round-trips back to its metric.
     """
     name = str(name).strip().lower()
-    return name if name in (JACCARD, KAPPA, COSINE, ARI) else None
+    return name if name in (JACCARD, KAPPA, COSINE, AMI) else None
 
 
 def metric_aliases(name):
@@ -992,7 +993,7 @@ def close_gaps(ax, n_hue):
 
     seaborn keeps a slot for each of the *n_hue* levels under every tick and
     draws no bar for a level with no values, so a tick measured in some of them
-    only - the ARI, FULL but no NOQH - is drawn off-centre next to an empty
+    only - the AMI, FULL but no NOQH - is drawn off-centre next to an empty
     slot. Each bar keeps its width; its error bar and its points move with it.
     """
     ticks = {}

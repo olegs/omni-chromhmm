@@ -151,16 +151,20 @@ def per_state_diagonal(overlap, states, metric):
     return out
 
 
-def adjusted_rand_index(overlap):
-    """Adjusted Rand index of two segmentations, from their overlap table.
+def adjusted_mutual_information(overlap):
+    """Adjusted mutual information of two segmentations, from their overlap table.
 
     The two segmentations are read as partitions of the genome and the state
     names play no part: relabelling either side gives the same index, so it
     needs no state matching. Over the whole genome only - dropping a background
     picks bins by state name, which is the matching the index is free of.
 
-    Counted over pairs of bp, in the limit C(n, 2) = n^2 / 2 that a genome of
-    millions of bins is in, so the index does not depend on the bin size.
+    A state weighs by p log p of its genome share, so the small states count
+    and Quies, most of the genome, does not dominate.
+    The expected mutual information of the chance model, (R - 1)(C - 1) / 2n for
+    R x C states over n bins, vanishes for a genome of millions of bins, which
+    leaves the mutual information over the mean entropy of the two sides - so
+    the index does not depend on the bin size.
     """
     cells = {pair: float(bp) for pair, bp in overlap.items() if bp > 0}
     total = sum(cells.values())
@@ -170,20 +174,20 @@ def adjusted_rand_index(overlap):
     for (s1, s2), bp in cells.items():
         a1[s1] += bp
         a2[s2] += bp
-    index = sum(bp * bp for bp in cells.values())
-    sum1 = sum(bp * bp for bp in a1.values())
-    sum2 = sum(bp * bp for bp in a2.values())
-    expected = sum1 * sum2 / (total * total)
-    maximum = (sum1 + sum2) / 2
+    mi = sum(bp / total * np.log(bp * total / (a1[s1] * a2[s2]))
+             for (s1, s2), bp in cells.items())
+    mean_entropy = -sum(bp / total * np.log(bp / total)
+                        for side in (a1, a2) for bp in side.values()) / 2
     # Both sides a single state: identical partitions, nothing left to chance.
-    if maximum == expected:
+    if mean_entropy == 0:
         return 1.0
-    return (index - expected) / (maximum - expected)
+    return mi / mean_entropy
 
 
 def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
     """Agreement metrics (kappa, jaccard, cosine) of two segmentations, and the
-    ari when *exclude* is empty - adjusted_rand_index() has no excluded domain."""
+    ami when *exclude* is empty - adjusted_mutual_information() has no excluded
+    domain."""
     all_states = set(lengths1) | set(lengths2)
     def _is_excluded(s):
         if s in exclude: return True
@@ -202,7 +206,7 @@ def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
             utils.COSINE: 0.0
         }
         if not exclude:
-            metrics[utils.ARI] = 0.0
+            metrics[utils.AMI] = 0.0
         return metrics
 
     a1 = {s: sum(overlap.get((s, s2), 0) for s2 in states) for s in states}
@@ -225,7 +229,7 @@ def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
         utils.COSINE: float(np.dot(v1, v2) / norms) if norms > 0 else 0.0,
     }
     if not exclude:
-        metrics[utils.ARI] = adjusted_rand_index(overlap)
+        metrics[utils.AMI] = adjusted_mutual_information(overlap)
     return metrics
 
 

@@ -34,7 +34,7 @@ from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
                    JOINT_BMM3_HOMER, JOINT_BMM3_MACS2, JOINT_BMM3_OMNI,
                    display_name,
                    COMPOSITION, JACCARD, KAPPA, FULL, NOQH, NOQH_SUFFIX,
-                   ARI_DISPLAY, COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY,
+                   AMI_DISPLAY, COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY,
                    COSINE_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY,
                    BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE,
                    LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE, ANNOTATION_FONTSIZE,
@@ -53,18 +53,18 @@ SIMILARITY_METRICS = [(COMPOSITION, COMPOSITION_DISPLAY, "#E8833A"),
 SIMILARITY_ORDER = [label for _, label, _ in SIMILARITY_METRICS]
 SIMILARITY_COLORS = {label: color for _, label, color in SIMILARITY_METRICS}
 
-# The agreement plots of the notebooks draw the ARI after the three: it is the
+# The agreement plots of the notebooks draw the AMI after the three: it is the
 # one of them the state matching does not enter, and is measured in FULL only.
-# The pipeline writes no ARI matrix, so the distribution plots below keep
+# The pipeline writes no AMI matrix, so the distribution plots below keep
 # SIMILARITY_ORDER.
-AGREEMENT_ORDER = SIMILARITY_ORDER + [ARI_DISPLAY]
-AGREEMENT_COLORS = {ARI_DISPLAY: "#8E6BBF", **SIMILARITY_COLORS}
+AGREEMENT_ORDER = SIMILARITY_ORDER + [AMI_DISPLAY]
+AGREEMENT_COLORS = {AMI_DISPLAY: "#8E6BBF", **SIMILARITY_COLORS}
 
 
 def agreement_rows(df, id_vars):
     """The agreement columns of *df* in long form, a Metric and a Value per
     row. "Composition" is the cosine of the state-composition vectors, the
-    Cosine column under compare.py's spelling. The ARI is measured in FULL
+    Cosine column under compare.py's spelling. The AMI is measured in FULL
     only, so the rows with no value - its NOQH ones - are dropped."""
     df = df.rename(columns={COSINE_DISPLAY: COMPOSITION_DISPLAY})
     return (df.melt(id_vars=id_vars,
