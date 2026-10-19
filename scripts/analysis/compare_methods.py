@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import utils
 from utils import (METHOD_IDX, BIN_COLORS, METHOD_INFO, display_name,
                    bin_color, load_matrix, save_fig,
-                   COMPOSITION, JACCARD, KAPPA, NOQH_SUFFIX,
+                   COMPOSITION, JACCARD, KAPPA,
                    COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY,
                    TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE,
                    LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE)
@@ -44,19 +44,16 @@ def _build_analysis_to_seg_map(analysis_dirs, seg_names):
 
 
 def load_entropy(comparison_dir):
-    """{seg_name: {entropy, entropy_noqh}}."""
-    result = {}
-    for suffix, col in [("", "entropy"), (NOQH_SUFFIX, f"entropy{NOQH_SUFFIX}")]:
-        path = os.path.join(comparison_dir, f"entropy_summary{suffix}.tsv")
-        if not os.path.exists(path):
-            continue
-        for _, row in pd.read_csv(path, sep="\t").iterrows():
-            result.setdefault(row["segmentation"], {})[col] = row["total_entropy"]
-    return result
+    """{seg_name: {entropy}}."""
+    path = os.path.join(comparison_dir, "entropy_summary.tsv")
+    if not os.path.exists(path):
+        return {}
+    return {row["segmentation"]: {"entropy": row["total_entropy"]}
+            for _, row in pd.read_csv(path, sep="\t").iterrows()}
 
 
 def load_segment_stats(comparison_dir):
-    """{seg_name: {n_states, n_segments, ..., max_length_noqh}}."""
+    """{seg_name: {n_states, n_segments, ..., median_length_all}}."""
     path = os.path.join(comparison_dir, "segment_stats.tsv")
     if not os.path.exists(path):
         return {}
@@ -72,13 +69,6 @@ def load_segment_stats(comparison_dir):
         }
         for _, row in df.iterrows()
     }
-
-    noqh_path = os.path.join(comparison_dir, f"segment_stats{NOQH_SUFFIX}.tsv")
-    if os.path.exists(noqh_path):
-        for _, row in pd.read_csv(noqh_path, sep="\t").iterrows():
-            if row["segmentation"] in stats:
-                stats[row["segmentation"]][f"max_length{NOQH_SUFFIX}"] = int(row["max_length"])
-
     return stats
 
 
@@ -167,17 +157,12 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
     overlap_mat      = load_matrix(os.path.join(comparison_dir, "overlap_matrix.tsv"))
     emission_mat     = load_matrix(os.path.join(comparison_dir, "emission_similarity_matrix.tsv"))
     bw_emission_mat  = load_matrix(os.path.join(comparison_dir, "bw_emission_similarity_matrix.tsv"))
-    kappa_noqh_mat   = load_matrix(os.path.join(comparison_dir, "kappa_noqh_matrix.tsv"))
-    jaccard_noqh_mat = load_matrix(os.path.join(comparison_dir, "jaccard_noqh_matrix.tsv"))
-    comp_noqh_mat    = load_matrix(os.path.join(comparison_dir, "composition_noqh_similarity_matrix.tsv"))
-    overlap_noqh_mat = load_matrix(os.path.join(comparison_dir, "overlap_noqh_matrix.tsv"))
     seg_stats    = load_segment_stats(comparison_dir)
 
     # Union of all labels seen across every metric source.
     seg_names = set(entropy_data) | set(seg_stats)
     for mat in (kappa_mat, jaccard_mat, comp_mat, overlap_mat,
-                emission_mat, bw_emission_mat,
-                kappa_noqh_mat, jaccard_noqh_mat, comp_noqh_mat, overlap_noqh_mat):
+                emission_mat, bw_emission_mat):
         if mat is not None:
             seg_names |= set(mat.index)
     a2s = _build_analysis_to_seg_map(methods, seg_names)
@@ -198,8 +183,6 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
 
         if seg_name in entropy_data:
             row["entropy"] = entropy_data[seg_name].get("entropy", np.nan)
-            row[f"entropy{NOQH_SUFFIX}"] = entropy_data[seg_name].get(
-                f"entropy{NOQH_SUFFIX}", np.nan)
 
         if seg_name in seg_stats:
             row.update(seg_stats[seg_name])
@@ -207,11 +190,8 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
         if seg_name and ref_seg:
             for mat, col in [
                 (kappa_mat,        f"{KAPPA}_vs_ref"),
-                (kappa_noqh_mat,   f"{KAPPA}{NOQH_SUFFIX}_vs_ref"),
                 (jaccard_mat,      f"{JACCARD}_vs_ref"),
-                (jaccard_noqh_mat, f"{JACCARD}{NOQH_SUFFIX}_vs_ref"),
                 (comp_mat,         f"{COMPOSITION}_vs_ref"),
-                (comp_noqh_mat,    f"{COMPOSITION}{NOQH_SUFFIX}_vs_ref"),
             ]:
                 if mat is not None and seg_name in mat.index and ref_seg in mat.columns:
                     val = mat.loc[seg_name, ref_seg]
@@ -227,10 +207,6 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
                 (jaccard_mat,      f"{JACCARD}_rep1_vs_rep2"),
                 (comp_mat,         f"{COMPOSITION}_rep1_vs_rep2"),
                 (overlap_mat,      "overlap_rep1_vs_rep2"),
-                (kappa_noqh_mat,   f"{KAPPA}{NOQH_SUFFIX}_rep1_vs_rep2"),
-                (jaccard_noqh_mat, f"{JACCARD}{NOQH_SUFFIX}_rep1_vs_rep2"),
-                (comp_noqh_mat,    f"{COMPOSITION}{NOQH_SUFFIX}_rep1_vs_rep2"),
-                (overlap_noqh_mat, f"overlap{NOQH_SUFFIX}_rep1_vs_rep2"),
             ]
             for mat, col_name in base_rep_cols:
                 if mat is not None and rep1_seg in mat.index and rep2_seg in mat.columns:
@@ -315,13 +291,13 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             for pool_name, check_fn in [("Tss", utils.is_promoter_core),
                                         ("Enh", utils.is_distal_enhancer),
                                         ("Active", utils.is_active_open),
-                                        ("Quies", utils.is_noqh)]:
+                                        ("Quies", utils.is_background)]:
                 _pool(check_fn, atac_label, f"{pool_name}_ATAC")
 
         val_targets = [
             (utils.is_tx, "ExpressedGeneBodies", "Tx_ExpressedGeneBodies"),
             (utils.is_active_open, "NonExpressedGeneBodies", "Active_NonExpGeneBodies"),
-            (utils.is_noqh, "NonExpressedGeneBodies", "Quies_NonExpGeneBodies"),
+            (utils.is_background, "NonExpressedGeneBodies", "Quies_NonExpGeneBodies"),
             (utils.is_active_open, "ExpressedTSS", "Active_ExpressedTSS"),
         ]
         for suffix in ("2kb",):
@@ -393,16 +369,14 @@ def plot_comparison(df, outdir):
                   bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
         return fig, ax
 
-    # (column, title, ylabel) per metric, first over all states then without the
-    # Quies/Het background.
+    # (column, title, ylabel) per metric.
     _REP_METRICS = [(KAPPA, KAPPA_DISPLAY, KAPPA_DISPLAY),
                     (JACCARD, JACCARD_DISPLAY, "Similarity"),
                     (COMPOSITION, COMPOSITION_DISPLAY, "Cosine composition similarity"),
                     ("overlap", "Overlap", "Overlap fraction")]
     _REP_COLS = [
-        (f"{metric}{suffix}_rep1_vs_rep2",
-         f"Replicate reproducibility ({metric_display}{excl})", ylabel)
-        for suffix, excl in (("", ""), (NOQH_SUFFIX, " excl. Quies/Het"))
+        (f"{metric}_rep1_vs_rep2",
+         f"Replicate reproducibility ({metric_display})", ylabel)
         for metric, metric_display, ylabel in _REP_METRICS
     ]
     for col, title, ylabel in _REP_COLS:

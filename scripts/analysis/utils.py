@@ -64,24 +64,24 @@ def set_style():
         "pdf.fonttype": 42,
     })
 
-# Metrics, plus the two comparison domains every agreement is measured in: full
-# over all states, noqh with the Quies/Het background dropped. These are the
-# on-disk spelling — the keys of agreement_by_mode() and the "_noqh" file
-# suffix — so they are kept lowercase and the *_DISPLAY forms below carry the
+# Metrics, every one measured over all the states of the two segmentations.
+# These are the on-disk spelling — the keys of match.agreement_metrics() — so
+# they are kept lowercase and the *_DISPLAY forms below carry the
 # human-readable spelling.
 JACCARD = "jaccard"
 KAPPA = "kappa"
 COSINE = "cosine"
 AMI = "ami"
-FULL = "full"
-NOQH = "noqh"
 
-# The cosine is the cosine of the two state-composition vectors (bp per state),
-# and nothing else. It is blind to *where* the states are: it asks whether the
-# two segmentations spend the genome on states in the same proportions, so it
-# saturates near 1 once a background state dominates both sides, and two
-# segmentations that agree nowhere still score 1.0 when their state budgets
-# match. Read it next to kappa, which does look at placement.
+# The cosine is the cosine of the two state-composition vectors (bp per state)
+# over every state but the biggest one, and nothing else (see
+# match.composition_cosine()). It is blind to *where* the states are: it asks
+# whether the two segmentations spend the genome on states in the same
+# proportions, and two segmentations that agree nowhere still score 1.0 when
+# their state budgets match. The biggest state - the quiescent bulk, in most
+# samples - is left out because it would otherwise saturate the cosine near 1
+# for any pair it dominates. Read it next to kappa, which does look at
+# placement.
 #
 # compare.py reaches the same quantity from the per-state bp vectors of two
 # segment lists and writes it as "composition", which is why that spelling is
@@ -96,8 +96,7 @@ COMPOSITION = "composition"
 # stays meaningful for a pair matched to two different references. 1 means
 # identical partitions, 0 the agreement expected by chance. A state weighs by
 # p log p of its genome share, so the small states count and Quies, most of
-# the genome, does not dominate it. FULL domain only: dropping the background picks bins by state
-# name, which is the matching the index is free of.
+# the genome, does not dominate it.
 
 # Agreement of the state *signatures* of two segmentations rather than of their
 # placement: the mean cosine of the emission vectors of the states paired up by
@@ -109,8 +108,8 @@ COMPOSITION = "composition"
 # jaccard/kappa/cosine, compare.py writes it per pair under this spelling.
 EMISSION = "emission_similarity"
 
-# Metric and domain display names, for plot titles, labels and legends, and for
-# the columns of the notebook caches.
+# Metric display names, for plot titles, labels and legends, and for the
+# columns of the notebook caches.
 JACCARD_DISPLAY = "Jaccard"
 KAPPA_DISPLAY = "Kappa"
 COSINE_DISPLAY = "Cosine"
@@ -135,11 +134,6 @@ SPECIFICITY_DISPLAY = PRECISION_DISPLAY  # Deprecated alias
 # against an annotation is asking about.
 F1_DISPLAY = "F1"
 
-FULL_DISPLAY = "FULL"
-NOQH_DISPLAY = "NOQH"
-# Bar colour of each comparison domain, wherever FULL and NOQH share a plot.
-MODE_COLORS = {FULL_DISPLAY: "#4878CF", NOQH_DISPLAY: "#E8833A"}
-
 METRIC_DISPLAY = {JACCARD: JACCARD_DISPLAY, KAPPA: KAPPA_DISPLAY,
                   COSINE: COSINE_DISPLAY, AMI: AMI_DISPLAY,
                   COMPOSITION: COMPOSITION_DISPLAY}
@@ -148,11 +142,6 @@ METRIC_DISPLAY = {JACCARD: JACCARD_DISPLAY, KAPPA: KAPPA_DISPLAY,
 # cosine is written as "cosine" by the notebook agreement caches and as
 # "composition" by the comparison tables compare.py feeds.
 METRIC_ALIASES = {COSINE: (COSINE, COMPOSITION)}
-DOMAIN_DISPLAY = {FULL: FULL_DISPLAY, NOQH: NOQH_DISPLAY}
-
-# "" for FULL, "_noqh" for NOQH: the suffix every domain-specific column, TSV
-# and matrix name carries.
-NOQH_SUFFIX = f"_{NOQH}"
 TSS_WINDOW = 2000
 
 
@@ -173,20 +162,9 @@ def metric_aliases(name):
     return METRIC_ALIASES.get(name, (name,))
 
 
-def normalize_domain(name):
-    """Normalize a comparison domain (full, noqh) or None when unknown."""
-    name = str(name).strip().lower()
-    return name if name in (FULL, NOQH) else None
-
-
 def metric_display(name):
     """Display spelling of a metric name, or None when unknown."""
     return METRIC_DISPLAY.get(str(name).strip().lower())
-
-
-def domain_display(name):
-    """Display spelling of a comparison domain, or None when unknown."""
-    return DOMAIN_DISPLAY.get(str(name).strip().lower())
 
 # Methods
 CHROMHMM = "chromhmm"
@@ -381,20 +359,6 @@ def normalize_method(name):
         return method_key(name, joint=is_joint, mixture=is_mixture)
     return None
 
-# The Quies/Het bulk of the genome, dropped by the NOQH variant of every metric,
-# where it would otherwise dominate both kappa and Jaccard.
-NOQH_STATES = {
-    "Quies", "Quiescent", "Background", "Het", "ZNF/Rpts"
-}
-
-# The same background, named in the vocabulary of interpretation.py: what the
-# NOQH domain drops once the states have been interpreted from their emissions
-# rather than matched to a reference by name. A comparison of two segmentations
-# whose references name their states differently has to go through the types,
-# because the name-based metrics count every one-sided name as a disagreement.
-NOQH_TYPES = (QUIESCENT, FACULTATIVE_HET, CONSTITUTIVE_HET)
-
-
 def normalize_state_name(name):
     """Remove leading number: '1_TssA' -> 'TssA', '01_TssA' -> 'TssA'."""
     return re.sub(r"^\d+_", "", str(name).strip())
@@ -408,16 +372,16 @@ def is_quiescent(name):
     not relabelled the states, and a model that splits the background names
     the halves "Quies2", "Quies3".
 
-    Narrower than is_noqh() on purpose: Het and ZNF/Rpts do carry marks, the
-    NOQH domain only drops them alongside the quiescent bulk because together
-    they are what dominates a placement metric.
+    Narrower than is_background() on purpose: Het and ZNF/Rpts do carry marks,
+    the "Quies" functional pool only groups them with the quiescent bulk.
     """
     name = normalize_state_name(name).lower()
     return name.startswith("quies") or name == "background"
 
 
-def is_noqh(name):
-    """True for states in the NOQH background (Quies, Het, ZNF/Rpts, ReprPC).
+def is_background(name):
+    """True for states of the repressed / unmarked background (Quies, Het,
+    ZNF/Rpts, ReprPC): the "Quies" pool of the functional validation.
 
     Handles numbered variants ("15_Quies"), case, and common naming variations.
     """
@@ -993,7 +957,7 @@ def close_gaps(ax, n_hue):
 
     seaborn keeps a slot for each of the *n_hue* levels under every tick and
     draws no bar for a level with no values, so a tick measured in some of them
-    only - the AMI, FULL but no NOQH - is drawn off-centre next to an empty
+    only is drawn off-centre next to an empty
     slot. Each bar keeps its width; its error bar and its points move with it.
     """
     ticks = {}

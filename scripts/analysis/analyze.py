@@ -193,7 +193,7 @@ _FAMILIES = {
     "Enh": utils.is_distal_enhancer,
     "Tx": utils.is_tx,
     "Active": utils.is_active_open,
-    "Quies": utils.is_noqh,
+    "Quies": utils.is_background,
 }
 
 
@@ -369,20 +369,10 @@ def segments_to_codes(segs, bin_size, code_of):
     return out
 
 
-def build_transition_matrix(segs, bin_size, exclude_states=None, mapping=None):
+def build_transition_matrix(segs, bin_size, mapping=None):
     """Build empirical transition count matrix at bin resolution."""
-    exclude = set(exclude_states or [])
-    def _is_excluded(s):
-        if not exclude: return False
-        if s in exclude: return True
-        if utils.normalize_state_name(s) in exclude: return True
-        if exclude_states is utils.NOQH_STATES:
-            return utils.is_noqh(s)
-        return False
-
     names = {row[3] for row in segs}
-    mapped = {s: mapping.get(s, s) if mapping else s
-              for s in names if not _is_excluded(s)}
+    mapped = {s: mapping.get(s, s) if mapping else s for s in names}
     all_states = sorted(set(mapped.values()), key=_natural_sort_key)
     state_idx = {s: i for i, s in enumerate(all_states)}
     code = {s: state_idx[m] for s, m in mapped.items()}
@@ -436,15 +426,14 @@ def state_composition(segs):
             for state, ls in lengths_by_state.items()]
 
 
-def segmentation_stats(segs, bin_size, background=()):
+def segmentation_stats(segs, bin_size):
     """Composition, transition entropy and state colors of one segmentation.
 
     *segs* is a load_bed() result. Returns
 
       {"n_segments": int,
        "composition": [{State, Fraction, MeanLength, MedianLength}, ...],
-       "entropy":     {"full": bits, "noqh": bits},   # utils.FULL / utils.NOQH;
-                                                     # noqh drops *background*
+       "entropy":     bits,
        "colors":      {state: "#RRGGBB"}}
 
     Lighter than run_analyze()'s on-disk report, which the notebooks tabulate
@@ -452,76 +441,58 @@ def segmentation_stats(segs, bin_size, background=()):
     """
     composition = state_composition(segs)
 
-    entropy = {}
     segs4 = [(r[0], r[1], r[2], r[3]) for r in segs]
-    for mode, excl in ((utils.FULL, set()),
-                       (utils.NOQH, set(background))):
-        states, counts, state_bp = build_transition_matrix(segs4, bin_size, exclude_states=excl)
-        entropy[mode] = transition_entropy(states, counts, state_bp)[0] if states else 0
+    states, counts, state_bp = build_transition_matrix(segs4, bin_size)
+    entropy = transition_entropy(states, counts, state_bp)[0] if states else 0
 
     colors = {row[3]: rgb_str_to_hex(row[4] if len(row) > 4 else "0,0,0") for row in segs}
     return {"n_segments": len(segs), "composition": composition,
             "entropy": entropy, "colors": colors}
 
 
-def segmentation_entropy(seg_path, bin_size, exclude_states=None):
-    """(entropy, state count) of the transition matrix of one segmentation.
-
-    save_transition_entropy() below drops utils.NOQH_STATES by name for its
-    NOQH variant, which needs the states to carry the reference names; pass
-    *exclude_states* for a segmentation whose background is named some other
-    way - the SAGAconf states are numbers matched per dataset, so its NOQH
-    background comes from the interpreted state types instead (see
-    analysis_sagaconf.ipynb).
-    """
-    states, counts, state_bp = build_transition_matrix(
-        load_bed(seg_path), bin_size, exclude_states=exclude_states)
+def segmentation_entropy(seg_path, bin_size):
+    """(entropy, state count) of the transition matrix of one segmentation."""
+    states, counts, state_bp = build_transition_matrix(load_bed(seg_path), bin_size)
     if not states:
         return float("nan"), 0
     return float(transition_entropy(states, counts, state_bp)[0]), len(states)
 
 
-def save_transition_entropy(segs, bin_size, outdir, skip_noqh=False):
+def save_transition_entropy(segs, bin_size, outdir):
     """Compute and save transition entropy + matrix for a single segmentation."""
     edir = os.path.join(outdir, "entropy")
     os.makedirs(edir, exist_ok=True)
 
-    variants = [("", None)]
-    if not skip_noqh:
-        variants.append((utils.NOQH_SUFFIX, utils.NOQH_STATES))
+    states, counts, state_bp = build_transition_matrix(segs, bin_size)
+    if not states:
+        return
+    total_H, H, A, pi = transition_entropy(states, counts, state_bp)
 
-    for suffix, excl in variants:
-        states, counts, state_bp = build_transition_matrix(segs, bin_size, excl)
-        if not states:
-            continue
-        total_H, H, A, pi = transition_entropy(states, counts, state_bp)
+    detail = os.path.join(edir, "transition_entropy.tsv")
+    with open(detail, "w") as f:
+        f.write("state\tstationary_prob\tentropy\tself_transition_prob\n")
+        for i, s in enumerate(states):
+            f.write(f"{s}\t{pi[i]:.6f}\t{H[i]:.4f}\t{A[i, i]:.6f}\n")
 
-        detail = os.path.join(edir, f"transition_entropy{suffix}.tsv")
-        with open(detail, "w") as f:
-            f.write("state\tstationary_prob\tentropy\tself_transition_prob\n")
-            for i, s in enumerate(states):
-                f.write(f"{s}\t{pi[i]:.6f}\t{H[i]:.4f}\t{A[i, i]:.6f}\n")
+    pd.DataFrame(A, index=states, columns=states).to_csv(
+        os.path.join(edir, "transition_matrix.tsv"),
+        sep="\t", float_format="%.6f")
 
-        pd.DataFrame(A, index=states, columns=states).to_csv(
-            os.path.join(edir, f"transition_matrix{suffix}.tsv"),
-            sep="\t", float_format="%.6f")
-
-        label = os.path.basename(outdir)
-        excl_label = f" (excl. quiescent)" if excl else ""
-        fig, ax = plt.subplots(figsize=(max(5, len(states) * 0.4),
-                                        max(4, len(states) * 0.35)))
-        sns.heatmap(A, xticklabels=states, yticklabels=states,
-                    cmap="Blues", vmin=0, vmax=1, ax=ax,
-                    linewidths=0.3, annot=True, fmt=".2f",
-                    annot_kws={"fontsize": ANNOTATION_FONTSIZE})
-        ax.set_title(f"Transition matrix — {label}{excl_label}\n"
-                     f"(total entropy = {total_H:.4f})", **TITLE_STYLE)
-        ax.set_xlabel("To state", fontsize=AXIS_FONTSIZE)
-        ax.set_ylabel("From state", fontsize=AXIS_FONTSIZE)
-        ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
-        ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
-        save_fig(fig, os.path.join(edir, f"transition_matrix{suffix}.pdf"),
-                 bbox_inches=None)
+    label = os.path.basename(outdir)
+    fig, ax = plt.subplots(figsize=(max(5, len(states) * 0.4),
+                                    max(4, len(states) * 0.35)))
+    sns.heatmap(A, xticklabels=states, yticklabels=states,
+                cmap="Blues", vmin=0, vmax=1, ax=ax,
+                linewidths=0.3, annot=True, fmt=".2f",
+                annot_kws={"fontsize": ANNOTATION_FONTSIZE})
+    ax.set_title(f"Transition matrix — {label}\n"
+                 f"(total entropy = {total_H:.4f})", **TITLE_STYLE)
+    ax.set_xlabel("To state", fontsize=AXIS_FONTSIZE)
+    ax.set_ylabel("From state", fontsize=AXIS_FONTSIZE)
+    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    save_fig(fig, os.path.join(edir, "transition_matrix.pdf"),
+             bbox_inches=None)
 
 
 def merge_intervals(intervals):
@@ -1046,8 +1017,7 @@ def plot_enrichment(enrich_df, segs, outdir):
 
 
 def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
-                rnaseq=None, gtf=None, top_expressed=12000, bw_emissions=None, emissions_only=False,
-                skip_noqh=False):
+                rnaseq=None, gtf=None, top_expressed=12000, bw_emissions=None, emissions_only=False):
     """Per-segmentation analysis: writes report, emission and enrichment
     tables and plots under *outdir*; called from analysis.ipynb.
     """
@@ -1057,7 +1027,7 @@ def run_analyze(seg, bin_size, outdir, inputs=None, annotations=None,
     if not emissions_only:
         save_report(segs, outdir)
         plot_segment_lengths(segs, outdir)
-        save_transition_entropy(segs, bin_size, outdir, skip_noqh=skip_noqh)
+        save_transition_entropy(segs, bin_size, outdir)
 
     inputs = expand_globs(inputs or [])
     if inputs:

@@ -98,9 +98,9 @@ def state_lengths(segs):
     return out
 
 
-def per_state_agreement(overlap, lengths1, lengths2, exclude=()):
+def per_state_agreement(overlap, lengths1, lengths2):
     """One-vs-rest agreement of every state, as {state: {jaccard, kappa}}."""
-    states = (set(lengths1) | set(lengths2)) - set(exclude)
+    states = set(lengths1) | set(lengths2)
     total = sum(overlap.values())
     a1, a2 = defaultdict(int), defaultdict(int)
     for (s1, s2), bp in overlap.items():
@@ -156,8 +156,7 @@ def adjusted_mutual_information(overlap):
 
     The two segmentations are read as partitions of the genome and the state
     names play no part: relabelling either side gives the same index, so it
-    needs no state matching. Over the whole genome only - dropping a background
-    picks bins by state name, which is the matching the index is free of.
+    needs no state matching.
 
     A state weighs by p log p of its genome share, so the small states count
     and Quies, most of the genome, does not dominate.
@@ -184,30 +183,38 @@ def adjusted_mutual_information(overlap):
     return mi / mean_entropy
 
 
-def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
-    """Agreement metrics (kappa, jaccard, cosine) of two segmentations, and the
-    ami when *exclude* is empty - adjusted_mutual_information() has no excluded
-    domain."""
-    all_states = set(lengths1) | set(lengths2)
-    def _is_excluded(s):
-        if s in exclude: return True
-        norm = utils.normalize_state_name(s)
-        if norm in exclude: return True
-        if exclude is utils.NOQH_STATES:
-            return utils.is_noqh(s)
-        return False
+def biggest_states(lengths1, lengths2):
+    """The biggest state (most bp) of each of two segmentations - one name when
+    both sides agree on it, two when they do not."""
+    return {max(lengths, key=lengths.get)
+            for lengths in (lengths1, lengths2) if lengths}
 
-    states = {s for s in all_states if not _is_excluded(s)}
+
+def composition_cosine(lengths1, lengths2):
+    """Cosine of the state-composition vectors (bp per state) of two
+    segmentations, over every state but the biggest one of either side.
+
+    The biggest state - the quiescent bulk, in most samples - would otherwise
+    dominate both vectors and saturate the cosine near 1 for any pair it
+    dominates, whatever the two do with the rest of the genome. Taking it by
+    size rather than by name keeps the cosine free of the state vocabulary.
+    """
+    drop = biggest_states(lengths1, lengths2)
+    ordered = sorted((set(lengths1) | set(lengths2)) - drop)
+    v1 = np.array([lengths1.get(s, 0) for s in ordered], dtype=np.float64)
+    v2 = np.array([lengths2.get(s, 0) for s in ordered], dtype=np.float64)
+    norms = np.linalg.norm(v1) * np.linalg.norm(v2)
+    return float(np.dot(v1, v2) / norms) if norms > 0 else 0.0
+
+
+def agreement_metrics(overlap, lengths1, lengths2):
+    """Agreement metrics (kappa, jaccard, cosine, ami) of two segmentations,
+    over all their states; the cosine is composition_cosine()."""
+    states = set(lengths1) | set(lengths2)
     total = sum(overlap.get((s1, s2), 0) for s1 in states for s2 in states)
     if not states or total == 0:
-        metrics = {
-            utils.JACCARD: 0.0,
-            utils.KAPPA: 0.0,
-            utils.COSINE: 0.0
-        }
-        if not exclude:
-            metrics[utils.AMI] = 0.0
-        return metrics
+        return {utils.JACCARD: 0.0, utils.KAPPA: 0.0, utils.COSINE: 0.0,
+                utils.AMI: 0.0}
 
     a1 = {s: sum(overlap.get((s, s2), 0) for s2 in states) for s in states}
     a2 = {s: sum(overlap.get((s1, s), 0) for s1 in states) for s in states}
@@ -216,29 +223,14 @@ def agreement_metrics(overlap, lengths1, lengths2, exclude=()):
     pe = sum((a1[s] / total) * (a2[s] / total) for s in states)
     kappa = (po - pe) / (1 - pe) if pe < 1 else 1.0
 
-    per_state = per_state_agreement(overlap, lengths1, lengths2, exclude=exclude)
+    per_state = per_state_agreement(overlap, lengths1, lengths2)
     jaccards = [m[utils.JACCARD] for m in per_state.values()]
 
-    ordered = sorted(states)
-    v1 = np.array([lengths1.get(s, 0) for s in ordered])
-    v2 = np.array([lengths2.get(s, 0) for s in ordered])
-    norms = np.linalg.norm(v1) * np.linalg.norm(v2)
-    metrics = {
+    return {
         utils.JACCARD: float(np.mean(jaccards)) if jaccards else 0.0,
         utils.KAPPA: kappa,
-        utils.COSINE: float(np.dot(v1, v2) / norms) if norms > 0 else 0.0,
-    }
-    if not exclude:
-        metrics[utils.AMI] = adjusted_mutual_information(overlap)
-    return metrics
-
-
-def agreement_by_mode(overlap, lengths1, lengths2, background=()):
-    """Return agreement metrics for 'full' and 'noqh' (background excluded) modes."""
-    return {
-        utils.FULL: agreement_metrics(overlap, lengths1, lengths2),
-        utils.NOQH: agreement_metrics(overlap, lengths1, lengths2,
-                                      exclude=background),
+        utils.COSINE: composition_cosine(lengths1, lengths2),
+        utils.AMI: adjusted_mutual_information(overlap),
     }
 
 

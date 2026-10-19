@@ -87,29 +87,23 @@ def test_plot_per_dataset_method_composition_reference(tmp_path):
     assert os.path.exists(ref_file)
 
 
-def test_plot_reference_distribution_combined(tmp_path):
+def test_plot_reference_distribution(tmp_path):
     # Mock similarity matrix TSVs
     matrix_content = "cell\tCellA\tCellB\nCellA\t1.0\t0.8\nCellB\t0.8\t1.0\n"
     comp_file = tmp_path / "comp.tsv"
     kappa_file = tmp_path / "kappa.tsv"
     jaccard_file = tmp_path / "jaccard.tsv"
-    comp_noqh_file = tmp_path / "comp_noqh.tsv"
-    kappa_noqh_file = tmp_path / "kappa_noqh.tsv"
-    jaccard_noqh_file = tmp_path / "jaccard_noqh.tsv"
 
-    for f in [comp_file, kappa_file, jaccard_file, comp_noqh_file, kappa_noqh_file, jaccard_noqh_file]:
+    for f in [comp_file, kappa_file, jaccard_file]:
         with open(f, "w") as fp:
             fp.write(matrix_content)
 
-    outfile = str(tmp_path / "similarity_distribution_combined.pdf")
+    outfile = str(tmp_path / "similarity_distribution.pdf")
     summary_plots.run_summary_plots(
         ref_comp_matrix=str(comp_file),
         ref_kappa_matrix=str(kappa_file),
         ref_jaccard_matrix=str(jaccard_file),
-        ref_comp_noqh_matrix=str(comp_noqh_file),
-        ref_kappa_noqh_matrix=str(kappa_noqh_file),
-        ref_jaccard_noqh_matrix=str(jaccard_noqh_file),
-        ref_dist_combined_outfile=outfile,
+        ref_dist_outfile=outfile,
     )
     assert os.path.exists(outfile)
 
@@ -127,7 +121,6 @@ def test_plot_method_similarity_distribution(tmp_path):
         methods=["chromhmm"],
         inter_ds_dir=str(tmp_path),
         outfile=outfile,
-        noqh=False,
     )
     assert os.path.exists(outfile)
 
@@ -137,8 +130,8 @@ def test_plot_replicate_consistency_bars(tmp_path):
     ds1_dir.mkdir()
     comp_table = ds1_dir / "comparison_table.tsv"
     with open(comp_table, "w") as f:
-        f.write("method\tdisplay_name\treplicate\tkappa_rep1_vs_rep2\tkappa_noqh_rep1_vs_rep2\tjaccard_rep1_vs_rep2\tjaccard_noqh_rep1_vs_rep2\n")
-        f.write("chromhmm_default\tChromHMM\t\t0.85\t0.70\t0.80\t0.65\n")
+        f.write("method\tdisplay_name\treplicate\tkappa_rep1_vs_rep2\tjaccard_rep1_vs_rep2\n")
+        f.write("chromhmm_default\tChromHMM\t\t0.85\t0.80\n")
 
     outdir = str(tmp_path / "out")
     summary_plots._plot_rep_consistency(
@@ -147,9 +140,7 @@ def test_plot_replicate_consistency_bars(tmp_path):
         outdir=outdir,
     )
     assert os.path.exists(os.path.join(outdir, "rep_consistency_kappa_rep1_vs_rep2.pdf"))
-    assert os.path.exists(os.path.join(outdir, "rep_consistency_kappa_noqh_rep1_vs_rep2.pdf"))
     assert os.path.exists(os.path.join(outdir, "rep_consistency_jaccard_rep1_vs_rep2.pdf"))
-    assert os.path.exists(os.path.join(outdir, "rep_consistency_jaccard_noqh_rep1_vs_rep2.pdf"))
 
 
 def test_collect_per_state_metrics_keeps_pooled_vs_ref(tmp_path):

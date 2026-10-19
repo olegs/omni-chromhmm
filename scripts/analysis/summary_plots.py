@@ -33,12 +33,12 @@ from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
                    JOINT_CHROMHMM, JOINT_KMEANS_HOMER, JOINT_KMEANS_MACS2, JOINT_KMEANS_OMNI,
                    JOINT_BMM3_HOMER, JOINT_BMM3_MACS2, JOINT_BMM3_OMNI,
                    display_name,
-                   COMPOSITION, JACCARD, KAPPA, FULL, NOQH, NOQH_SUFFIX,
+                   COMPOSITION, JACCARD, KAPPA,
                    AMI_DISPLAY, COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY,
-                   COSINE_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY,
+                   COSINE_DISPLAY,
                    BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE,
                    LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE, ANNOTATION_FONTSIZE,
-                   MODE_COLORS, set_style)
+                   set_style)
 
 set_style()
 
@@ -54,8 +54,7 @@ SIMILARITY_ORDER = [label for _, label, _ in SIMILARITY_METRICS]
 SIMILARITY_COLORS = {label: color for _, label, color in SIMILARITY_METRICS}
 
 # The agreement plots of the notebooks draw the AMI after the three: it is the
-# one of them the state matching does not enter, and is measured in FULL only.
-# The pipeline writes no AMI matrix, so the distribution plots below keep
+# one of them the state matching does not enter. The pipeline writes no AMI matrix, so the distribution plots below keep
 # SIMILARITY_ORDER.
 AGREEMENT_ORDER = SIMILARITY_ORDER + [AMI_DISPLAY]
 AGREEMENT_COLORS = {AMI_DISPLAY: "#8E6BBF", **SIMILARITY_COLORS}
@@ -64,8 +63,8 @@ AGREEMENT_COLORS = {AMI_DISPLAY: "#8E6BBF", **SIMILARITY_COLORS}
 def agreement_rows(df, id_vars):
     """The agreement columns of *df* in long form, a Metric and a Value per
     row. "Composition" is the cosine of the state-composition vectors, the
-    Cosine column under compare.py's spelling. The AMI is measured in FULL
-    only, so the rows with no value - its NOQH ones - are dropped."""
+    Cosine column under compare.py's spelling. Rows with no value are
+    dropped."""
     df = df.rename(columns={COSINE_DISPLAY: COMPOSITION_DISPLAY})
     return (df.melt(id_vars=id_vars,
                     value_vars=[m for m in AGREEMENT_ORDER if m in df.columns],
@@ -572,7 +571,6 @@ def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
             continue
 
         summary_df = df.groupby(["state", "Method"])[metric].mean().unstack()
-        summary_df = summary_df[~summary_df.index.isin([FULL_DISPLAY, NOQH_DISPLAY])]
         summary_df = summary_df.reindex(sort_states(summary_df.index))
 
         pooled_labels = [DISPLAY_NAMES.get(m, m) for m in METHODS_POOLED if m != "ref"]
@@ -583,10 +581,8 @@ def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
         out_path = os.path.join(outdir, f"per_state_{metric}_summary.pdf")
         _save_metric_heatmap(summary_df, f"Mean Per-state {label} vs Reference (Summary)", out_path, f"Per-state {label}")
 
-        # Average metric per state, combined across methods; the FULL/NOQH
-        # pseudo-states are not real state types.
+        # Average metric per state, combined across methods.
         plot_df = df.dropna(subset=[metric])
-        plot_df = plot_df[~plot_df["state"].isin([FULL_DISPLAY, NOQH_DISPLAY])]
         
         states_order = sort_states(plot_df["state"].unique())
         fig, ax = plt.subplots(figsize=(max(12, len(states_order) * 0.8), 5))
@@ -610,14 +606,12 @@ def _plot_per_state_metrics(datasets, analysis_dirs, outdir, match_method):
         save_fig(fig, os.path.join(outdir, f"per_state_{metric}_bar.pdf"))
 
 
-# (comparison_table column, title, ylabel, outfile stem), one row per metric and
-# comparison domain. NOQH first, matching the order the plots are shown in.
+# (comparison_table column, title, ylabel, outfile stem), one row per metric.
 _REP_CONSISTENCY_PLOTS = [
-    (f"{metric}{suffix}_rep1_vs_rep2",
-     f"Rep. consistency: {label} ({domain}, raw)", label,
-     f"rep_consistency_{metric}{suffix}_rep1_vs_rep2")
+    (f"{metric}_rep1_vs_rep2",
+     f"Rep. consistency: {label} (raw)", label,
+     f"rep_consistency_{metric}_rep1_vs_rep2")
     for metric, label in ((KAPPA, KAPPA_DISPLAY), (JACCARD, JACCARD_DISPLAY))
-    for suffix, domain in ((NOQH_SUFFIX, NOQH_DISPLAY), ("", FULL))
 ]
 
 
@@ -630,10 +624,9 @@ def _plot_rep_consistency(datasets, methods_dirs, outdir):
         _plot_summary(data, title, ylabel, outpath, partial_note=True)
 
 
-def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=False):
+def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile):
     """Bar plot: replicate consistency distribution per de-novo method and metric."""
-    suffix = NOQH_SUFFIX if noqh else ""
-    metric_configs = [(label, f"{metric}{suffix}_rep1_vs_rep2", color)
+    metric_configs = [(label, f"{metric}_rep1_vs_rep2", color)
                       for metric, label, color in SIMILARITY_METRICS]
 
     rows = []
@@ -669,10 +662,9 @@ def _plot_rep_similarity_distribution(datasets, methods_dirs, outfile, noqh=Fals
     ax.set_ylabel("Replicate similarity", fontsize=AXIS_FONTSIZE)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    mode = NOQH_DISPLAY if noqh else FULL_DISPLAY
     n_ds = plot_df["dataset"].nunique()
     ax.set_title(
-        f"Replicate consistency by method — {mode}\n"
+        f"Replicate consistency by method\n"
         f"({n_methods} methods, {n_ds} datasets with replicates)",
         **TITLE_STYLE
     )
@@ -1270,7 +1262,7 @@ def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
     )
 
 
-def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=False,
+def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile,
                                          group_a=None, group_b=None):
     """Bar plot: pairwise similarity distributions per de-novo method and metric.
 
@@ -1278,15 +1270,13 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     per dataset pair. group_a / group_b, when given, keep only pairs with one
     dataset from each group.
     """
-    suffix = NOQH_SUFFIX if noqh else ""
-    # Kappa is the only one whose FULL matrix is not called *_similarity_matrix.
+    # Kappa is the only one whose matrix is not called *_similarity_matrix.
     metric_configs = [
-        (COMPOSITION_DISPLAY, f"{COMPOSITION}{suffix}_similarity_matrix.tsv",
+        (COMPOSITION_DISPLAY, f"{COMPOSITION}_similarity_matrix.tsv",
                               SIMILARITY_COLORS[COMPOSITION_DISPLAY]),
-        (KAPPA_DISPLAY,       f"{KAPPA}{suffix}_matrix.tsv",
+        (KAPPA_DISPLAY,       f"{KAPPA}_matrix.tsv",
                               SIMILARITY_COLORS[KAPPA_DISPLAY]),
-        (JACCARD_DISPLAY,     f"{JACCARD}{suffix}_matrix.tsv" if noqh
-                              else f"{JACCARD}_similarity_matrix.tsv",
+        (JACCARD_DISPLAY,     f"{JACCARD}_similarity_matrix.tsv",
                               SIMILARITY_COLORS[JACCARD_DISPLAY]),
     ]
 
@@ -1341,12 +1331,11 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     ax.set_ylabel("Pairwise similarity", fontsize=AXIS_FONTSIZE)
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    mode = NOQH_DISPLAY if noqh else FULL_DISPLAY
     n_ds = pd.concat([plot_df["ds_i"], plot_df["ds_j"]]).nunique()
     n_pairs = plot_df[plot_df["Metric"] == COMPOSITION_DISPLAY]["Method"].count() // max(n_methods, 1)
     pair_desc = " — ChIP↔Mint-ChIP pairs only" if (group_a and group_b) else ""
     ax.set_title(
-        f"Inter-dataset similarity by method — {mode}{pair_desc}\n"
+        f"Inter-dataset similarity by method{pair_desc}\n"
         f"({n_methods} methods, n={n_ds} datasets, {n_pairs} pairs each)",
         **TITLE_STYLE
     )
@@ -1357,8 +1346,7 @@ def _plot_method_similarity_distribution(inter_ds_dir, methods, outfile, noqh=Fa
     save_fig(fig, outfile)
 
 
-def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
-                                  title_suffix=""):
+def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile):
     """Bar plot of pairwise similarity among ENCODE reference segmentations."""
     metrics = list(zip(SIMILARITY_ORDER, [comp_path, kappa_path, jaccard_path]))
     rows = []
@@ -1384,70 +1372,11 @@ def _plot_reference_distribution(comp_path, kappa_path, jaccard_path, outfile,
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     n_refs_pairs = plot_df[plot_df["Metric"] == COMPOSITION_DISPLAY]["value"].count()
     title = (
-        f"Inter-reference similarity distribution{title_suffix}\n"
+        f"Inter-reference similarity distribution\n"
         f"({int((-1 + (1 + 8 * n_refs_pairs) ** 0.5) / 2 + 1)} ENCODE references, {n_refs_pairs} pairs each metric)"
     )
     ax.set_title(title, **TITLE_STYLE)
     save_fig(fig, outfile)
-
-
-def _plot_reference_distribution_combined(comp_path, kappa_path, jaccard_path,
-                                         comp_noqh_path, kappa_noqh_path, jaccard_noqh_path,
-                                         outfile, title="Cross-sample agreement of ENCODE references"):
-    """Bar plot of pairwise similarity among ENCODE reference segmentations with hue as FULL / NOQH."""
-    metrics_configs = [
-        (FULL_DISPLAY, [comp_path, kappa_path, jaccard_path]),
-        (NOQH_DISPLAY, [comp_noqh_path, kappa_noqh_path, jaccard_noqh_path]),
-    ]
-    rows = []
-    for mode, paths in metrics_configs:
-        for metric, path in zip(SIMILARITY_ORDER, paths):
-            if not path or not os.path.exists(path):
-                print(f"  WARNING: missing {path}", file=sys.stderr)
-                continue
-            mat = pd.read_csv(path, sep="\t", index_col=0)
-            n = len(mat)
-            for i in range(n):
-                for j in range(i + 1, n):
-                    rows.append({"Metric": metric, "Mode": mode, "value": float(mat.iloc[i, j])})
-    if not rows:
-        print(f"  skipping {outfile}: no data", file=sys.stderr)
-        return
-
-    plot_df = pd.DataFrame(rows)
-
-    fig, ax = plt.subplots(figsize=(6, 5))
-    sns.barplot(
-        data=plot_df, x="Metric", y="value", hue="Mode",
-        order=SIMILARITY_ORDER, hue_order=[FULL_DISPLAY, NOQH_DISPLAY],
-        palette=MODE_COLORS,
-        estimator="mean", ax=ax, **BAR_STYLE,
-    )
-    strip_points(
-        ax, data=plot_df, x="Metric", y="value", hue="Mode",
-        order=SIMILARITY_ORDER, hue_order=[FULL_DISPLAY, NOQH_DISPLAY],
-        dodge=True, size=2,
-    )
-    ax.set_xlabel("")
-    ax.set_ylabel("Pairwise similarity", fontsize=AXIS_FONTSIZE)
-    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
-    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
-    ax.set_ylim(0, 1)
-    ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.legend(title="Mode", fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE,
-              bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
-    n_refs_pairs = plot_df[(plot_df["Metric"] == COMPOSITION_DISPLAY) & (plot_df["Mode"] == FULL_DISPLAY)]["value"].count()
-    if title:
-        n_refs = int((-1 + (1 + 8 * n_refs_pairs) ** 0.5) / 2 + 1) if n_refs_pairs > 0 else 0
-        full_title = (
-            f"{title}\n"
-            f"({n_refs} ENCODE references, {n_refs_pairs} pairs each metric)"
-        )
-        ax.set_title(full_title, **TITLE_STYLE)
-    save_fig(fig, outfile)
-
-
-plot_reference_distribution_combined = _plot_reference_distribution_combined
 
 
 def plot_reference_n_segments(datasets, methods_dirs, labels, outfile, title):
@@ -1542,10 +1471,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       ref_comp_matrix=None,
                       ref_kappa_matrix=None, ref_jaccard_matrix=None,
                       ref_dist_outfile=None,
-                      ref_comp_noqh_matrix=None,
-                      ref_kappa_noqh_matrix=None, ref_jaccard_noqh_matrix=None,
-                      ref_dist_noqh_outfile=None,
-                      ref_dist_combined_outfile=None,
                       method_composition_outfile=None,
                       method_composition_title=None,
                       method_ds_composition_outdir=None,
@@ -1553,10 +1478,8 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
                       rep_consistency_outdir=None,
                       method_sim_dist_indir=None, method_sim_dist_methods=None,
                       method_sim_dist_outfile=None,
-                      method_sim_dist_noqh_outfile=None,
                       method_sim_dist_group_a=None, method_sim_dist_group_b=None,
-                      method_sim_dist_filtered_outfile=None,
-                      method_sim_dist_filtered_noqh_outfile=None):
+                      method_sim_dist_filtered_outfile=None):
     """Cross-dataset summary bar plots and similarity distributions.
 
     Each *_outfile / *_outdir argument that is set selects one plot group.
@@ -1582,11 +1505,6 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         ref_comp_matrix=ref_comp_matrix,
         ref_kappa_matrix=ref_kappa_matrix, ref_jaccard_matrix=ref_jaccard_matrix,
         ref_dist_outfile=ref_dist_outfile,
-        ref_comp_noqh_matrix=ref_comp_noqh_matrix,
-        ref_kappa_noqh_matrix=ref_kappa_noqh_matrix,
-        ref_jaccard_noqh_matrix=ref_jaccard_noqh_matrix,
-        ref_dist_noqh_outfile=ref_dist_noqh_outfile,
-        ref_dist_combined_outfile=ref_dist_combined_outfile,
         method_composition_outfile=method_composition_outfile,
         method_composition_title=method_composition_title,
         method_ds_composition_outdir=method_ds_composition_outdir,
@@ -1595,11 +1513,9 @@ def run_summary_plots(datasets=None, methods_dirs=None, analysis_dirs=None,
         method_sim_dist_indir=method_sim_dist_indir,
         method_sim_dist_methods=method_sim_dist_methods or [],
         method_sim_dist_outfile=method_sim_dist_outfile,
-        method_sim_dist_noqh_outfile=method_sim_dist_noqh_outfile,
         method_sim_dist_group_a=method_sim_dist_group_a,
         method_sim_dist_group_b=method_sim_dist_group_b,
-        method_sim_dist_filtered_outfile=method_sim_dist_filtered_outfile,
-        method_sim_dist_filtered_noqh_outfile=method_sim_dist_filtered_noqh_outfile)
+        method_sim_dist_filtered_outfile=method_sim_dist_filtered_outfile)
 
     # --methods narrows the module-level method lists for this call only.
     global INTER_DS_METHODS, METHOD_PALETTE, METHODS_POOLED
@@ -1643,15 +1559,9 @@ def _run_summary_plots(args):
         ds, mdirs, adirs = args.datasets, args.methods_dirs, args.analysis_dirs
 
         data = _collect_table_col(ds, mdirs, "entropy", include_ref=True)
-        _plot_summary(data, f"Transition matrix entropy ({FULL_DISPLAY})",
+        _plot_summary(data, "Transition matrix entropy",
                       "Entropy (bits)",
                       os.path.join(args.outdir, "summary_entropy.pdf"),
-                      order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
-
-        data = _collect_table_col(ds, mdirs, f"entropy{NOQH_SUFFIX}", include_ref=True)
-        _plot_summary(data, f"Transition matrix entropy ({NOQH_DISPLAY})",
-                      "Entropy (bits)",
-                      os.path.join(args.outdir, "summary_entropy_noqh.pdf"),
                       order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
 
@@ -1887,74 +1797,34 @@ def _run_summary_plots(args):
         os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_outfile)), exist_ok=True)
         _plot_reference_distribution(args.ref_comp_matrix,
                                      args.ref_kappa_matrix,
-                                     args.ref_jaccard_matrix, args.ref_dist_outfile,
-                                     title_suffix=f" — {FULL_DISPLAY}")
+                                     args.ref_jaccard_matrix, args.ref_dist_outfile)
 
-    if args.ref_dist_noqh_outfile:
-        if not (args.ref_comp_noqh_matrix and args.ref_kappa_noqh_matrix and args.ref_jaccard_noqh_matrix):
-            raise ValueError("--ref-comp-noqh-matrix, --ref-kappa-noqh-matrix and "
-                     "--ref-jaccard-noqh-matrix are required for --ref-dist-noqh-outfile")
-        os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_noqh_outfile)), exist_ok=True)
-        _plot_reference_distribution(args.ref_comp_noqh_matrix,
-                                     args.ref_kappa_noqh_matrix,
-                                     args.ref_jaccard_noqh_matrix, args.ref_dist_noqh_outfile,
-                                     title_suffix=f" — {NOQH_DISPLAY}")
-
-    if args.ref_dist_combined_outfile:
-        if not (args.ref_comp_matrix and args.ref_kappa_matrix and args.ref_jaccard_matrix and
-                args.ref_comp_noqh_matrix and args.ref_kappa_noqh_matrix and args.ref_jaccard_noqh_matrix):
-            raise ValueError("--ref-comp-matrix, --ref-kappa-matrix, --ref-jaccard-matrix, "
-                             "--ref-comp-noqh-matrix, --ref-kappa-noqh-matrix and "
-                             "--ref-jaccard-noqh-matrix are required for --ref-dist-combined-outfile")
-        os.makedirs(os.path.dirname(os.path.abspath(args.ref_dist_combined_outfile)), exist_ok=True)
-        _plot_reference_distribution_combined(
-            args.ref_comp_matrix, args.ref_kappa_matrix, args.ref_jaccard_matrix,
-            args.ref_comp_noqh_matrix, args.ref_kappa_noqh_matrix, args.ref_jaccard_noqh_matrix,
-            args.ref_dist_combined_outfile,
+    if args.method_sim_dist_outfile:
+        if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
+            raise ValueError("--method-sim-dist-indir and --method-sim-dist-methods are required "
+                     "for --method-sim-dist-outfile")
+        os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_outfile)), exist_ok=True)
+        _plot_method_similarity_distribution(
+            args.method_sim_dist_indir, args.method_sim_dist_methods,
+            args.method_sim_dist_outfile,
         )
 
-    if args.method_sim_dist_outfile or args.method_sim_dist_noqh_outfile:
+    if args.method_sim_dist_filtered_outfile:
         if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
             raise ValueError("--method-sim-dist-indir and --method-sim-dist-methods are required "
-                     "for --method-sim-dist-outfile / --method-sim-dist-noqh-outfile")
-        if args.method_sim_dist_outfile:
-            os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_outfile)), exist_ok=True)
-            _plot_method_similarity_distribution(
-                args.method_sim_dist_indir, args.method_sim_dist_methods,
-                args.method_sim_dist_outfile, noqh=False,
-            )
-        if args.method_sim_dist_noqh_outfile:
-            os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_noqh_outfile)), exist_ok=True)
-            _plot_method_similarity_distribution(
-                args.method_sim_dist_indir, args.method_sim_dist_methods,
-                args.method_sim_dist_noqh_outfile, noqh=True,
-            )
-
-    if args.method_sim_dist_filtered_outfile or args.method_sim_dist_filtered_noqh_outfile:
-        if not (args.method_sim_dist_indir and args.method_sim_dist_methods):
-            raise ValueError("--method-sim-dist-indir and --method-sim-dist-methods are required "
-                     "for --method-sim-dist-filtered-outfile / --method-sim-dist-filtered-noqh-outfile")
+                     "for --method-sim-dist-filtered-outfile")
         if not (args.method_sim_dist_group_a and args.method_sim_dist_group_b):
             print("  WARNING: skipping filtered similarity distribution: "
                   "both --method-sim-dist-group-a and --method-sim-dist-group-b "
                   "must be non-empty", file=sys.stderr)
         else:
-            ga = set(args.method_sim_dist_group_a)
-            gb = set(args.method_sim_dist_group_b)
-            if args.method_sim_dist_filtered_outfile:
-                os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_filtered_outfile)), exist_ok=True)
-                _plot_method_similarity_distribution(
-                    args.method_sim_dist_indir, args.method_sim_dist_methods,
-                    args.method_sim_dist_filtered_outfile, noqh=False,
-                    group_a=ga, group_b=gb,
-                )
-            if args.method_sim_dist_filtered_noqh_outfile:
-                os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_filtered_noqh_outfile)), exist_ok=True)
-                _plot_method_similarity_distribution(
-                    args.method_sim_dist_indir, args.method_sim_dist_methods,
-                    args.method_sim_dist_filtered_noqh_outfile, noqh=True,
-                    group_a=ga, group_b=gb,
-                )
+            os.makedirs(os.path.dirname(os.path.abspath(args.method_sim_dist_filtered_outfile)), exist_ok=True)
+            _plot_method_similarity_distribution(
+                args.method_sim_dist_indir, args.method_sim_dist_methods,
+                args.method_sim_dist_filtered_outfile,
+                group_a=set(args.method_sim_dist_group_a),
+                group_b=set(args.method_sim_dist_group_b),
+            )
 
     if args.rep_consistency_outdir:
         if len(args.datasets) != len(args.methods_dirs):
@@ -1963,12 +1833,6 @@ def _run_summary_plots(args):
         _plot_rep_similarity_distribution(
             args.datasets, args.methods_dirs,
             os.path.join(args.rep_consistency_outdir, "rep_consistency_distribution.pdf"),
-            noqh=False,
-        )
-        _plot_rep_similarity_distribution(
-            args.datasets, args.methods_dirs,
-            os.path.join(args.rep_consistency_outdir, "rep_consistency_distribution_noqh.pdf"),
-            noqh=True,
         )
         _plot_rep_consistency_per_state(args.datasets, args.methods_dirs, args.rep_consistency_outdir)
 

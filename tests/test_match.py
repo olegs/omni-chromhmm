@@ -108,13 +108,23 @@ def test_ami_independent_partitions():
     assert np.isclose(match.adjusted_mutual_information(overlap), 0.0)
 
 
-def test_ami_full_domain_only():
+def test_ami_in_agreement_metrics():
     overlap = {("Tss", "Tss"): 100, ("Quies", "Quies"): 500}
     lengths = {"Tss": 100, "Quies": 500}
-    modes = match.agreement_by_mode(overlap, lengths, lengths,
-                                    background={"Quies"})
-    assert np.isclose(modes[utils.FULL][utils.AMI], 1.0)
-    assert utils.AMI not in modes[utils.NOQH]
+    metrics = match.agreement_metrics(overlap, lengths, lengths)
+    assert np.isclose(metrics[utils.AMI], 1.0)
+
+
+def test_composition_cosine_drops_biggest_state():
+    # The shared Quies bulk alone would put the cosine near 1.
+    l1 = {"Quies": 10_000, "Tss": 100, "Enh": 0}
+    l2 = {"Quies": 10_000, "Tss": 0, "Enh": 100}
+    assert np.isclose(match.composition_cosine(l1, l2), 0.0)
+    # Each side's biggest state goes, also when they differ.
+    l1 = {"Quies": 10_000, "Tx": 5_000, "Tss": 100}
+    l2 = {"Quies": 5_000, "Tx": 10_000, "Tss": 100}
+    assert match.biggest_states(l1, l2) == {"Quies", "Tx"}
+    assert np.isclose(match.composition_cosine(l1, l2), 1.0)
 
 
 def test_emission_similarity_keeps_signal_level():

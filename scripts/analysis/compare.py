@@ -31,9 +31,9 @@ import utils
 from utils import seg_label as _seg_label, is_replicate as _is_replicate, \
                    should_compare as _should_compare, \
                    is_rep_pair as _is_rep_pair, display_name, \
-                   method_color, save_fig, NOQH_STATES as _EXCLUDE_STATES, \
-                   JACCARD, KAPPA, NOQH_SUFFIX, \
-                   JACCARD_DISPLAY, KAPPA_DISPLAY, FULL_DISPLAY, NOQH_DISPLAY, \
+                   method_color, save_fig, \
+                   JACCARD, KAPPA, \
+                   JACCARD_DISPLAY, KAPPA_DISPLAY, \
                    BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE, TICK_FONTSIZE, LEGEND_FONTSIZE, \
                    LEGEND_TITLE_FONTSIZE, LABEL_FONTSIZE, ANNOTATION_FONTSIZE
 
@@ -71,28 +71,22 @@ def _build_seg_to_analysis_map(seg_paths, analysis_dir):
     return mapping
 
 
-def _compute_entropy(seg_paths, bin_sizes, exclude_states=None, mappings=None):
+def _compute_entropy(seg_paths, bin_sizes):
     """Transition entropy totals: [{segmentation, total_entropy}, ...].
 
     bin_sizes: one bin size per segmentation, parallel to seg_paths.
     """
     results = []
-    exclude_label = (f" (excluding {', '.join(sorted(exclude_states))})"
-                     if exclude_states else "")
-    for i, (seg_path, bin_size) in enumerate(zip(seg_paths, bin_sizes)):
+    for seg_path, bin_size in zip(seg_paths, bin_sizes):
         segs = load_bed(seg_path)
         if not segs:
             print(f"  WARNING: empty segmentation {seg_path}", file=sys.stderr)
             continue
-        mapping = mappings[i] if mappings else None
-        states, counts, state_bp = build_transition_matrix(segs, bin_size, exclude_states, mapping)
-        if not states:
-            print(f"  WARNING: no states left after exclusion in {seg_path}", file=sys.stderr)
-            continue
+        states, counts, state_bp = build_transition_matrix(segs, bin_size)
         total_H, _, _, _ = transition_entropy(states, counts, state_bp)
         label = _seg_label(seg_path)
         results.append({"segmentation": label, "total_entropy": total_H})
-        print(f"  {label}{exclude_label}: total transition entropy = {total_H:.4f}")
+        print(f"  {label}: total transition entropy = {total_H:.4f}")
     return results
 
 
@@ -101,13 +95,13 @@ def _get_method_style(label):
     return display_name(label), method_color(label)
 
 
-def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
+def _save_entropy_summary(results, outdir):
     """Entropy summary TSV and bar chart."""
     if not results:
         return
     os.makedirs(outdir, exist_ok=True)
     df = pd.DataFrame(results)
-    summary_path = os.path.join(outdir, f"entropy_summary{suffix}.tsv")
+    summary_path = os.path.join(outdir, "entropy_summary.tsv")
     df.to_csv(summary_path, sep="\t", index=False, float_format="%.4f")
     print(f"  saved {summary_path}")
 
@@ -126,54 +120,14 @@ def _save_entropy_summary(results, outdir, suffix="", title_extra=""):
     ax.set_xticklabels(display_names, rotation=45, ha="right", fontsize=TICK_FONTSIZE)
     ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
     ax.set_ylabel("Total transition matrix entropy (bits)", fontsize=AXIS_FONTSIZE)
-    ax.set_title(f"Transition matrix entropy comparison{title_extra}", **TITLE_STYLE)
+    ax.set_title("Transition matrix entropy comparison", **TITLE_STYLE)
     ax.grid(axis="y", alpha=0.3)
     
     yrange = ax.get_ylim()[1] - ax.get_ylim()[0]
     for i, v in enumerate(df["total_entropy"]):
         ax.text(i, v + yrange * 0.01, f"{v:.3f}", ha="center", va="bottom", fontsize=LABEL_FONTSIZE)
     
-    save_fig(fig, os.path.join(outdir, f"entropy_summary{suffix}.pdf"))
-
-
-def _save_entropy_combined_plot(results_full, results_active, outdir):
-    """Grouped bar chart: all-states vs excluding Quies/Het entropy."""
-    if not results_full:
-        return
-    df_full = pd.DataFrame(results_full)
-    df_active = pd.DataFrame(results_active) if results_active else pd.DataFrame()
-
-    df_full["Type"] = FULL_DISPLAY
-    if not df_active.empty:
-        df_active["Type"] = NOQH_DISPLAY
-    
-    df_combined = pd.concat([df_full, df_active], ignore_index=True)
-    
-    fig, ax = plt.subplots(figsize=(max(6, len(df_full) * 0.8), 4.2))
-    
-    sns.barplot(data=df_combined, x="segmentation", y="total_entropy", hue="Type",
-                ax=ax, palette=utils.MODE_COLORS,
-                **BAR_STYLE)
-    
-    display_names = [_get_method_style(l)[0] for l in df_full["segmentation"]]
-    ax.set_xticks(range(len(df_full)))
-    ax.set_xticklabels(display_names, rotation=45, ha="right", fontsize=TICK_FONTSIZE)
-    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
-    ax.set_ylabel("Total transition matrix entropy (bits)", fontsize=AXIS_FONTSIZE)
-    ax.set_title("Transition matrix entropy comparison", **TITLE_STYLE)
-    ax.legend(fontsize=LEGEND_FONTSIZE, title_fontsize=LEGEND_TITLE_FONTSIZE)
-    ax.grid(axis="y", alpha=0.3)
-    
-    save_fig(fig, os.path.join(outdir, "entropy_summary_combined.pdf"))
-
-
-def _is_excluded_state(s, exclude_states):
-    """True when state *s* falls in *exclude_states* (NOQH also by state type)."""
-    if s in exclude_states: return True
-    if utils.normalize_state_name(s) in exclude_states: return True
-    if exclude_states is utils.NOQH_STATES:
-        return utils.is_noqh(s)
-    return False
+    save_fig(fig, os.path.join(outdir, "entropy_summary.pdf"))
 
 
 def bin_confusion(segs1, segs2, bin_size):
@@ -238,8 +192,9 @@ def _load_emissions_npz(path):
     return states, mat
 
 
-def compute_composition_similarity(segs1, segs2, exclude_states=None, mapping=None):
-    """Cosine similarity of state distributions (by total bp).
+def compute_composition_similarity(segs1, segs2, mapping=None):
+    """Cosine similarity of state distributions (by total bp), over every
+    state but the biggest one - see match.composition_cosine().
     """
     import match
     l1 = match.state_lengths(segs1)
@@ -250,30 +205,13 @@ def compute_composition_similarity(segs1, segs2, exclude_states=None, mapping=No
         for s, v in l2.items():
             l2_remapped[mapping.get(s, s)] += v
         l2 = dict(l2_remapped)
-
-    if exclude_states:
-        def _is_excluded(s):
-            if s in exclude_states: return True
-            if utils.normalize_state_name(s) in exclude_states: return True
-            if exclude_states is utils.NOQH_STATES:
-                return utils.is_noqh(s)
-            return False
-        l1 = {s: v for s, v in l1.items() if not _is_excluded(s)}
-        l2 = {s: v for s, v in l2.items() if not _is_excluded(s)}
-    states = sorted(set(l1.keys()) | set(l2.keys()))
-    v1 = np.array([l1.get(s, 0) for s in states], dtype=np.float64)
-    v2 = np.array([l2.get(s, 0) for s in states], dtype=np.float64)
-    n1 = np.linalg.norm(v1)
-    n2 = np.linalg.norm(v2)
-    if n1 == 0 or n2 == 0:
-        return 0.0
-    return np.dot(v1, v2) / (n1 * n2)
+    return match.composition_cosine(l1, l2)
 
 
 def _compare_pair(i, j, path_i, path_j, label_i, label_j,
                   bin_emission_path_i, bin_emission_path_j,
                   bw_emission_path_i, bw_emission_path_j,
-                  bin_size_i, bin_size_j, outdir, skip_noqh=False):
+                  bin_size_i, bin_size_j, outdir):
     """Compare one pair of segmentations (runs in a worker process)."""
     import match
     match_pair_overlap = match.pair_overlap
@@ -294,9 +232,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
     ref_states  = sorted({x[3] for x in segs_full_i}, key=_natural_sort_key)
     mapping = match_best_mapping(overlap, work_states, ref_states)
 
-    row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, mapping=None)
-    if not skip_noqh:
-        row["composition_noqh_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j, exclude_states=_EXCLUDE_STATES, mapping=None)
+    row["composition_similarity"] = compute_composition_similarity(segs_full_i, segs_full_j)
 
     # One bin-level confusion matrix carries every kappa / Jaccard below.
     states, conf = bin_confusion(segs_full_i, segs_full_j, bin_size)
@@ -331,17 +267,6 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
         avg_bw_sim, _ = match_emission_cosine_mapping(bw_i[0], bw_i[1], bw_j[0], bw_j[1])
         row["bw_emission_similarity"] = avg_bw_sim
 
-    if not skip_noqh:
-        # Dropping Quies/Het bins on either side keeps the sub-matrix of the
-        # remaining states.
-        keep = [k for k, s in enumerate(states)
-                if not _is_excluded_state(s, _EXCLUDE_STATES)]
-        m_noqh = confusion_metrics([states[k] for k in keep],
-                                   conf[np.ix_(keep, keep)])
-        row[f"{KAPPA}{NOQH_SUFFIX}"]   = m_noqh["kappa"]
-        row[f"overlap{NOQH_SUFFIX}"] = m_noqh["po"]
-        row[f"{JACCARD}{NOQH_SUFFIX}"] = m_noqh["jaccard"]
-
     print(f"  {label_i} vs {label_j}: "
           f"comp_sim={row['composition_similarity']:.4f}, "
           f"kappa={row['kappa']:.4f}, jaccard={row['jaccard_similarity']:.4f}"
@@ -351,7 +276,7 @@ def _compare_pair(i, j, path_i, path_j, label_i, label_j,
 
 
 def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
-                label_override=None, all_pairs=False, skip_noqh=False):
+                label_override=None, all_pairs=False):
     """Selective segmentation comparison; saves metric matrices as TSV.
 
     bin_sizes: one per segmentation; each pair uses the finer of the two for
@@ -382,12 +307,8 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
 
     kappa_mat           = np.eye(n)
     comp_sim_mat        = np.eye(n)
-    comp_sim_noqh_mat   = np.eye(n)
     jaccard_mat         = np.eye(n)
     overlap_mat         = np.eye(n)
-    kappa_noqh_mat      = np.eye(n)
-    overlap_noqh_mat    = np.eye(n)
-    jaccard_noqh_mat    = np.eye(n)
     em_sim_mat          = np.eye(n)
     bw_sim_mat          = np.eye(n)
 
@@ -411,8 +332,7 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                                 seg_paths[i], seg_paths[j], labels[i], labels[j],
                                 bin_emission_paths.get(i), bin_emission_paths.get(j),
                                 bw_emission_paths.get(i), bw_emission_paths.get(j),
-                                bin_sizes[i], bin_sizes[j], outdir,
-                                skip_noqh=skip_noqh): (i, j)
+                                bin_sizes[i], bin_sizes[j], outdir): (i, j)
                 for i, j in pair_order
             }
             for fut in as_completed(futures):
@@ -426,12 +346,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                     em_sim_mat[i, j] = em_sim_mat[j, i] = row["emission_similarity"]
                 if "bw_emission_similarity" in row:
                     bw_sim_mat[i, j] = bw_sim_mat[j, i] = row["bw_emission_similarity"]
-                
-                if not skip_noqh:
-                    comp_sim_noqh_mat[i, j] = comp_sim_noqh_mat[j, i] = row["composition_noqh_similarity"]
-                    kappa_noqh_mat[i, j]   = kappa_noqh_mat[j, i]   = row[f"{KAPPA}{NOQH_SUFFIX}"]
-                    overlap_noqh_mat[i, j] = overlap_noqh_mat[j, i] = row[f"overlap{NOQH_SUFFIX}"]
-                    jaccard_noqh_mat[i, j] = jaccard_noqh_mat[j, i] = row[f"{JACCARD}{NOQH_SUFFIX}"]
                 comparison_rows.append(row)
     else:
         print(f"  No pairs to compare ({pair_desc}).", file=sys.stderr)
@@ -498,11 +412,6 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
     _save_matrix(overlap_mat, "overlap")
     em_df = _save_matrix(em_sim_mat, "emission_similarity")
     _save_matrix(bw_sim_mat, "bw_emission_similarity")
-    if not skip_noqh:
-        _save_matrix(comp_sim_noqh_mat, f"composition{NOQH_SUFFIX}_similarity")
-        _save_matrix(kappa_noqh_mat,   f"{KAPPA}{NOQH_SUFFIX}")
-        _save_matrix(overlap_noqh_mat, f"overlap{NOQH_SUFFIX}")
-        _save_matrix(jaccard_noqh_mat, f"{JACCARD}{NOQH_SUFFIX}")
 
     # Per-seg comparison rows, written into each analysis dir.
     for i, p in enumerate(seg_paths):
@@ -521,18 +430,8 @@ def compare_all(seg_paths, bin_sizes, outdir, analysis_dir=None, threads=None,
                 sep="\t", float_format="%.4f")
 
 
-def compute_segment_stats(segs, exclude_states=None):
-    """Segment length statistics; *exclude_states* drops the Quies/Het
-    background first (NOQH mode).
-    """
-    if exclude_states:
-        def _is_excluded(s):
-            if s in exclude_states: return True
-            if utils.normalize_state_name(s) in exclude_states: return True
-            if exclude_states is utils.NOQH_STATES:
-                return utils.is_noqh(s)
-            return False
-        segs = [row for row in segs if not _is_excluded(row[3])]
+def compute_segment_stats(segs):
+    """Segment length statistics."""
     if not segs:
         return {}
     lengths = np.array([row[2] - row[1] for row in segs])
@@ -546,11 +445,8 @@ def compute_segment_stats(segs, exclude_states=None):
     }
 
 
-def _plot_segment_stats(df, outdir, suffix=""):
-    """Bar charts for each segment stats metric; *suffix* (e.g. "_noqh") is
-    appended to filenames and titles so both variants coexist.
-    """
-    title_extra = " (excl. Quies/Het)" if suffix else ""
+def _plot_segment_stats(df, outdir):
+    """Bar charts for each segment stats metric."""
     x = np.arange(len(df))
     xlabels = df["segmentation"]
     for col, title, ylabel in [
@@ -569,27 +465,26 @@ def _plot_segment_stats(df, outdir, suffix=""):
         ax.set_xticks(x)
         ax.set_xticklabels(xlabels, rotation=55, ha="right", fontsize=TICK_FONTSIZE)
         ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
-        ax.set_title(title + title_extra, **TITLE_STYLE)
+        ax.set_title(title, **TITLE_STYLE)
         ax.set_ylabel(ylabel, fontsize=AXIS_FONTSIZE)
         ax.grid(axis="y", alpha=0.3)
         for i, v in enumerate(vals):
             fmt = f"{v:.0f}" if v == int(v) else f"{v:.1f}"
             ax.text(i, v + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.01,
                     fmt, ha="center", va="bottom", fontsize=LABEL_FONTSIZE)
-        save_fig(fig, os.path.join(outdir, f"{col}{suffix}.pdf"), bbox_inches=None)
+        save_fig(fig, os.path.join(outdir, f"{col}.pdf"), bbox_inches=None)
 
 
-def run_segment_stats(seg_paths, outdir, analysis_dir=None, skip_noqh=False):
-    """Segment length statistics per segmentation, in a full and a NOQH variant
-    (segment_stats.tsv / segment_stats_noqh.tsv), each with its own plots.
+def run_segment_stats(seg_paths, outdir, analysis_dir=None):
+    """Segment length statistics per segmentation (segment_stats.tsv), with
+    its plots.
     """
     os.makedirs(outdir, exist_ok=True)
     seg_outdirs = _build_seg_to_analysis_map(seg_paths, analysis_dir)
     col_order = ["segmentation", "n_states", "n_segments",
                  "min_length", "max_length", "mean_length", "median_length"]
 
-    results = {"": [], NOQH_SUFFIX: []}   # suffix -> per-seg stats dicts
-
+    results = []
     for seg_path in seg_paths:
         segs = load_bed(seg_path)
         if not segs:
@@ -598,41 +493,30 @@ def run_segment_stats(seg_paths, outdir, analysis_dir=None, skip_noqh=False):
         label = _seg_label(seg_path)
         seg_dir = seg_outdirs.get(seg_path)
 
-        variants = [("", None)]
-        if not skip_noqh:
-            variants.append((NOQH_SUFFIX, _EXCLUDE_STATES))
+        stats = compute_segment_stats(segs)
+        stats["segmentation"] = label
+        results.append(stats)
+        print(f"  {label}: {stats['n_states']} states, {stats['n_segments']} segments, "
+              f"lengths [{stats['min_length']}, {stats['max_length']}], "
+              f"mean={stats['mean_length']:.0f}, median={stats['median_length']:.0f}")
 
-        for suffix, excl in variants:
-            stats = compute_segment_stats(segs, exclude_states=excl)
-            if not stats:
-                print(f"  WARNING: no segments left for {label}{suffix}", file=sys.stderr)
-                continue
-            stats["segmentation"] = label
-            results[suffix].append(stats)
-            if not suffix:
-                print(f"  {label}: {stats['n_states']} states, {stats['n_segments']} segments, "
-                      f"lengths [{stats['min_length']}, {stats['max_length']}], "
-                      f"mean={stats['mean_length']:.0f}, median={stats['median_length']:.0f}")
+        if seg_dir:
+            stats_dir = os.path.join(seg_dir, "segment_stats")
+            os.makedirs(stats_dir, exist_ok=True)
+            pd.DataFrame([stats]).to_csv(
+                os.path.join(stats_dir, "segment_stats.tsv"),
+                sep="\t", index=False, float_format="%.1f")
 
-            if seg_dir:
-                stats_dir = os.path.join(seg_dir, "segment_stats")
-                os.makedirs(stats_dir, exist_ok=True)
-                pd.DataFrame([stats]).to_csv(
-                    os.path.join(stats_dir, f"segment_stats{suffix}.tsv"),
-                    sep="\t", index=False, float_format="%.1f")
-
-    for suffix in ("", NOQH_SUFFIX):
-        if not results[suffix]:
-            continue
-        df = pd.DataFrame(results[suffix])[col_order]
-        summary_path = os.path.join(outdir, f"segment_stats{suffix}.tsv")
+    if results:
+        df = pd.DataFrame(results)[col_order]
+        summary_path = os.path.join(outdir, "segment_stats.tsv")
         df.to_csv(summary_path, sep="\t", index=False, float_format="%.1f")
         print(f"  saved {summary_path}")
-        _plot_segment_stats(df, outdir, suffix=suffix)
+        _plot_segment_stats(df, outdir)
 
 
 def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
-                labels=None, all_pairs=False, skip_noqh=False):
+                labels=None, all_pairs=False):
     """Cross-segmentation comparison: entropy, kappa, Jaccard, segment stats.
 
     *bins* may be a single int (broadcast to all segs) or a list, one per seg.
@@ -657,33 +541,8 @@ def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
     analysis_dir   = args.analysis_dir or args.outdir
     comparison_dir = args.outdir
 
-    results_full = _compute_entropy(args.seg, bin_sizes)
-    _save_entropy_summary(results_full, comparison_dir)
+    _save_entropy_summary(_compute_entropy(args.seg, bin_sizes), comparison_dir)
 
-    if not skip_noqh:
-        # The reference, if any, is what NOQH entropy maps states onto.
-        ref_idx = next((i for i, p in enumerate(args.seg)
-                        if _seg_label(p).startswith("ENCFF")), None)
-        mappings = None
-        if ref_idx is not None:
-            import match
-            ref_segs = _load_seg_full(args.seg[ref_idx])
-            ref_states = sorted({x[3] for x in ref_segs}, key=_natural_sort_key)
-            mappings = [None] * len(args.seg)
-            for i, p in enumerate(args.seg):
-                if i == ref_idx:
-                    continue
-                work_segs = _load_seg_full(p)
-                work_states = sorted({x[3] for x in work_segs}, key=_natural_sort_key)
-                overlap = match.pair_overlap(ref_segs, work_segs)
-                mappings[i] = match.best_mapping(overlap, work_states, ref_states)
-
-        results_active = _compute_entropy(args.seg, bin_sizes, exclude_states=_EXCLUDE_STATES,
-                                          mappings=mappings)
-        _save_entropy_summary(results_active, comparison_dir, suffix=NOQH_SUFFIX,
-                              title_extra=f"\n(excluding {', '.join(sorted(_EXCLUDE_STATES))})")
-        _save_entropy_combined_plot(results_full, results_active, comparison_dir)
-
-    run_segment_stats(args.seg, comparison_dir, analysis_dir, skip_noqh=skip_noqh)
+    run_segment_stats(args.seg, comparison_dir, analysis_dir)
     compare_all(args.seg, bin_sizes, comparison_dir, analysis_dir, args.threads,
-                label_override=label_override, all_pairs=args.all_pairs, skip_noqh=skip_noqh)
+                label_override=label_override, all_pairs=args.all_pairs)
