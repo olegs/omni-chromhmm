@@ -297,4 +297,6 @@ include: "rules/macs2.smk"
 include: "rules/kmeans.smk"
 # Matching vs reference
 include: "rules/match.smk"
+# Functional ROC threshold sweep on chr1 (functional.ipynb)
+include: "rules/functional.smk"
 # Analysis, comparison and inter-dataset summary plots live in analysis.ipynb.

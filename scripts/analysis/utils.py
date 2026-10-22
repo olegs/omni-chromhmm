@@ -365,34 +365,19 @@ def normalize_state_name(name):
 
 
 def is_quiescent(name):
-    """True for the quiescent state, under any spelling a markup gives it.
-
-    The reference name is "Quies", the interpreted type of interpretation.py
-    is "Quiescent", both appear numbered ("15_Quies") wherever match.py has
-    not relabelled the states, and a model that splits the background names
-    the halves "Quies2", "Quies3".
-
-    Narrower than is_background() on purpose: Het and ZNF/Rpts do carry marks,
-    the "Quies" functional pool only groups them with the quiescent bulk.
-    """
     name = normalize_state_name(name).lower()
     return name.startswith("quies") or name == "background"
 
 
 def is_background(name):
-    """True for states of the repressed / unmarked background (Quies, Het,
-    ZNF/Rpts, ReprPC): the "Quies" pool of the functional validation.
-
-    Handles numbered variants ("15_Quies"), case, and common naming variations.
-    """
     name = normalize_state_name(name).lower()
     return (name.startswith("quies") or name == "background" or
             "het" in name or "znf" in name or "rpts" in name or "reprpc" in name)
 
 
-# Core functional state sets optimized for biological benchmarking
-PROMOTER_CORE_STATES = ("Tss", "TssA", "TssAFlnk", "TssFlnkU")
-PROMOTER_FLANK_STATES = ("TssFlnk", "TssFlnkD")
+# Core functional state sets
+PROMOTER_CORE_STATES = ("Tss", "TssA", "TssAFlnk")
+PROMOTER_FLANK_STATES = ("TssFlnk", "TssFlnkU", "TssFlnkD")
 PROMOTER_STATES = PROMOTER_CORE_STATES + PROMOTER_FLANK_STATES
 
 DISTAL_ENHANCER_STATES = ("Enh", "EnhA", "EnhAFlnk", "Enh1", "Enh2")
@@ -411,57 +396,46 @@ BIV_STATES = ("TssBiv", "BivFlnk", "EnhBiv", "Biv")
 
 
 def is_promoter_core(name):
-    """True for core promoter states (Tss, TssA, TssAFlnk, TssFlnkU)."""
     return normalize_state_name(name) in PROMOTER_CORE_STATES
 
 
 def is_promoter_flank(name):
-    """True for flanking promoter states (TssFlnk, TssFlnkD)."""
     return normalize_state_name(name) in PROMOTER_FLANK_STATES
 
 
 def is_promoter(name):
-    """True for promoter states (core and flanking)."""
     return normalize_state_name(name) in PROMOTER_STATES
 
 
 def is_distal_enhancer(name):
-    """True for distal enhancer states (Enh, EnhA, EnhAFlnk, Enh1, Enh2)."""
     return normalize_state_name(name) in DISTAL_ENHANCER_STATES
 
 
 def is_genic_enhancer(name):
-    """True for genic enhancer states (EnhG, EnhG1, EnhG2, EnhLo)."""
     return normalize_state_name(name) in GENIC_ENHANCER_STATES
 
 
 def is_enhancer(name):
-    """True for enhancer states (distal and genic)."""
     return normalize_state_name(name) in ENHANCER_STATES
 
 
 def is_active_open(name):
-    """True for active open chromatin (core promoters and distal enhancers)."""
     return normalize_state_name(name) in ACTIVE_OPEN_STATES
 
 
 def is_active(name):
-    """True for all active chromatin (promoters and enhancers)."""
     return normalize_state_name(name) in ACTIVE_STATES
 
 
 def is_tx_core(name):
-    """True for core transcribed states (Tx, TxA, TxFlnk)."""
     return normalize_state_name(name) in TX_CORE_STATES
 
 
 def is_tx(name):
-    """True for transcribed states (Tx, TxA, TxFlnk, TxWk)."""
     return normalize_state_name(name) in TX_STATES
 
 
 def is_biv(name):
-    """True for bivalent states (TssBiv, BivFlnk, EnhBiv)."""
     return normalize_state_name(name) in BIV_STATES
 
 # (key, label, state family, annotation label prefix) of the functional

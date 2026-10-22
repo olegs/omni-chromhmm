@@ -258,11 +258,13 @@ def test_make_expressed_annotations_pipeline():
 def test_state_predicates():
     assert utils.is_promoter_core("Tss")
     assert utils.is_promoter_core("1_TssA")
-    assert utils.is_promoter_core("TssFlnkU")
+    assert utils.is_promoter_core("2_TssAFlnk")
+    assert not utils.is_promoter_core("TssFlnkU")
     assert not utils.is_promoter_core("TssFlnk")
     assert not utils.is_promoter_core("TssFlnkD")
 
     assert utils.is_promoter_flank("TssFlnk")
+    assert utils.is_promoter_flank("TssFlnkU")
     assert utils.is_promoter_flank("TssFlnkD")
     assert not utils.is_promoter_flank("Tss")
 

@@ -10,6 +10,17 @@ def _binarized_files(bedpath):
     folder = _emissions_folder(bedpath)
     ds = ds_of(folder)
     cell = DATASETS[ds]["cell"]
+    if f"/{FSWEEP}/" in bedpath:
+        # Functional sweep (functional.smk): chr1 only, one binarization per
+        # threshold - chromhmm_default/{thr}/model/{cell}_15_dense or
+        # {caller}/{thr}/{caller}_{model}_states.
+        root, rel = bedpath.split(f"/{FSWEEP}/", 1)
+        parts = rel.split("/")
+        if parts[0] == "chromhmm_default" and len(parts) == 4:
+            return [f"{root}/{FSWEEP}/chromhmm_default/{parts[1]}/binary/{cell}_{FCHROM}_binary.txt"]
+        if parts[0] in CALLER_BIN and len(parts) == 3:
+            return [f"{root}/{FSWEEP}/{parts[0]}/{parts[1]}/chromhmm_peaks/{FCHROM}_binary.txt.gz"]
+        return []
     if "chromhmm_default_result" in bedpath:
         # Default ChromHMM (BinarizeBam output)
         return [f"{folder}/chromhmm_default/{cell}_{c}_binary.txt" for c in CHROMS]
@@ -26,6 +37,14 @@ def _binarized_files(bedpath):
     # Reference BEDs or other beds in the root folder don't have binarized data
     # that compute_bin_emissions can automatically find.
     return []
+
+
+def _match_ref(bedpath):
+    """Reference a segmentation is matched to: its dataset's, cut to chr1 for the functional sweep."""
+    folder = _emissions_folder(bedpath)
+    if f"/{FSWEEP}/" in bedpath:
+        return functional_ref_bed(ds_of(folder))
+    return _ref_bed(ds_of(folder))
 
 
 def _folder_bigwigs(folder):
@@ -56,14 +75,14 @@ ruleorder: match_segmentation > compute_bin_emissions
 rule match_segmentation:
     """State matching: {name}.bed → {name}_matched.bed + remapped emissions."""
     input:
-        ref=lambda w: ancient(_ref_bed(ds_of(_emissions_folder(w.bedpath)))),
+        ref=lambda w: ancient(_match_ref(w.bedpath)),
         work="{bedpath}.bed",
         work_bw_em=lambda w: ["{bedpath}.bw_emissions.npz".format(**w)] if DO_BW_EMISSIONS else [],
         work_bin_em=lambda w: ["{bedpath}.bin_emissions.npz".format(**w)] if DO_BIN_EMISSIONS else [],
-        ref_bw_em=lambda w: ([ancient(_ref_bed(ds_of(_emissions_folder(w.bedpath))).replace(".bed", ".bw_emissions.npz"))]
+        ref_bw_em=lambda w: ([ancient(_match_ref(w.bedpath).replace(".bed", ".bw_emissions.npz"))]
                              if DO_BW_EMISSIONS and P.get("ref_em_type", "") in ("", "bw") else []),
-        ref_bin_em=lambda w: ([ancient(_ref_bed(ds_of(_emissions_folder(w.bedpath))).replace(".bed", ".bin_emissions.npz"))]
-                              if DO_BIN_EMISSIONS and P.get("ref_em_type", "") in ("", "bin") and _binarized_files(_ref_bed(ds_of(_emissions_folder(w.bedpath))).replace(".bed", "")) else []),
+        ref_bin_em=lambda w: ([ancient(_match_ref(w.bedpath).replace(".bed", ".bin_emissions.npz"))]
+                              if DO_BIN_EMISSIONS and P.get("ref_em_type", "") in ("", "bin") and _binarized_files(_match_ref(w.bedpath).replace(".bed", "")) else []),
     output:
         bed="{bedpath}_matched.bed",
         bw_em="{bedpath}_matched.bw_emissions.npz" if DO_BW_EMISSIONS else [],

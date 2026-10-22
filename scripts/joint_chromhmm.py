@@ -89,8 +89,31 @@ def concat(args):
                         continue  # trailing empty line
                     out.write("\t".join(fields[c] for c in columns) + "\n")
 
-    print(f"Concatenated {len(reps)} replicates x {len(chroms)} chromosomes x "
+            print(f"Concatenated {len(reps)} replicates x {len(chroms)} chromosomes x "
           f"{len(marks)} marks into {args.outdir}")
+
+def sweep(args):
+    os.makedirs(args.outdir, exist_ok=True)
+    if len(args.inputs) != len(args.labels):
+        sys.exit(f"Error: Number of inputs ({len(args.inputs)}) != number of labels ({len(args.labels)})")
+
+    first_path = args.inputs[0]
+    with open_text(first_path) as fh:
+        cell_chrom = fh.readline().rstrip("\n").split("\t")
+        marks = fh.readline().rstrip("\n").split("\t")
+    chrom = cell_chrom[1] if len(cell_chrom) > 1 else "chr1"
+
+    for path, label in zip(args.inputs, args.labels):
+        out_p = os.path.join(args.outdir, f"{label}_{chrom}_binary.txt")
+        with open_text(path) as fh, open(out_p, "w") as out:
+            fh.readline()  # original Cell Chrom
+            file_marks = fh.readline().rstrip("\n").split("\t")  # original Marks
+            out.write(f"{label}\t{chrom}\n")
+            out.write("\t".join(file_marks) + "\n")
+            for line in fh:
+                out.write(line)
+
+    print(f"Prepared sweep binarized files for {len(args.labels)} labels in {args.outdir}")
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
@@ -103,6 +126,13 @@ def main():
     p_concat.add_argument("--rep2", required=True, help="Replicate 2 binarized directory")
     p_concat.add_argument("--outdir", required=True, help="Output directory")
     p_concat.set_defaults(func=concat)
+
+    p_sweep = subparsers.add_parser(
+        "sweep", help="Prepare binarized files across sweep parameters for joint ChromHMM LearnModel")
+    p_sweep.add_argument("--inputs", nargs="+", required=True, help="Input binarized files")
+    p_sweep.add_argument("--labels", nargs="+", required=True, help="Labels for each input file (e.g. p-values)")
+    p_sweep.add_argument("--outdir", required=True, help="Output directory")
+    p_sweep.set_defaults(func=sweep)
 
     args = parser.parse_args()
     args.func(args)

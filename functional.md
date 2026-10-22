@@ -81,35 +81,5 @@ Let $\text{TotalBp}(S)$ be the total genomic footprint of state $S$, $\text{Tota
 
 ## 4. Chromatin State Pooling and Functional Families
 
-To enable balanced comparisons across models that split or lump related chromatin sub-states, states are grouped into target-specific functional pools (`scripts/analysis/utils.py`):
-
-```
-====================================================================================================
-Functional Pool       Constituent States                     Validation Target & Rationale
-====================================================================================================
-POOL:Tss              Tss, TssA, TssAFlnk, TssFlnkU          ExpressedTSS2kb & RefSeqTSS2kb
-(Core Promoter)                                              Evaluates transcription initiation without
-                                                             flanking transition noise.
-
-POOL:Active           Tss, TssA, TssAFlnk, TssFlnkU,         ATAC-seq NarrowPeaks
-(Active Open)         Enh, EnhA, EnhAFlnk, Enh1, Enh2        Focuses on accessible promoters and distal
-                                                             enhancers (excludes non-open genic enhancers).
-
-POOL:Tx               Tx, TxA, TxWk, TxFlnk                  ExpressedGeneBodies
-(Transcribed)                                                Captures transcription elongation and weak
-                                                             transcription across active gene bodies.
-
-POOL:Quies            Quies, Het                             NonExpressedGeneBodies
-(Repressed/Silent)                                           Negative control confirming the absence of active
-                                                             epigenetic marks in inactive genes.
-====================================================================================================
-```
-
-### 4.1. Pooling Rationale by Biological Target
-- **Promoter Evaluation (`POOL:Tss` vs. TSS 2kb)**:
-  `Tss` and upstream accessible flank `TssFlnkU` mark active promoter summits. Downstream flank states (`TssFlnk`, `TssFlnkD`) transition into gene bodies and heterochromatin, and are evaluated separately to avoid diluting promoter precision.
-- **Open Chromatin Evaluation (`POOL:Active` vs. ATAC-seq)**:
-  ATAC-seq measures nucleosome displacement at active promoters and distal enhancers. Genic enhancers (`EnhG1`, `EnhG2`), marked by H3K36me3 and intragenic H3K4me1/H3K27ac, generally lack focal open chromatin summits. Excluding genic enhancers from `POOL:Active` aligns the active state footprint with physical accessibility.
-- **Transcribed State Evaluation (`POOL:Tx` vs. Expressed Gene Bodies)**:
-  Evaluates transcribed states (`Tx`, `TxA`, `TxWk`, `TxFlnk`) against expressed gene bodies, capturing both strong elongation and weak/transitional transcription.
+To enable balanced comparisons across models that split or lump related chromatin sub-states, states are grouped into target-specific functional pools `scripts/analysis/utils.py`.
 

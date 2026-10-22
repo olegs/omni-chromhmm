@@ -61,7 +61,7 @@ for ds in imr90 monocytes monocytes_mint gm12878_mint spleen \
   --config homer=True macs2=True omnipeak=True \
   bw_emissions=True bin_emissions=True \
   --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
-  --rerun-incomplete --rerun-trigger mtime;
+  --keep-going --rerun-incomplete --rerun-trigger mtime;
 done
 ```
 
@@ -98,8 +98,36 @@ for ds in imr90 monocytes adrenal_gland; do
     --use-conda --cores all --directory $(pwd) \
     --snakefile $REPO/Snakefile \
     --configfile $REPO/config_encode.yaml \
-    --rerun-incomplete --rerun-trigger mtime;
+    --keep-going --rerun-incomplete --rerun-trigger mtime;
 done
+```
+
+### ENCODE Chromosome 1 functional ROC sweep
+
+Significance threshold sweep on the chr1 BAMs for the functional ROC analysis (`functional.ipynb`):
+OmniPeak `--fdr`, MACS2 `-q`, HOMER `-fdr` and ChromHMM `BinarizeBam -p`, each threshold
+segmented (KMeans, BMM3, ChromHMM LearnModel) and matched to the chr1 ENCODE reference
+(`rules/functional.smk`, thresholds in `functional_sweep` of `config_encode.yaml`):
+
+```bash
+cd ~/data/2026_segmentations/encode
+REPO=~/work/omni-chromhmm
+for ds in imr90 monocytes monocytes_mint gm12878_mint spleen \
+ heart_right_ventricle sigmoid_colon adrenal_gland tibial_nerve \
+ heart_left_ventricle substantia_nigra temporal_lobe; do
+  snakemake -p $ds/functional_chr1_sweep/.done \
+  --use-conda --cores all --directory $(pwd) \
+  --snakefile $REPO/Snakefile \
+  --configfile $REPO/config_encode.yaml \
+  --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
+  --keep-going --rerun-incomplete --rerun-trigger mtime;
+done
+```
+
+Joint modeling and collective state matching across all sweep parameters (to eliminate sweep trajectory oscillations across methods):
+
+```bash
+bash functional.sh
 ```
 
 ### 1000 epigenomes analysis
@@ -135,7 +163,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   --configfile $REPO/config_sagaconf.yaml \
   --config homer=True macs2=True omnipeak=True \
   --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 mem_mb=32000 \
-  --rerun-incomplete --rerun-trigger mtime;
+  --keep-going --rerun-incomplete --rerun-trigger mtime;
 done
 ```
 

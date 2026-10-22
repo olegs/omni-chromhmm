@@ -28,7 +28,8 @@ def main():
     parser.add_argument("--peaks", nargs="+", required=True, 
                         help="Peak files for all cells. Expected order: all marks for cell 1, then all marks for cell 2, etc. Use commas for multiple files per mark.")
     parser.add_argument("--states", type=int, default=15, help="Number of KMeans states")
-    parser.add_argument("--outdir", required=True, help="Output directory for BED files")
+    parser.add_argument("--outdir", default=None, help="Output directory for BED files")
+    parser.add_argument("--outbeds", nargs="+", default=None, help="Explicit output BED file paths, matching order of cells")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for KMeans/BMM")
     parser.add_argument("--mixture", action="store_true", help="Use the Bernoulli Mixture Model instead of KMeans; it reads --spatial-bins bins per observation")
     parser.add_argument("--spatial-bins", type=int, default=DEFAULT_SPATIAL_BINS,
@@ -43,8 +44,10 @@ def main():
     num_marks = len(marks)
     num_cells = len(cells)
     
-    if len(args.peaks) != num_cells * num_marks:
-        sys.exit(f"Error: Expected {num_cells * num_marks} peak groups ({num_cells} cells * {num_marks} marks), but got {len(args.peaks)}")
+    if not args.outdir and not args.outbeds:
+        sys.exit("Error: Either --outdir or --outbeds must be provided.")
+    if args.outbeds and len(args.outbeds) != num_cells:
+        sys.exit(f"Error: Expected {num_cells} output paths in --outbeds, but got {len(args.outbeds)}")
 
     chroms, sizes = read_chrom_sizes(args.chromsizes)
     
@@ -139,8 +142,11 @@ def main():
         model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
         model.fit(x_collapsed, sample_weight=counts)
     
-    print(f"Generating BED outputs {args.outdir}...", file=sys.stderr)
-    os.makedirs(args.outdir, exist_ok=True)
+    if args.outdir:
+        print(f"Generating BED outputs in {args.outdir}...", file=sys.stderr)
+        os.makedirs(args.outdir, exist_ok=True)
+    else:
+        print(f"Generating BED outputs...", file=sys.stderr)
 
     # The model the file names carry: bmm3 for the 3-bin spatial mixture the
     # pipeline fits, bmm for a bin's own marks.
@@ -157,8 +163,12 @@ def main():
         colors.append(",".join([str(int(c * 255)) for c in rgb]))
 
     offset = 0
-    for cell in cells:
-        out_path = os.path.join(args.outdir, f"{cell}_{suffix}_joint_states.bed")
+    for i, cell in enumerate(cells):
+        if args.outbeds:
+            out_path = args.outbeds[i]
+            os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+        else:
+            out_path = os.path.join(args.outdir, f"{cell}_{suffix}_joint_states.bed")
         print(f"Writing {out_path}...", file=sys.stderr)
 
         # The mixture labelled every cell already; KMeans predicts one

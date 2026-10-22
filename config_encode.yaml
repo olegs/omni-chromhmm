@@ -26,6 +26,12 @@ params:
   bin_emissions: true     # process binarized emissions or not
   work_em_type: bin       # preferred work emission type for matching
   ref_em_type: bw         # preferred reference emission type for matching
+  # Functional ROC sweep on chr1 (rules/functional.smk, functional.ipynb): the
+  # thresholds swept for the peak callers (OmniPeak --fdr, MACS2 -q, HOMER -fdr)
+  # and for ChromHMM BinarizeBam -p. Each holds the caller defaults (0.05, 0.001, 1e-4).
+  functional_sweep:
+    thresholds: [1.0e-10, 1.0e-8, 1.0e-6, 1.0e-4, 0.001, 0.01, 0.05, 0.1, 0.2, 0.5]
+    chromhmm_pvalues: [1.0e-10, 1.0e-8, 1.0e-6, 1.0e-5, 1.0e-4, 0.001, 0.01, 0.05]
 
 # Datasets excluded from every analysis; they are still processed by the
 # pipeline. Every notebook reads this list.

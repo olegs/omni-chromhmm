@@ -191,20 +191,33 @@ rule index_folder_bam:
     shell: "samtools index {input}"
 
 
+rule index_folder_control:
+    """Index a control BAM in any {folder}/controls/ directory."""
+    input: ancient("{folder}/controls/{mark}.bam")
+    output: temp("{folder}/controls/{mark}.bam.bai")
+    conda: "../envs/bio.yaml"
+    shell: "samtools index {input}"
+
+
+# The region query needs the index of the source BAM.
 rule filter_bam_chr1:
     """Filter a mark BAM to chromosome 1."""
-    input: ancient("{folder}/bams/{mark}.bam")
+    input:
+        bam=ancient("{folder}/bams/{mark}.bam"),
+        bai=ancient("{folder}/bams/{mark}.bam.bai"),
     output: "{folder}/bams_chr1/{mark}.bam"
     conda: "../envs/bio.yaml"
-    shell: "samtools view -b {input} chr1 > {output} && samtools index {output}"
+    shell: "samtools view -b {input.bam} chr1 > {output} && samtools index {output}"
 
 
 rule filter_control_chr1:
     """Filter a control BAM to chromosome 1."""
-    input: ancient("{folder}/controls/{mark}.bam")
+    input:
+        bam=ancient("{folder}/controls/{mark}.bam"),
+        bai=ancient("{folder}/controls/{mark}.bam.bai"),
     output: "{folder}/controls_chr1/{mark}.bam"
     conda: "../envs/bio.yaml"
-    shell: "samtools view -b {input} chr1 > {output} && samtools index {output}"
+    shell: "samtools view -b {input.bam} chr1 > {output} && samtools index {output}"
 
 
 rule bam_coverage_bw:
