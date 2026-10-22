@@ -143,6 +143,7 @@ METRIC_DISPLAY = {JACCARD: JACCARD_DISPLAY, KAPPA: KAPPA_DISPLAY,
 # "composition" by the comparison tables compare.py feeds.
 METRIC_ALIASES = {COSINE: (COSINE, COMPOSITION)}
 TSS_WINDOW = 2000
+ATAC_WINDOW = 500
 
 
 def normalize_metric(name):
@@ -561,9 +562,9 @@ def annotation_f1(dirpath, states, prefix):
 
 
 def extend_bed(bed_data, window):
-    """Extend each interval in bed_data (list of 4-tuples) by *window* bp on each side."""
-    return [(chrom, max(0, s - window), e + window, label)
-            for chrom, s, e, label in bed_data]
+    """Extend each interval in bed_data by *window* bp on each side."""
+    return [(row[0], max(0, row[1] - window), row[2] + window) + tuple(row[3:])
+            for row in bed_data]
 
 
 def annotation_jaccard(dirpath, state, prefix):
