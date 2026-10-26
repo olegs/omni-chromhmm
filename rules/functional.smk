@@ -261,7 +261,7 @@ rule functional_chromhmm_learn_joint:
     shell:
         r"""
         mkdir -p {params.joint_bin_dir} {params.joint_model_dir}
-        python scripts/joint_chromhmm.py sweep --inputs {input.bins} --labels {params.labels} --outdir {params.joint_bin_dir} > {log} 2>&1
+        python {SCRIPTS_DIR}/joint_chromhmm.py sweep --inputs {input.bins} --labels {params.labels} --outdir {params.joint_bin_dir} > {log} 2>&1
         {CHROMHMM} LearnModel -noautoopen -p {threads} -b {params.bin} {params.joint_bin_dir} {params.joint_model_dir} \
             {params.n} {params.genome} >> {log} 2>&1
         for p in {params.labels}; do
