@@ -968,6 +968,46 @@ def test_the_spatial_window_separates_bins_their_own_marks_cannot():
     assert all(len(np.unique(flat[codes == code])) == 1 for code in observed)
 
 
+def test_kmeans_collapsed_patterns_equivalence():
+    """KMeans on uncollapsed binary matrix vs collapsed weighted patterns
+    yields identical centroids and predictions."""
+    from sklearn.cluster import KMeans
+    n_marks, n_bins = 5, 10_000
+    codes = peaky_codes(n_bins, n_marks, seed=42)
+    slices = even_slices(n_bins, 3)
+
+    # Full data matrix
+    X = bern.pattern_rows(n_marks, codes)
+
+    # Collapsed patterns
+    patterns, counts = bern.sparse_spatial_histogram(codes, slices, n_marks, bins=1)
+    x_collapsed = bern.pattern_rows(n_marks, patterns)
+
+    # Model on full matrix
+    km_full = KMeans(n_clusters=4, init='k-means++', random_state=42, n_init=10)
+    km_full.fit(X)
+    labels_full = km_full.predict(X)
+
+    # Model on collapsed matrix with weights
+    km_collapsed = KMeans(n_clusters=4, init='k-means++', random_state=42, n_init=10)
+    km_collapsed.fit(x_collapsed, sample_weight=counts)
+
+    lut = np.zeros(1 << n_marks, dtype=np.int8)
+    lut[patterns] = km_collapsed.predict(x_collapsed)
+    labels_collapsed = lut[codes]
+
+    # Match cluster centers using linear sum assignment
+    cost = np.linalg.norm(km_full.cluster_centers_[:, None] - km_collapsed.cluster_centers_[None, :], axis=2)
+    row_ind, col_ind = linear_sum_assignment(cost)
+    assert np.allclose(km_full.cluster_centers_[row_ind], km_collapsed.cluster_centers_[col_ind], atol=1e-5)
+    assert np.isclose(km_full.inertia_, km_collapsed.inertia_, rtol=1e-5)
+
+    # Check that labels match under cluster permutation
+    perm_map = {col: row for row, col in zip(row_ind, col_ind)}
+    mapped_collapsed = np.vectorize(perm_map.get)(labels_collapsed)
+    assert np.array_equal(labels_full, mapped_collapsed)
+
+
 # --- standalone runner -----------------------------------------------------
 
 def main():

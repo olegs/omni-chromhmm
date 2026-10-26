@@ -1,5 +1,6 @@
 import gzip
 import os
+import subprocess
 import tempfile
 import numpy as np
 import pandas as pd
@@ -318,3 +319,60 @@ def test_binarization_mark_combinations_and_plot():
             [ds], tmpdir, summary_out, cells={ds: cell}
         )
         assert os.path.exists(summary_out)
+
+
+def test_read_chrom_sizes_robustness():
+    import peaks_segmentation
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        chromsizes_path = os.path.join(tmpdir, "test.chrom.sizes")
+        with open(chromsizes_path, "w") as f:
+            f.write("# comment line\n")
+            f.write("chr1\t1000\n")
+            f.write("chr2\t2000a\n")
+            f.write("chr3_random\t500\n")
+            f.write("chr4   4000\n")
+
+        chroms, sizes = peaks_segmentation.read_chrom_sizes(chromsizes_path)
+        assert chroms == ["chr1", "chr2", "chr4"]
+        assert sizes == {"chr1": 1000, "chr2": 2000, "chr4": 4000}
+        assert all(isinstance(v, int) for v in sizes.values())
+
+
+def test_peaks_segmentation_kmeans():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cs_path = os.path.join(tmpdir, "chrom.sizes")
+        with open(cs_path, "w") as f:
+            f.write("chr1\t1000\nchr2\t1000\n")
+
+        p_m1 = os.path.join(tmpdir, "p_m1.bed")
+        p_m2 = os.path.join(tmpdir, "p_m2.bed")
+
+        with open(p_m1, "w") as f:
+            f.write("chr1\t0\t200\nchr2\t100\t400\n")
+        with open(p_m2, "w") as f:
+            f.write("chr1\t100\t300\nchr2\t200\t500\n")
+
+        outbed = os.path.join(tmpdir, "out_kmeans.bed")
+
+        cmd = [
+            sys.executable,
+            os.path.join(os.path.dirname(__file__), "..", "scripts", "rules", "peaks_segmentation.py"),
+            "--bin", "100",
+            "--chromsizes", cs_path,
+            "--marks", "H3K4me3,H3K27ac",
+            "--peaks", p_m1, p_m2,
+            "--states", "3",
+            "--out", outbed,
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        assert res.returncode == 0, f"Error: {res.stderr}"
+        assert os.path.exists(outbed)
+        with open(outbed) as f:
+            lines = f.readlines()
+        assert len(lines) > 0
+        for line in lines:
+            parts = line.strip().split("\t")
+            assert len(parts) == 9
+            assert parts[0] in ["chr1", "chr2"]
+            assert parts[3].startswith("E")

@@ -12,11 +12,14 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "analysis"))
 from bernoulli import (BernoulliMixture, DEFAULT_SPATIAL_BINS,
                        sparse_spatial_histogram, spatial_pattern_labels,
-                       to_pattern_codes)
+                       to_pattern_codes, pattern_rows)
 
 def read_chrom_sizes(path):
-    df = pd.read_csv(path, sep='\t', header=None, names=['chrom', 'size'])
+    df = pd.read_csv(path, sep=r'\s+', header=None, comment='#', names=['chrom', 'size'])
     df = df[~df['chrom'].str.contains('_')]
+    df['size'] = pd.to_numeric(df['size'].astype(str).str.extract(r'(\d+)', expand=False), errors='coerce')
+    df = df.dropna(subset=['chrom', 'size'])
+    df['size'] = df['size'].astype(int)
     return df['chrom'].tolist(), df.set_index('chrom')['size'].to_dict()
 
 def binarize_peaks(peak_files_groups, chroms, sizes, bin_size, marks):
@@ -25,7 +28,7 @@ def binarize_peaks(peak_files_groups, chroms, sizes, bin_size, marks):
     """
     num_marks = len(marks)
     # Pre-allocate single matrix for better memory efficiency
-    chrom_bins = {chrom: (sizes[chrom] + bin_size - 1) // bin_size for chrom in chroms}
+    chrom_bins = {chrom: (int(sizes[chrom]) + bin_size - 1) // bin_size for chrom in chroms}
     total_bins = sum(chrom_bins.values())
     
     # Use uint8 for binary data
@@ -130,6 +133,15 @@ def main():
         print("States <= 0, skipping clustering.", file=sys.stderr)
         return
         
+    n_marks = len(marks)
+    slices = []
+    offset = 0
+    for chrom, data in per_chrom:
+        slices.append((chrom, offset, offset + data.shape[0]))
+        offset += data.shape[0]
+
+    codes = to_pattern_codes(data_matrix)
+
     if args.mixture:
         bins = args.spatial_bins
         window = "" if bins == 1 else f"{bins}-bin spatial "
@@ -141,14 +153,6 @@ def main():
         # SAGAconf dataset - so only the patterns the track shows are counted
         # and scored.  Neighbours never cross a chromosome boundary, hence one
         # slice per chromosome.
-        n_marks = len(marks)
-        slices = []
-        offset = 0
-        for chrom, data in per_chrom:
-            slices.append((chrom, offset, offset + data.shape[0]))
-            offset += data.shape[0]
-
-        codes = to_pattern_codes(data_matrix)
         patterns, counts = sparse_spatial_histogram(codes, slices, n_marks, bins=bins)
         print(f"  {len(patterns)} distinct spatial patterns", file=sys.stderr)
         means, weights, _ = BernoulliMixture(
@@ -160,10 +164,23 @@ def main():
                                         bins=bins)
     else:
         print(f"Fitting KMeans with {args.states} states...", file=sys.stderr)
+        # Binarized data has at most 2^n_marks unique rows. Collapsing them
+        # into a weighted pattern table makes the fit independent of the
+        # number of bins.
+        patterns, counts = sparse_spatial_histogram(codes, slices, n_marks, bins=1)
+        print(f"  {len(patterns)} distinct patterns", file=sys.stderr)
+        x_collapsed = pattern_rows(n_marks, patterns)
         model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
-        model.fit(data_matrix)
+        model.fit(x_collapsed, sample_weight=counts)
+
         print("Generating labels...", file=sys.stderr)
-        labels = model.predict(data_matrix)
+        pattern_labels = model.predict(x_collapsed)
+        if n_marks <= 24:
+            lut = np.zeros(1 << n_marks, dtype=np.int8)
+            lut[patterns] = pattern_labels
+            labels = lut[codes]
+        else:
+            labels = pattern_labels[np.searchsorted(patterns, codes)]
     
     print("Generating BED output...", file=sys.stderr)
     out_f = open(args.out, "w") if args.out else sys.stdout

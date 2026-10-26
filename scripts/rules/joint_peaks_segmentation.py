@@ -138,9 +138,16 @@ def main():
         # into a weighted pattern table makes the fit independent of the
         # number of bins.
         patterns, counts = sparse_spatial_histogram(X, slices, num_marks, bins=1)
+        print(f"  {len(patterns)} distinct patterns", file=sys.stderr)
         x_collapsed = pattern_rows(num_marks, patterns)
         model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
         model.fit(x_collapsed, sample_weight=counts)
+        pattern_labels = model.predict(x_collapsed)
+        if num_marks <= 24:
+            lut = np.zeros(1 << num_marks, dtype=np.int8)
+            lut[patterns] = pattern_labels
+        else:
+            lut = None
     
     if args.outdir:
         print(f"Generating BED outputs in {args.outdir}...", file=sys.stderr)
@@ -171,12 +178,15 @@ def main():
             out_path = os.path.join(args.outdir, f"{cell}_{suffix}_joint_states.bed")
         print(f"Writing {out_path}...", file=sys.stderr)
 
-        # The mixture labelled every cell already; KMeans predicts one
-        # cell at a time to save memory.
+        # The mixture labelled every cell already; KMeans uses fast pattern lookup.
         if args.mixture:
             cell_labels = joint_labels[offset : offset + total_bins_per_cell]
         else:
-            cell_labels = model.predict(X[offset : offset + total_bins_per_cell])
+            cell_codes = to_pattern_codes(X[offset : offset + total_bins_per_cell])
+            if lut is not None:
+                cell_labels = lut[cell_codes]
+            else:
+                cell_labels = pattern_labels[np.searchsorted(patterns, cell_codes)]
             
         with open(out_path, "w") as out_f:
             cell_offset = 0
