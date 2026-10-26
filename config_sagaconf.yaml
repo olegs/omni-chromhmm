@@ -19,6 +19,7 @@ params:
   genome: "hg38"
   replicates: true      # process per-replicate folders (rep1/rep2) for datasets that have them
   replicates_only: true # process replicates only
+  chromhmm: false       # run ChromHMM-based binarization and segmentation
   homer: false          # run HOMER-based binarization and segmentation
   macs2: false          # run MACS2-based binarization and segmentation
   omnipeak: false       # run OmniPeak-based binarization and segmentation

@@ -53,6 +53,7 @@ def _flag(key, default=True):
 
 DO_REPLICATES = _flag("replicates")
 DO_REPLICATES_ONLY = _flag("replicates_only", default=False)
+DO_CHROMHMM = _flag("chromhmm")
 DO_OMNIPEAK = _flag("omnipeak")
 DO_HOMER = _flag("homer")
 DO_MACS2 = _flag("macs2")
@@ -247,12 +248,13 @@ def all_results(ds):
         t.append(f"{ds}/atac_{cfg['atac']}.bed.gz")
 
     for folder in _folders(ds):
-        if cfg.get("ref_chromhmm"):
-            t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_matched.bed")
-        else:
-            t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense.bed")
-        for mark in marks:
-            t.append(f"{folder}/chromhmm_default_result/{mark}.bed")
+        if DO_CHROMHMM:
+            if cfg.get("ref_chromhmm"):
+                t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense_matched.bed")
+            else:
+                t.append(f"{folder}/chromhmm_default_result/{cell}_{NSTATES}_dense.bed")
+            for mark in marks:
+                t.append(f"{folder}/chromhmm_default_result/{mark}.bed")
         for caller in CALLERS:
             if cfg.get("ref_chromhmm"):
                 t.append(f"{folder}/{caller}/{caller}_kmeans_states_matched.bed")

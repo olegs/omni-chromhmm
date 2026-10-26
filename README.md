@@ -58,7 +58,7 @@ for ds in imr90 monocytes monocytes_mint gm12878_mint spleen \
   snakemake -p $ds/.done --use-conda --cores all --directory $(pwd) \
   --snakefile $REPO/Snakefile \
   --configfile $REPO/config_encode.yaml \
-  --config homer=True macs2=True omnipeak=True \
+  --config chromhmm=True homer=True macs2=True omnipeak=True \
   bw_emissions=True bin_emissions=True \
   --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 \
   --keep-going --rerun-incomplete --rerun-trigger mtime;
@@ -91,7 +91,7 @@ mkdir -p ~/data/2026_segmentations/encode
 cd ~/data/2026_segmentations/encode
 
 REPO=~/work/omni-chromhmm
-for ds in imr90 monocytes adrenal_gland; do
+for ds in imr90 monocytes spleen; do
   snakemake -p \
     $ds/bams_chr1/{H3K4me3,H3K27ac,H3K4me1,H3K36me3,H3K9me3,H3K27me3}.bam \
     $ds/controls_chr1/{H3K4me3,H3K27ac,H3K4me1,H3K36me3,H3K9me3,H3K27me3}.bam \
@@ -112,9 +112,9 @@ segmented (KMeans, BMM3, ChromHMM LearnModel) and matched to the chr1 ENCODE ref
 ```bash
 cd ~/data/2026_segmentations/encode
 REPO=~/work/omni-chromhmm
-for ds in imr90 monocytes monocytes_mint gm12878_mint spleen \
- heart_right_ventricle sigmoid_colon adrenal_gland tibial_nerve \
- heart_left_ventricle substantia_nigra temporal_lobe; do
+for ds in gm12878_mint monocytes_mint imr90 monocytes spleen \
+  heart_right_ventricle neurosphere sigmoid_colon adrenal_gland thyroid_gland \
+  uterus tibial_nerve heart_left_ventricle substantia_nigra temporal_lobe; do
   snakemake -p $ds/functional_chr1_sweep/.done \
   --use-conda --cores all --directory $(pwd) \
   --snakefile $REPO/Snakefile \
@@ -161,7 +161,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   snakemake -p $ds/.done --use-conda --cores all --directory $(pwd) \
   --snakefile $REPO/Snakefile \
   --configfile $REPO/config_sagaconf.yaml \
-  --config homer=True macs2=True omnipeak=True \
+  --config chromhmm=True homer=True macs2=True omnipeak=True \
   --resources homer_tagdir=1 merge_bam=1 disk_mb=10000 mem_mb=32000 \
   --keep-going --rerun-incomplete --rerun-trigger mtime;
 done
