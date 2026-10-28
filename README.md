@@ -1,9 +1,8 @@
 # Omni ChromHMM
 
 Snakemake pipeline comparing default ChromHMM against peak-caller-based
-binarization (HOMER, MACS2, Omnipeak), with ChromHMM LearnModel, KMeans
-clustering and a Bernoulli mixture (BMM2, which reads a bin together with its
-predecessor) applied on top of each peak-caller binarization.
+binarization (HOMER, MACS2, Omnipeak), with ChromHMM LearnModel and KMeans
+clustering applied on top of each peak-caller binarization.
 All peak callers support both with control and without control settings, 
 so the pipeline works on datasets that lack matched input BAMs.
 
@@ -19,7 +18,7 @@ to produce 15-state segmentation. Per-mark BED files are extracted from the bina
 Repeated per replicate when available.
 
 4. **Omnipeak** (`rules/omni.smk`) -- control-free peak calling in pooled/per-replicate modes;
-peaks converted to ChromHMM binary matrices. Three segmentations per mode: ChromHMM LearnModel, KMeans and BMM2.
+peaks converted to ChromHMM binary matrices. Segmentations per mode: ChromHMM LearnModel and KMeans.
 
 5. **Homer** (`rules/homer.smk`) -- parallel control-free peak caller via `makeTagDirectory` +
 `findPeaks -style histone`. Feeds the same downstream binarization / segmentation machinery
@@ -106,7 +105,7 @@ done
 
 Significance threshold sweep on the chr1 BAMs for the functional ROC analysis (`functional.ipynb`):
 OmniPeak `--fdr`, MACS2 `-q`, HOMER `-fdr` and ChromHMM `BinarizeBam -p`, each threshold
-segmented (KMeans, BMM3, ChromHMM LearnModel) and matched to the chr1 ENCODE reference
+segmented (KMeans, ChromHMM LearnModel) and matched to the chr1 ENCODE reference
 (`rules/functional.smk`, thresholds in `functional_sweep` of `config_encode.yaml`):
 
 ```bash
@@ -184,7 +183,7 @@ bash process_sagaconf.sh
    the evidence table behind them.
 5. Launch `match.ipynb` to analyze matching strategies and their qualities.
 6. Launch `parameters.ipynb` to analyze the variation of ChromHMM results by different parameters.
-7. Launch `states.ipynb` to analyze the optimal number of parameters by using TME, Silhoutte, Elbow and BIC methods.
+7. Launch `states.ipynb` to analyze the optimal number of states by using TME, Silhouette and Elbow methods.
 
 ## Questions?
 Contact Oleg Shpynov (oleg.shpynov@jetbrains.com).

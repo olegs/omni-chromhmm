@@ -258,10 +258,8 @@ def all_results(ds):
         for caller in CALLERS:
             if cfg.get("ref_chromhmm"):
                 t.append(f"{folder}/{caller}/{caller}_kmeans_states_matched.bed")
-                t.append(f"{folder}/{caller}/{caller}_bmm3_states_matched.bed")
             else:
                 t.append(f"{folder}/{caller}/{caller}_kmeans_states.bed")
-                t.append(f"{folder}/{caller}/{caller}_bmm3_states.bed")
 
     # Per-state matching matrix (heatmap) produced alongside every matched BED.
     t += [f.replace("_matched.bed", "_matched.match.png")

@@ -7,17 +7,11 @@ import numpy as np
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 
-# Add analysis dir to path to import bernoulli
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "analysis"))
-from bernoulli import (BernoulliMixture, DEFAULT_SPATIAL_BINS,
-                       sparse_spatial_histogram, spatial_pattern_labels,
-                       to_pattern_codes, pattern_rows)
-
-
 # Add current directory to path to import peaks_segmentation
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from peaks_segmentation import read_chrom_sizes, segments_from_labels
+from peaks_segmentation import (read_chrom_sizes, segments_from_labels,
+                                to_pattern_codes, pattern_rows)
 
 def main():
     parser = argparse.ArgumentParser(description="Joint KMeans clustering across multiple cells.")
@@ -30,13 +24,7 @@ def main():
     parser.add_argument("--states", type=int, default=15, help="Number of KMeans states")
     parser.add_argument("--outdir", default=None, help="Output directory for BED files")
     parser.add_argument("--outbeds", nargs="+", default=None, help="Explicit output BED file paths, matching order of cells")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for KMeans/BMM")
-    parser.add_argument("--mixture", action="store_true", help="Use the Bernoulli Mixture Model instead of KMeans; it reads --spatial-bins bins per observation")
-    parser.add_argument("--spatial-bins", type=int, default=DEFAULT_SPATIAL_BINS,
-                        choices=(1, 2, 3),
-                        help="Bins a mixture observation spans: 1 the bin itself, "
-                             "2 the previous bin and itself, "
-                             "3 (default, BMM3) also the next one")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for KMeans")
     args = parser.parse_args()
     
     marks = args.marks.split(",")
@@ -99,55 +87,22 @@ def main():
         
     print(f"Total joint data size: {X.nbytes / 1024**2:.2f} MB", file=sys.stderr)
     
-    # Calculate slices for chromosome-by-chromosome processing
-    slices = []
-    for i in range(num_cells):
-        block_offset = i * total_bins_per_cell
-        for chrom in chroms:
-            c_info = chrom_info_dict[chrom]
-            off = block_offset + c_info['offset']
-            slices.append((chrom, off, off + c_info['bins']))
-
-    if args.mixture:
-        bins = args.spatial_bins
-        window = "" if bins == 1 else f"{bins}-bin spatial "
-        print(f"Fitting joint {window}Bernoulli Mixture with {args.states} states...",
-              file=sys.stderr)
-        # The mixture reads a bin together with its neighbours, so it is fitted
-        # on the spatial patterns of the track rather than on its rows: the
-        # vocabulary is 2^(bins * marks) wide - 2^26 at the 13 marks of a
-        # SAGAconf dataset - so only the patterns the tracks show are counted
-        # and scored.  One slice per chromosome, and per cell when the cells
-        # are concatenated rows: no bin of a cell ever neighbours another's,
-        # and counting the slices together is the sum over the cells.
-
-        patterns, counts = sparse_spatial_histogram(X, slices, num_marks, bins=bins)
-        print(f"  {len(patterns)} distinct spatial patterns", file=sys.stderr)
-        means, weights, _ = BernoulliMixture(
-            n_components=args.states, random_state=args.seed, n_init=10
-        ).fit_patterns(patterns, counts, bins * num_marks)
-
-        # One int8 per bin, and the annotation is blocked, so the whole joint
-        # track is labelled at once and every cell reads its own rows off it.
-        print("Generating labels...", file=sys.stderr)
-        joint_labels = spatial_pattern_labels(means, weights, X, slices,
-                                              num_marks, bins=bins)
+    codes = to_pattern_codes(X)
+    print(f"Fitting joint KMeans with {args.states} states...", file=sys.stderr)
+    # Binarized data has at most 2^num_marks unique rows. Collapsing them
+    # into a weighted pattern table makes the fit independent of the
+    # number of bins.
+    patterns, counts = np.unique(codes, return_counts=True)
+    print(f"  {len(patterns)} distinct patterns", file=sys.stderr)
+    x_collapsed = pattern_rows(num_marks, patterns)
+    model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
+    model.fit(x_collapsed, sample_weight=counts)
+    pattern_labels = model.predict(x_collapsed)
+    if num_marks <= 24:
+        lut = np.zeros(1 << num_marks, dtype=np.int8)
+        lut[patterns] = pattern_labels
     else:
-        print(f"Fitting joint KMeans with {args.states} states...", file=sys.stderr)
-        # Binarized data has at most 2^num_marks unique rows. Collapsing them
-        # into a weighted pattern table makes the fit independent of the
-        # number of bins.
-        patterns, counts = sparse_spatial_histogram(X, slices, num_marks, bins=1)
-        print(f"  {len(patterns)} distinct patterns", file=sys.stderr)
-        x_collapsed = pattern_rows(num_marks, patterns)
-        model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
-        model.fit(x_collapsed, sample_weight=counts)
-        pattern_labels = model.predict(x_collapsed)
-        if num_marks <= 24:
-            lut = np.zeros(1 << num_marks, dtype=np.int8)
-            lut[patterns] = pattern_labels
-        else:
-            lut = None
+        lut = None
     
     if args.outdir:
         print(f"Generating BED outputs in {args.outdir}...", file=sys.stderr)
@@ -155,12 +110,7 @@ def main():
     else:
         print(f"Generating BED outputs...", file=sys.stderr)
 
-    # The model the file names carry: bmm3 for the 3-bin spatial mixture the
-    # pipeline fits, bmm for a bin's own marks.
-    if args.mixture:
-        suffix = "bmm" if args.spatial_bins == 1 else f"bmm{args.spatial_bins}"
-    else:
-        suffix = "kmeans"
+    suffix = "kmeans"
     
     # Prepare colors (consistent with an individual script)
     cmap = plt.get_cmap("tab20")
@@ -178,15 +128,11 @@ def main():
             out_path = os.path.join(args.outdir, f"{cell}_{suffix}_joint_states.bed")
         print(f"Writing {out_path}...", file=sys.stderr)
 
-        # The mixture labelled every cell already; KMeans uses fast pattern lookup.
-        if args.mixture:
-            cell_labels = joint_labels[offset : offset + total_bins_per_cell]
+        cell_codes = codes[offset : offset + total_bins_per_cell]
+        if lut is not None:
+            cell_labels = lut[cell_codes]
         else:
-            cell_codes = to_pattern_codes(X[offset : offset + total_bins_per_cell])
-            if lut is not None:
-                cell_labels = lut[cell_codes]
-            else:
-                cell_labels = pattern_labels[np.searchsorted(patterns, cell_codes)]
+            cell_labels = pattern_labels[np.searchsorted(patterns, cell_codes)]
             
         with open(out_path, "w") as out_f:
             cell_offset = 0

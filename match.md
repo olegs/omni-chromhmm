@@ -2,7 +2,7 @@
 
 ## 1. Objective
 
-De novo chromatin state models (ChromHMM, K-means, Bernoulli mixtures) learn states with arbitrary identifiers ($E_1, \dots, E_K$). To compare methods and interpret states, each learned state is mapped to a reference label (e.g. the ENCODE 15-state model: `Tss`, `TssFlnk`, `Tx`, `TxWk`, `EnhG`, `Enh`, `ZNF/Rpts`, `Het`, `Biv`, `ReprPC`, `Quies`, ...).
+De novo chromatin state models (ChromHMM, K-means) learn states with arbitrary identifiers ($E_1, \dots, E_K$). To compare methods and interpret states, each learned state is mapped to a reference label (e.g. the ENCODE 15-state model: `Tss`, `TssFlnk`, `Tx`, `TxWk`, `EnhG`, `Enh`, `ZNF/Rpts`, `Het`, `Biv`, `ReprPC`, `Quies`, ...).
 
 `scripts/rules/match.py` (invoked via `rules/match.smk`, `match.sh` and the `process_*.sh` scripts) solves this as a one-to-one assignment between work states and reference states.
 

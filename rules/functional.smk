@@ -8,13 +8,13 @@
 #   - MACS2 -q (broad marks: -q q --broad-cutoff 2q, the pipeline's 0.05 / 0.1)
 #   - HOMER findPeaks -style histone -fdr, one tag directory per BAM
 #   - ChromHMM BinarizeBam -p, then joint 15-state LearnModel across p-values
-# Every peak caller is trained jointly across thresholds with KMeans and BMM3.
+# Every peak caller is trained jointly across thresholds with KMeans.
 # All segmentations of each method are collectively matched to the chr1 part
 # of the ENCODE reference by match.py.
 #
 # Layout under {ds}/functional_chr1_sweep/:
 #   {caller}/{thr}/{mark}.bed|.peak         peaks of one threshold
-#   {caller}/{thr}/{caller}_{model}_states_matched.bed
+#   {caller}/{thr}/{caller}_kmeans_states_matched.bed
 #   chromhmm_default/{thr}/model/{cell}_15_dense_matched.bed
 #
 # Run (e.g. imr90): snakemake imr90/functional_chr1_sweep/.done --use-conda ...
@@ -57,9 +57,8 @@ def functional_results(ds):
     cell = DATASETS[ds]["cell"]
     t = [f"{ds}/{FSWEEP}/chromhmm_default/{p}/model/{cell}_{NSTATES}_dense_matched.bed"
          for p in FUNCTIONAL_PVALUES]
-    t += [f"{ds}/{FSWEEP}/{caller}/{thr}/{caller}_{model}_states_matched.bed"
-          for caller in FUNCTIONAL_CALLERS for thr in FUNCTIONAL_THRESHOLDS
-          for model in ("kmeans", "bmm3")]
+    t += [f"{ds}/{FSWEEP}/{caller}/{thr}/{caller}_kmeans_states_matched.bed"
+          for caller in FUNCTIONAL_CALLERS for thr in FUNCTIONAL_THRESHOLDS]
     return t
 
 
@@ -317,18 +316,17 @@ rule functional_binarize_peaks:
 
 
 rule functional_joint_segmentation:
-    """Joint KMeans or BMM3 across all swept thresholds for one peak caller."""
+    """Joint KMeans across all swept thresholds for one peak caller."""
     input:
         peaks=lambda w: [functional_peak_file(w.ds, w.caller, thr, m)
                          for thr in FUNCTIONAL_THRESHOLDS for m in get_marks(w.ds)],
         cs=f"{{ds}}/{FSWEEP}/{FCHROM}.chrom.sizes",
     output:
-        beds=[f"{{ds}}/{FSWEEP}/{{caller}}/{thr}/{{caller}}_{{model}}_states.bed"
+        beds=[f"{{ds}}/{FSWEEP}/{{caller}}/{thr}/{{caller}}_kmeans_states.bed"
               for thr in FUNCTIONAL_THRESHOLDS],
     wildcard_constraints:
         caller=r"omni|macs2|homer",
-        model=r"kmeans|bmm3",
-    log: f"{{ds}}/{FSWEEP}/{{caller}}/{{caller}}_{{model}}_joint_states.log"
+    log: f"{{ds}}/{FSWEEP}/{{caller}}/{{caller}}_kmeans_joint_states.log"
     conda: "../envs/python.yaml"
     resources: mem_mb=8000
     params:
@@ -336,31 +334,29 @@ rule functional_joint_segmentation:
         marks=lambda w: ",".join(get_marks(w.ds)),
         cells=",".join(FUNCTIONAL_THRESHOLDS),
         n=NSTATES,
-        mixture=lambda w: "--mixture --spatial-bins 3" if w.model == "bmm3" else "",
     shell:
         "python {SCRIPTS_DIR}/joint_peaks_segmentation.py "
         "--bin {params.bin} --chromsizes {input.cs} --marks {params.marks} "
         "--cells {params.cells} --peaks {input.peaks} --states {params.n} "
-        "--outbeds {output.beds} {params.mixture} "
+        "--outbeds {output.beds} "
         "> {log} 2>&1"
 
 
 rule functional_match_caller:
-    """Collective matching of all swept segmentations for one caller and model."""
+    """Collective matching of all swept segmentations for one caller."""
     input:
         ref=lambda w: functional_ref_bed(w.ds),
-        work=lambda w: [f"{w.ds}/{FSWEEP}/{w.caller}/{thr}/{w.caller}_{w.model}_states.bed"
+        work=lambda w: [f"{w.ds}/{FSWEEP}/{w.caller}/{thr}/{w.caller}_kmeans_states.bed"
                         for thr in FUNCTIONAL_THRESHOLDS],
     output:
-        beds=[f"{{ds}}/{FSWEEP}/{{caller}}/{thr}/{{caller}}_{{model}}_states_matched.bed"
+        beds=[f"{{ds}}/{FSWEEP}/{{caller}}/{thr}/{{caller}}_kmeans_states_matched.bed"
               for thr in FUNCTIONAL_THRESHOLDS],
     wildcard_constraints:
         caller=r"omni|macs2|homer",
-        model=r"kmeans|bmm3",
-    log: f"{{ds}}/{FSWEEP}/{{caller}}/{{caller}}_{{model}}_joint_match.log"
+    log: f"{{ds}}/{FSWEEP}/{{caller}}/{{caller}}_kmeans_joint_match.log"
     conda: "../envs/python.yaml"
     params:
-        matrix_prefix=lambda w: f"{w.ds}/{FSWEEP}/{w.caller}/{w.caller}_{w.model}_joint_matched.match",
+        matrix_prefix=lambda w: f"{w.ds}/{FSWEEP}/{w.caller}/{w.caller}_kmeans_joint_matched.match",
     shell:
         "python {SCRIPTS_DIR}/match.py --ref {input.ref} --work {input.work} --out {output.beds} "
         "--matrix-out {params.matrix_prefix} > {log} 2>&1"

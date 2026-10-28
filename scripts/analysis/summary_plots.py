@@ -29,9 +29,7 @@ from utils import (METHOD_ORDER, DISPLAY_NAMES, BIN_COLORS, METHOD_INFO,
                    is_joint, is_replicate, JOINT_HATCH,
                    CHROMHMM_DEFAULT, CHROMHMM_HOMER, CHROMHMM_MACS2, CHROMHMM_OMNI,
                    KMEANS_HOMER, KMEANS_MACS2, KMEANS_OMNI,
-                   BMM3_HOMER, BMM3_MACS2, BMM3_OMNI,
                    JOINT_CHROMHMM, JOINT_KMEANS_HOMER, JOINT_KMEANS_MACS2, JOINT_KMEANS_OMNI,
-                   JOINT_BMM3_HOMER, JOINT_BMM3_MACS2, JOINT_BMM3_OMNI,
                    display_name,
                    COMPOSITION, JACCARD, KAPPA,
                    AMI_DISPLAY, COMPOSITION_DISPLAY, JACCARD_DISPLAY, KAPPA_DISPLAY,
@@ -147,16 +145,10 @@ INTER_DS_METHODS = group_methods([
     (KMEANS_MACS2,     DISPLAY_NAMES[KMEANS_MACS2],       method_color(KMEANS_MACS2)),
     (CHROMHMM_OMNI,    DISPLAY_NAMES[CHROMHMM_OMNI],    method_color(CHROMHMM_OMNI)),
     (KMEANS_OMNI,      DISPLAY_NAMES[KMEANS_OMNI],      method_color(KMEANS_OMNI)),
-    (BMM3_HOMER,        DISPLAY_NAMES[BMM3_HOMER],        method_color(BMM3_HOMER)),
-    (BMM3_MACS2,        DISPLAY_NAMES[BMM3_MACS2],        method_color(BMM3_MACS2)),
-    (BMM3_OMNI,         DISPLAY_NAMES[BMM3_OMNI],         method_color(BMM3_OMNI)),
     (JOINT_CHROMHMM,   DISPLAY_NAMES[JOINT_CHROMHMM],   method_color(JOINT_CHROMHMM)),
     (JOINT_KMEANS_HOMER, DISPLAY_NAMES[JOINT_KMEANS_HOMER], method_color(JOINT_KMEANS_HOMER)),
     (JOINT_KMEANS_MACS2, DISPLAY_NAMES[JOINT_KMEANS_MACS2], method_color(JOINT_KMEANS_MACS2)),
     (JOINT_KMEANS_OMNI,  DISPLAY_NAMES[JOINT_KMEANS_OMNI],  method_color(JOINT_KMEANS_OMNI)),
-    (JOINT_BMM3_HOMER,  DISPLAY_NAMES[JOINT_BMM3_HOMER],  method_color(JOINT_BMM3_HOMER)),
-    (JOINT_BMM3_MACS2,  DISPLAY_NAMES[JOINT_BMM3_MACS2],  method_color(JOINT_BMM3_MACS2)),
-    (JOINT_BMM3_OMNI,   DISPLAY_NAMES[JOINT_BMM3_OMNI],   method_color(JOINT_BMM3_OMNI)),
 ], key=lambda item: item[0])
 METHOD_PALETTE = {label: color for _, label, color in INTER_DS_METHODS}
 
@@ -249,16 +241,10 @@ def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method):
         CHROMHMM_OMNI:    root / "omni"  / f"omni_chromhmm_states_{sfx}.bed",
         CHROMHMM_HOMER:   root / "homer" / f"homer_chromhmm_states_{sfx}.bed",
         CHROMHMM_MACS2:   root / "macs2" / f"macs2_chromhmm_states_{sfx}.bed",
-        BMM3_OMNI:         root / "omni"  / f"omni_bmm3_states_{sfx}.bed",
-        BMM3_HOMER:        root / "homer" / f"homer_bmm3_states_{sfx}.bed",
-        BMM3_MACS2:        root / "macs2" / f"macs2_bmm3_states_{sfx}.bed",
         JOINT_CHROMHMM:   root / JOINT_CHROMHMM / f"rep1_{nstates}_dense_{sfx}.bed",
         JOINT_KMEANS_OMNI:  root / "joint_kmeans" / "omni"  / f"rep1_kmeans_joint_states_{sfx}.bed",
         JOINT_KMEANS_HOMER: root / "joint_kmeans" / "homer" / f"rep1_kmeans_joint_states_{sfx}.bed",
         JOINT_KMEANS_MACS2: root / "joint_kmeans" / "macs2" / f"rep1_kmeans_joint_states_{sfx}.bed",
-        JOINT_BMM3_OMNI:     root / "joint_bmm3" / "omni"  / f"rep1_bmm3_joint_states_{sfx}.bed",
-        JOINT_BMM3_HOMER:    root / "joint_bmm3" / "homer" / f"rep1_bmm3_joint_states_{sfx}.bed",
-        JOINT_BMM3_MACS2:    root / "joint_bmm3" / "macs2" / f"rep1_bmm3_joint_states_{sfx}.bed",
     }
     return mapping[method_key]
 
@@ -759,13 +745,10 @@ _SAMPLE_TO_INFO = {
     CHROMHMM_DEFAULT: (DISPLAY_NAMES[CHROMHMM_DEFAULT],  "default"),
     CHROMHMM_OMNI:    (DISPLAY_NAMES[CHROMHMM_OMNI], "omnipeak"),
     KMEANS_OMNI:      (DISPLAY_NAMES[KMEANS_OMNI],   "omnipeak"),
-    BMM3_OMNI:         (DISPLAY_NAMES[BMM3_OMNI],      "omnipeak"),
     CHROMHMM_HOMER:   (DISPLAY_NAMES[CHROMHMM_HOMER],    "homer"),
     KMEANS_HOMER:     (DISPLAY_NAMES[KMEANS_HOMER],      "homer"),
-    BMM3_HOMER:        (DISPLAY_NAMES[BMM3_HOMER],       "homer"),
     CHROMHMM_MACS2:   (DISPLAY_NAMES[CHROMHMM_MACS2],    "macs2"),
     KMEANS_MACS2:     (DISPLAY_NAMES[KMEANS_MACS2],      "macs2"),
-    BMM3_MACS2:        (DISPLAY_NAMES[BMM3_MACS2],       "macs2"),
 }
 
 
@@ -1856,13 +1839,10 @@ def _run_summary_plots(args):
             (CHROMHMM_DEFAULT, DISPLAY_NAMES[CHROMHMM_DEFAULT]),
             (CHROMHMM_OMNI,    DISPLAY_NAMES[CHROMHMM_OMNI]),
             (KMEANS_OMNI,      DISPLAY_NAMES[KMEANS_OMNI]),
-            (BMM3_OMNI,        DISPLAY_NAMES[BMM3_OMNI]),
             (CHROMHMM_HOMER,   DISPLAY_NAMES[CHROMHMM_HOMER]),
             (KMEANS_HOMER,     DISPLAY_NAMES[KMEANS_HOMER]),
-            (BMM3_HOMER,       DISPLAY_NAMES[BMM3_HOMER]),
             (CHROMHMM_MACS2,   DISPLAY_NAMES[CHROMHMM_MACS2]),
             (KMEANS_MACS2,     DISPLAY_NAMES[KMEANS_MACS2]),
-            (BMM3_MACS2,       DISPLAY_NAMES[BMM3_MACS2]),
         ]
         for method_key, method_label in _supp_methods:
             outfile = os.path.join(args.method_ds_composition_outdir,

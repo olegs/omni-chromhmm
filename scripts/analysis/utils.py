@@ -197,37 +197,23 @@ CHROMHMM_OMNI = "chromhmm_omni"
 KMEANS_HOMER = "kmeans_homer"
 KMEANS_MACS2 = "kmeans_macs2"
 KMEANS_OMNI = "kmeans_omni"
-KMEANS3_OMNI = "kmeans3_omni"
-
-# The mixture arm of the pipeline: BMM3, the Bernoulli mixture over a bin, its
-# predecessor and its successor. No segmentation on disk is fitted with the
-# plain window (a bin's own marks) or the 2-bin one.
-BMM3_HOMER = "bmm3_homer"
-BMM3_MACS2 = "bmm3_macs2"
-BMM3_OMNI = "bmm3_omni"
-BMM_HOMER = "bmm_homer"
-BMM_MACS2 = "bmm_macs2"
-BMM_OMNI = "bmm_omni"
 
 JOINT_CHROMHMM = "joint_chromhmm"
 JOINT_KMEANS_HOMER = "joint_kmeans_homer"
 JOINT_KMEANS_MACS2 = "joint_kmeans_macs2"
 JOINT_KMEANS_OMNI = "joint_kmeans_omni"
-JOINT_BMM3_HOMER = "joint_bmm3_homer"
-JOINT_BMM3_MACS2 = "joint_bmm3_macs2"
-JOINT_BMM3_OMNI = "joint_bmm3_omni"
 
 CALLER_KEYS = {
-    CHROMHMM: (CHROMHMM_DEFAULT, JOINT_CHROMHMM, CHROMHMM_DEFAULT, JOINT_CHROMHMM),
-    HOMER:    (KMEANS_HOMER,    JOINT_KMEANS_HOMER, BMM3_HOMER, JOINT_BMM3_HOMER),
-    MACS2:    (KMEANS_MACS2,    JOINT_KMEANS_MACS2, BMM3_MACS2, JOINT_BMM3_MACS2),
-    OMNI:     (KMEANS_OMNI,     JOINT_KMEANS_OMNI,  BMM3_OMNI,  JOINT_BMM3_OMNI),
+    CHROMHMM: (CHROMHMM_DEFAULT, JOINT_CHROMHMM),
+    HOMER:    (KMEANS_HOMER,    JOINT_KMEANS_HOMER),
+    MACS2:    (KMEANS_MACS2,    JOINT_KMEANS_MACS2),
+    OMNI:     (KMEANS_OMNI,     JOINT_KMEANS_OMNI),
 }
 
 
-def method_key(caller, joint=False, mixture=False):
+def method_key(caller, joint=False):
     """Canonical key of a caller's model: its individual one, or its joint one."""
-    idx = (2 if mixture else 0) + (1 if joint else 0)
+    idx = 1 if joint else 0
     return CALLER_KEYS[caller][idx]
 
 
@@ -241,38 +227,22 @@ METHOD_ORDER = [
     JOINT_CHROMHMM,
     # HOMER
     KMEANS_HOMER,
-    BMM3_HOMER,
-    BMM_HOMER,
     JOINT_KMEANS_HOMER,
-    JOINT_BMM3_HOMER,
     # MACS2
     KMEANS_MACS2,
-    BMM3_MACS2,
-    BMM_MACS2,
     JOINT_KMEANS_MACS2,
-    JOINT_BMM3_MACS2,
     # OmniPeak
     KMEANS_OMNI,
-    BMM3_OMNI,
-    BMM_OMNI,
-    KMEANS3_OMNI,
     JOINT_KMEANS_OMNI,
-    JOINT_BMM3_OMNI,
     # Replicates
     f"{CHROMHMM_DEFAULT}_rep1",
     f"{KMEANS_HOMER}_rep1",
-    f"{BMM3_HOMER}_rep1",
     f"{KMEANS_MACS2}_rep1",
-    f"{BMM3_MACS2}_rep1",
     f"{KMEANS_OMNI}_rep1",
-    f"{BMM3_OMNI}_rep1",
     f"{CHROMHMM_DEFAULT}_rep2",
     f"{KMEANS_HOMER}_rep2",
-    f"{BMM3_HOMER}_rep2",
     f"{KMEANS_MACS2}_rep2",
-    f"{BMM3_MACS2}_rep2",
     f"{KMEANS_OMNI}_rep2",
-    f"{BMM3_OMNI}_rep2",
 ]
 
 METHOD_IDX = {m: i for i, m in enumerate(METHOD_ORDER)}
@@ -287,34 +257,18 @@ DISPLAY_NAMES = {
     KMEANS_OMNI:           "OmniPeak KMeans",
     KMEANS_HOMER:          "Homer KMeans",
     KMEANS_MACS2:          "MACS2 KMeans",
-    BMM3_OMNI:             "OmniPeak BMM3",
-    BMM3_HOMER:            "Homer BMM3",
-    BMM3_MACS2:            "MACS2 BMM3",
-    BMM_OMNI:              "OmniPeak BMM",
-    BMM_HOMER:             "Homer BMM",
-    BMM_MACS2:             "MACS2 BMM",
-    KMEANS3_OMNI:          "OmniPeak KMeans3",
     JOINT_CHROMHMM:        "Joint ChromHMM",
     JOINT_KMEANS_OMNI:     "Joint OmniPeak KMeans",
     JOINT_KMEANS_HOMER:    "Joint Homer KMeans",
     JOINT_KMEANS_MACS2:    "Joint MACS2 KMeans",
-    JOINT_BMM3_OMNI:       "Joint OmniPeak BMM3",
-    JOINT_BMM3_HOMER:      "Joint Homer BMM3",
-    JOINT_BMM3_MACS2:      "Joint MACS2 BMM3",
     f"{CHROMHMM_DEFAULT}_rep1": "Default ChromHMM (rep1)",
     f"{KMEANS_OMNI}_rep1":      "OmniPeak KMeans (rep1)",
     f"{KMEANS_HOMER}_rep1":     "Homer KMeans (rep1)",
     f"{KMEANS_MACS2}_rep1":     "MACS2 KMeans (rep1)",
-    f"{BMM3_OMNI}_rep1":        "OmniPeak BMM3 (rep1)",
-    f"{BMM3_HOMER}_rep1":       "Homer BMM3 (rep1)",
-    f"{BMM3_MACS2}_rep1":       "MACS2 BMM3 (rep1)",
     f"{CHROMHMM_DEFAULT}_rep2": "Default ChromHMM (rep2)",
     f"{KMEANS_OMNI}_rep2":      "OmniPeak KMeans (rep2)",
     f"{KMEANS_HOMER}_rep2":     "Homer KMeans (rep2)",
     f"{KMEANS_MACS2}_rep2":     "MACS2 KMeans (rep2)",
-    f"{BMM3_OMNI}_rep2":        "OmniPeak BMM3 (rep2)",
-    f"{BMM3_HOMER}_rep2":       "Homer BMM3 (rep2)",
-    f"{BMM3_MACS2}_rep2":       "MACS2 BMM3 (rep2)",
     "ref_15":                   "Ref 15",
     "joint_ref_15":             "Joint Ref 15",
 }
@@ -334,30 +288,13 @@ def normalize_method(name):
     is_joint = name.startswith("joint_")
     if is_joint:
         name = name[len("joint_"):]
-    is_mixture = False
-    if name.startswith("kmeans3_"):
-        name = name[len("kmeans3_"):]
-    elif name.startswith("kmeans_"):
+    if name.startswith("kmeans_"):
         name = name[len("kmeans_"):]
-    elif name.endswith("_kmeans3"):
-        name = name[:-len("_kmeans3")]
     elif name.endswith("_kmeans"):
         name = name[:-len("_kmeans")]
-    elif name.startswith("bmm3_"):
-        name = name[len("bmm3_"):]
-        is_mixture = True
-    elif name.endswith("_bmm3"):
-        name = name[:-len("_bmm3")]
-        is_mixture = True
-    elif name.startswith("bmm_"):
-        name = name[len("bmm_"):]
-        is_mixture = True
-    elif name.endswith("_bmm"):
-        name = name[:-len("_bmm")]
-        is_mixture = True
 
     if name in (HOMER, MACS2, OMNI):
-        return method_key(name, joint=is_joint, mixture=is_mixture)
+        return method_key(name, joint=is_joint)
     return None
 
 def normalize_state_name(name):
@@ -615,10 +552,6 @@ def parse_method(name):
         binarization = core[2] if len(core) > 2 else "default"
         if binarization == "omni": binarization = "omnipeak"
         return binarization, "joint_kmeans", rep
-    if name.startswith("joint_bmm"):
-        binarization = core[2] if len(core) > 2 else "default"
-        if binarization == "omni": binarization = "omnipeak"
-        return binarization, "joint_bmm", rep
 
     state_model = core[0]
     binarization_key = core[1] if len(core) > 1 else ""
@@ -687,16 +620,8 @@ def seg_label(path):
 
     if "kmeans_states" in basename:
         model = f"kmeans_{caller}" if caller else "kmeans"
-    elif "bmm3_states" in basename:
-        model = f"bmm3_{caller}" if caller else "bmm3"
-    elif "bmm_states" in basename:
-        model = f"bmm_{caller}" if caller else "bmm"
     elif "joint_kmeans" in parts or "joint_kmeans" in basename:
         model = f"joint_kmeans_{caller}" if caller else "joint_kmeans"
-    elif "joint_bmm3" in parts or "joint_bmm3" in basename:
-        model = f"joint_bmm3_{caller}" if caller else "joint_bmm3"
-    elif "joint_bmm" in parts or "joint_bmm" in basename:
-        model = f"joint_bmm_{caller}" if caller else "joint_bmm"
     elif "joint_chromhmm" in parts or "joint_chromhmm" in basename:
         model = "joint_chromhmm"
     elif "chromhmm_default_result" in parts:

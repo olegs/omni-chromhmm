@@ -88,7 +88,7 @@ DATASETS=(
   temporal_lobe
 )
 
-# 1. Joint KMeans and BMM3 across sweep thresholds
+# 1. Joint KMeans across sweep thresholds
 for ds in "${DATASETS[@]}"
 do
   echo "========================================"
@@ -110,9 +110,7 @@ do
 
     ALL_PEAKS=()
     KMEANS_BEDS=()
-    BMM3_BEDS=()
     KMEANS_MATCHED=()
-    BMM3_MATCHED=()
 
     for thr in "${THRESHOLDS[@]}"
     do
@@ -130,9 +128,7 @@ do
         ALL_PEAKS+=("$P")
       done
       KMEANS_BEDS+=("$FSWEEP/$PC/$thr/${PC}_kmeans_states.bed")
-      BMM3_BEDS+=("$FSWEEP/$PC/$thr/${PC}_bmm3_states.bed")
       KMEANS_MATCHED+=("$FSWEEP/$PC/$thr/${PC}_kmeans_states_matched.bed")
-      BMM3_MATCHED+=("$FSWEEP/$PC/$thr/${PC}_bmm3_states_matched.bed")
     done
 
     echo "Running joint KMeans for $PC across sweep thresholds..."
@@ -141,21 +137,10 @@ do
       --cells "$JOINED_THRESHOLDS" --peaks "${ALL_PEAKS[@]}" --states "$STATES" \
       --outbeds "${KMEANS_BEDS[@]}"
 
-    echo "Running joint BMM3 for $PC across sweep thresholds..."
-    python "$ROOT/scripts/rules/joint_peaks_segmentation.py" \
-      --bin "$BIN" --chromsizes "$CHROMSIZES" --marks "$MARKS_LIST" \
-      --cells "$JOINED_THRESHOLDS" --peaks "${ALL_PEAKS[@]}" --states "$STATES" \
-      --outbeds "${BMM3_BEDS[@]}" --mixture --spatial-bins 3
-
     echo "Collective matching for $PC KMeans across sweep thresholds..."
     python "$ROOT/scripts/rules/match.py" --ref "$REF" \
       --work "${KMEANS_BEDS[@]}" --out "${KMEANS_MATCHED[@]}" \
       --matrix-out "$FSWEEP/$PC/${PC}_kmeans_joint_matched.match"
-
-    echo "Collective matching for $PC BMM3 across sweep thresholds..."
-    python "$ROOT/scripts/rules/match.py" --ref "$REF" \
-      --work "${BMM3_BEDS[@]}" --out "${BMM3_MATCHED[@]}" \
-      --matrix-out "$FSWEEP/$PC/${PC}_bmm3_joint_matched.match"
   done
 
   # 2. Joint ChromHMM across sweep p-values

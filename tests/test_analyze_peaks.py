@@ -376,3 +376,52 @@ def test_peaks_segmentation_kmeans():
             assert len(parts) == 9
             assert parts[0] in ["chr1", "chr2"]
             assert parts[3].startswith("E")
+
+
+def test_joint_peaks_segmentation_kmeans():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cs_path = os.path.join(tmpdir, "chrom.sizes")
+        with open(cs_path, "w") as f:
+            f.write("chr1\t1000\nchr2\t1000\n")
+
+        p_c1_m1 = os.path.join(tmpdir, "p_c1_m1.bed")
+        p_c1_m2 = os.path.join(tmpdir, "p_c1_m2.bed")
+        p_c2_m1 = os.path.join(tmpdir, "p_c2_m1.bed")
+        p_c2_m2 = os.path.join(tmpdir, "p_c2_m2.bed")
+
+        with open(p_c1_m1, "w") as f:
+            f.write("chr1\t0\t200\nchr2\t100\t400\n")
+        with open(p_c1_m2, "w") as f:
+            f.write("chr1\t100\t300\nchr2\t200\t500\n")
+        with open(p_c2_m1, "w") as f:
+            f.write("chr1\t50\t250\nchr2\t150\t450\n")
+        with open(p_c2_m2, "w") as f:
+            f.write("chr1\t150\t350\nchr2\t250\t550\n")
+
+        outbed1 = os.path.join(tmpdir, "c1_kmeans.bed")
+        outbed2 = os.path.join(tmpdir, "c2_kmeans.bed")
+
+        cmd = [
+            sys.executable,
+            os.path.join(os.path.dirname(__file__), "..", "scripts", "rules", "joint_peaks_segmentation.py"),
+            "--bin", "100",
+            "--chromsizes", cs_path,
+            "--marks", "H3K4me3,H3K27ac",
+            "--cells", "c1,c2",
+            "--peaks", p_c1_m1, p_c1_m2, p_c2_m1, p_c2_m2,
+            "--states", "3",
+            "--outbeds", outbed1, outbed2,
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        assert res.returncode == 0, f"Error: {res.stderr}"
+        assert os.path.exists(outbed1)
+        assert os.path.exists(outbed2)
+        for outbed in [outbed1, outbed2]:
+            with open(outbed) as f:
+                lines = f.readlines()
+            assert len(lines) > 0
+            for line in lines:
+                parts = line.strip().split("\t")
+                assert len(parts) == 9
+                assert parts[0] in ["chr1", "chr2"]
+                assert parts[3].startswith("E")
