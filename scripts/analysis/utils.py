@@ -390,8 +390,6 @@ FUNCTIONAL_TARGETS = (
      ACTIVE_OPEN_STATES, "atac_"),
     ("functional_tss", "Core Tss states vs expressed TSS",
      PROMOTER_CORE_STATES, "ExpressedTSS2kb"),
-    ("functional_refseq_tss", "Core Tss states vs RefSeq TSS",
-     PROMOTER_CORE_STATES, "RefSeqTSS2kb"),
     ("functional_tx", "Tx states vs expressed gene bodies",
      TX_STATES, "ExpressedGeneBodies"),
 )

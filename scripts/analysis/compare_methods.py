@@ -244,8 +244,6 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
 
         row["enrich_Tx_RefSeqGene"] = _get_val(enrichment, "Tx", "RefSeqGene.hg38")
         row["enrich_Tx_ExpressedGeneBodies"] = _get_val(enrichment, "Tx", "ExpressedGeneBodies")
-        for suffix in ("2kb",):
-            row[f"enrich_Tss_RefSeqTSS{suffix}"] = _get_val(enrichment, "Tss", f"RefSeqTSS{suffix}.hg38")
         row["enrich_Enh1_ExpressedTSS"] = _get_val(enrichment, "Enh1", "ExpressedTSS")
 
         # Functional validation: a state family pooled against an annotation,
@@ -301,7 +299,6 @@ def build_table(analysis_dir, comparison_dir, ref_dir=None):
             (utils.is_active_open, "ExpressedTSS", "Active_ExpressedTSS"),
         ]
         for suffix in ("2kb",):
-            val_targets.append((utils.is_promoter_core, f"RefSeqTSS{suffix}.hg38", f"Tss_RefSeqTSS{suffix}"))
             val_targets.append((utils.is_promoter_core, f"ExpressedTSS{suffix}", f"Tss_ExpressedTSS{suffix}"))
 
         for check_fn, ann_name, col_prefix in val_targets:
@@ -401,12 +398,6 @@ def plot_comparison(df, outdir):
         ("median_Tx_length",               "Median Tx (transcription) segment length"),
         ("mean_Tx_length",                 "Mean Tx (transcription) segment length"),
     ]
-    # RefSeq TSS validation (±2kb window by default).
-    plot_targets.extend([
-        ("enrich_Tss_RefSeqTSS2kb",      "Tss enrichment at RefSeq TSS", "enrich_Tss_RefSeqTSS"),
-        ("sensitivity_Tss_RefSeqTSS2kb", "Tss bp overlap at RefSeq TSS", "sensitivity_Tss_RefSeqTSS"),
-        ("coverage_Tss_RefSeqTSS2kb",    "Tss bp overlap by RefSeq TSS", "coverage_Tss_RefSeqTSS"),
-    ])
 
     for col_info in plot_targets:
         if len(col_info) == 3:

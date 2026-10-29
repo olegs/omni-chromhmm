@@ -186,3 +186,173 @@ def test_2way_scatter_labels(tmp_path, monkeypatch):
     assert os.path.exists(outfile)
     assert captured_labels["xlabel"] == "Expressed gene bodies bp overlap (Sensitivity, %)"
     assert captured_labels["ylabel"] == "Tx state bp overlap (Precision, %)"
+
+
+def test_plot_composition_with_functional_sweep_fallback(tmp_path):
+    ds_dir = tmp_path / "ds1"
+    sweep_dir = ds_dir / "functional_chr1_sweep"
+    chromhmm_dir = sweep_dir / "chromhmm_default" / "0.0001" / "model"
+    chromhmm_dir.mkdir(parents=True)
+    bed_path = chromhmm_dir / "Cell1_15_dense_matched.bed"
+    with open(bed_path, "w") as f:
+        f.write("chr1\t0\t1000\tTss\t0\t.\t0\t1000\t255,0,0\n")
+        f.write("chr1\t1000\t5000\tQuies\t0\t.\t1000\t5000\t220,220,220\n")
+
+    ref_path = sweep_dir / "ENCFF001_chromhmm_chr1.bed"
+    with open(ref_path, "w") as f:
+        f.write("chr1\t0\t1000\tTss\t0\t.\t0\t1000\t255,0,0\n")
+        f.write("chr1\t1000\t5000\tQuies\t0\t.\t1000\t5000\t220,220,220\n")
+
+    outdir = str(tmp_path / "out")
+    summary_plots.run_summary_plots(
+        datasets=["ds1"],
+        cells=["Cell1"],
+        workdir=str(tmp_path),
+        ref_paths=[str(ref_path)],
+        ref_labels=["Cell1"],
+        methods=summary_plots.INTER_DS_METHODS,
+        nstates=15,
+        match_method="matched",
+        ref_composition_outfile=os.path.join(outdir, "ref_comp.pdf"),
+        method_ds_composition_outdir=outdir,
+        all_methods_composition_outdir=outdir,
+        method_composition_outfile=os.path.join(outdir, "method_comp.pdf"),
+    )
+    assert os.path.exists(os.path.join(outdir, "ref_comp.pdf"))
+    assert os.path.exists(os.path.join(outdir, "method_ds_composition_chromhmm_default.pdf"))
+    assert os.path.exists(os.path.join(outdir, "ds_composition_ds1.pdf"))
+    assert os.path.exists(os.path.join(outdir, "method_comp.pdf"))
+
+
+def test_plot_sweep_composition(tmp_path):
+    ds_dir = tmp_path / "ds1"
+    sweep_dir = ds_dir / "functional_chr1_sweep"
+    chromhmm_dir = sweep_dir / "chromhmm_default" / "0.0001" / "model"
+    chromhmm_dir.mkdir(parents=True)
+    bed_path = chromhmm_dir / "Cell1_15_dense_matched.bed"
+    with open(bed_path, "w") as f:
+        f.write("chr1\t0\t1000\tTss\t0\t.\t0\t1000\t255,0,0\n")
+        f.write("chr1\t1000\t5000\tQuies\t0\t.\t1000\t5000\t220,220,220\n")
+
+    omni_dir = sweep_dir / "omni" / "0.05"
+    omni_dir.mkdir(parents=True)
+    bed_omni = omni_dir / "omni_kmeans_states_matched.bed"
+    with open(bed_omni, "w") as f:
+        f.write("chr1\t0\t1000\tTss\t0\t.\t0\t1000\t255,0,0\n")
+        f.write("chr1\t1000\t5000\tQuies\t0\t.\t1000\t5000\t220,220,220\n")
+
+    outdir = tmp_path / "out"
+    outdir.mkdir()
+    single_out = str(outdir / "sweep_comp_chromhmm.pdf")
+    summary_plots.plot_sweep_composition(
+        datasets=["ds1"],
+        cells=["Cell1"],
+        workdir=str(tmp_path),
+        nstates=15,
+        method_key="chromhmm_default",
+        method_label="Default ChromHMM",
+        thresholds=[0.0001],
+        outfile=single_out,
+    )
+    assert os.path.exists(single_out)
+
+    multi_out = str(outdir / "sweep_comp_all.pdf")
+    summary_plots.plot_all_methods_sweep_composition(
+        datasets=["ds1"],
+        cells=["Cell1"],
+        workdir=str(tmp_path),
+        nstates=15,
+        methods_config=[
+            ("chromhmm_default", "Default ChromHMM", [0.0001]),
+            ("kmeans_omni", "OmniPeak KMeans", [0.05]),
+        ],
+        outfile=multi_out,
+    )
+    assert os.path.exists(multi_out)
+
+
+def test_summary_ranking_and_benchmarks(tmp_path):
+    import json
+    import pandas as pd
+    import numpy as np
+    with open("summary.ipynb") as f:
+        nb = json.load(f)
+
+    env = {}
+    for i in [2, 3, 4, 13, 17, 18, 19]:
+        exec("".join(nb["cells"][i]["source"]), env)
+
+    df_evidence = pd.DataFrame([
+        {"Method": "reference", "Axis": "replicates", "Dataset": "encode", "Cell": "encode:pooled", "Value": 0.5, "score": 0.5},
+        {"Method": "chromhmm_default", "Axis": "replicates", "Dataset": "encode", "Cell": "encode:pooled", "Value": 0.8, "score": 1.0},
+        {"Method": "kmeans_omni", "Axis": "replicates", "Dataset": "encode", "Cell": "encode:pooled", "Value": 0.6, "score": 0.0},
+        {"Method": "chromhmm_default", "Axis": "entropy", "Dataset": "encode", "Cell": "encode:pooled", "Value": 0.2, "score": 0.0},
+        {"Method": "kmeans_omni", "Axis": "entropy", "Dataset": "encode", "Cell": "encode:pooled", "Value": 0.05, "score": 1.0},
+    ])
+
+    table_scores = env["axis_scores"](df_evidence)
+    axis_feats = env["axis_features"](df_evidence)
+    # entropy favors lower values, so it must be flipped (1 - value)
+    assert np.isclose(axis_feats.loc["chromhmm_default", "entropy"], 0.8)
+    assert np.isclose(axis_feats.loc["kmeans_omni", "entropy"], 0.95)
+    # replicates favors higher values, so it remains unchanged
+    assert np.isclose(axis_feats.loc["chromhmm_default", "replicates"], 0.8)
+    assert np.isclose(axis_feats.loc["kmeans_omni", "replicates"], 0.6)
+
+    # 1) Rank scores based summary ranking
+    ranking_indiv = env["summary_ranking"](df_evidence, [env["REFERENCE"], "chromhmm_default", "kmeans_omni"], table_scores)
+    # ENCODE reference must be excluded
+    assert env["REFERENCE"] not in ranking_indiv.index
+    # chromhmm_default: (1.0 * 2 + 0.0 * 1) / 3 = 2/3
+    # kmeans_omni: (0.0 * 2 + 1.0 * 1) / 3 = 1/3
+    assert np.isclose(ranking_indiv.loc["chromhmm_default", "Score"], 2.0 / 3.0)
+    assert np.isclose(ranking_indiv.loc["kmeans_omni", "Score"], 1.0 / 3.0)
+
+    # 2) Feature based summary ranking (benchmarks)
+    benchmarks_indiv = env["summary_ranking"](df_evidence, [env["REFERENCE"], "chromhmm_default", "kmeans_omni"], axis_feats)
+    # ENCODE reference must be excluded
+    assert env["REFERENCE"] not in benchmarks_indiv.index
+    # chromhmm_default: (0.8 * 2 + 0.8 * 1) / 3 = 0.8
+    # kmeans_omni: (0.6 * 2 + 0.95 * 1) / 3 = 2.15 / 3
+    assert np.isclose(benchmarks_indiv.loc["chromhmm_default", "Score"], 0.80)
+    assert np.isclose(benchmarks_indiv.loc["kmeans_omni", "Score"], 2.15 / 3.0)
+
+    # Output figures verification
+    out_rank_indiv = str(tmp_path / "ranking_all_individual.pdf")
+    env["plot_ranking"](ranking_indiv, table_scores, "individual", out_rank_indiv, xlabel="Summary rank score")
+    assert os.path.exists(out_rank_indiv)
+
+    out_rank_joint = str(tmp_path / "ranking_all_joint.pdf")
+    env["plot_ranking"](ranking_indiv, table_scores, "joint", out_rank_joint, xlabel="Summary rank score")
+    assert os.path.exists(out_rank_joint)
+
+    out_bench_indiv = str(tmp_path / "benchmarks_all_individual.pdf")
+    env["plot_ranking"](benchmarks_indiv, axis_feats, "individual", out_bench_indiv, xlabel="Summary score")
+    assert os.path.exists(out_bench_indiv)
+
+    out_bench_joint = str(tmp_path / "benchmarks_all_joint.pdf")
+    env["plot_ranking"](benchmarks_indiv, axis_feats, "joint", out_bench_joint, xlabel="Summary score")
+    assert os.path.exists(out_bench_joint)
+
+
+def test_plot_replicate_family_heatmaps(tmp_path):
+    import json
+    import pandas as pd
+    with open("summary.ipynb") as f:
+        nb = json.load(f)
+
+    env = {}
+    for i in [2, 3, 4, 7, 8, 9, 10, 18]:
+        exec("".join(nb["cells"][i]["source"]), env)
+
+    df_families = pd.DataFrame([
+        {"Dataset": "encode", "Method": "chromhmm_default", "Metric": "Jaccard", "Family": "Promoter", "Value": 0.8},
+        {"Dataset": "encode", "Method": "kmeans_omni", "Metric": "Jaccard", "Family": "Promoter", "Value": 0.6},
+        {"Dataset": "encode", "Method": "chromhmm_default", "Metric": "Kappa", "Family": "Promoter", "Value": 0.7},
+        {"Dataset": "encode", "Method": "kmeans_omni", "Metric": "Kappa", "Family": "Promoter", "Value": 0.5},
+    ])
+    written = env["plot_replicate_family_heatmaps"](df_families, str(tmp_path))
+    assert "agreement_replicates_per_state_families_jaccard.pdf" in written
+    assert "agreement_replicates_per_state_families_kappa.pdf" in written
+    assert os.path.exists(tmp_path / "agreement_replicates_per_state_families_jaccard.pdf")
+    assert os.path.exists(tmp_path / "agreement_replicates_per_state_families_kappa.pdf")

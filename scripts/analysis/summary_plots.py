@@ -246,7 +246,30 @@ def ds_method_bed(workdir, ds, cell, nstates, method_key, match_method):
         JOINT_KMEANS_HOMER: root / "joint_kmeans" / "homer" / f"rep1_kmeans_joint_states_{sfx}.bed",
         JOINT_KMEANS_MACS2: root / "joint_kmeans" / "macs2" / f"rep1_kmeans_joint_states_{sfx}.bed",
     }
-    return mapping[method_key]
+    path = mapping[method_key]
+    if not path.exists():
+        sweep_fallback = {
+            CHROMHMM_DEFAULT: [
+                root / "functional_chr1_sweep" / "chromhmm_default" / "0.0001" / "model" / f"{cell}_{nstates}_dense_{sfx}.bed",
+                root / "functional_chr1_sweep" / "chromhmm_default" / "0.0001" / "model" / f"{cell}_{nstates}_dense_matched.bed",
+            ],
+            KMEANS_OMNI: [
+                root / "functional_chr1_sweep" / "omni" / "0.05" / f"omni_kmeans_states_{sfx}.bed",
+                root / "functional_chr1_sweep" / "omni" / "0.05" / "omni_kmeans_states_matched.bed",
+            ],
+            KMEANS_HOMER: [
+                root / "functional_chr1_sweep" / "homer" / "0.001" / f"homer_kmeans_states_{sfx}.bed",
+                root / "functional_chr1_sweep" / "homer" / "0.001" / "homer_kmeans_states_matched.bed",
+            ],
+            KMEANS_MACS2: [
+                root / "functional_chr1_sweep" / "macs2" / "0.05" / f"macs2_kmeans_states_{sfx}.bed",
+                root / "functional_chr1_sweep" / "macs2" / "0.05" / "macs2_kmeans_states_matched.bed",
+            ],
+        }
+        for cand in sweep_fallback.get(method_key, []):
+            if cand.exists():
+                return cand
+    return path
 
 
 def ref_beds(markups_dir=None, ref_paths=None):
@@ -1108,7 +1131,7 @@ def _stacked_composition_chart(coverages, labels, title, outfile,
 
 def _plot_reference_composition(markups_dir, outfile, ref_paths=None, ref_labels=None):
     """Stacked bar chart: state fraction per ENCODE reference segmentation."""
-    beds = ref_beds(markups_dir, ref_paths=ref_paths)
+    beds = [str(p) for p in ref_paths] if ref_paths else ref_beds(markups_dir)
     if not beds:
         print(f"  skipping {outfile}: no reference beds", file=sys.stderr)
         return
@@ -1242,6 +1265,162 @@ def _plot_per_dataset_method_composition(datasets, cells, workdir, nstates,
         coverages, labels_out,
         f"State composition — {method_label} (per dataset)",
         outfile, label_fontsize=TICK_FONTSIZE,
+    )
+
+
+def _plot_sweep_composition(datasets, cells, workdir, nstates,
+                            method_key, method_label, thresholds, outfile,
+                            match_method="matched", title=None):
+    """Stacked bar chart: state fraction across parameter sweep thresholds for a single method, averaged across datasets."""
+    def _fracs_from_path(path):
+        p = Path(path)
+        if not p.exists():
+            return {}
+        df = load_bed_df(str(p))[["state", "length"]]
+        totals = df.groupby("state")["length"].sum()
+        total_bp = totals.sum()
+        return (totals / total_bp).to_dict() if total_bp > 0 else {}
+
+    coverages = {}
+    labels_out = []
+    for th in thresholds:
+        th_str = f"{th:g}"
+        per_ds = []
+        for ds, cell in zip(datasets, cells):
+            root = Path(workdir) / ds / "functional_chr1_sweep"
+            if method_key == CHROMHMM_DEFAULT:
+                bed = root / "chromhmm_default" / f"{th:g}" / "model" / f"{cell}_{nstates}_dense_{match_method}.bed"
+            else:
+                caller = method_key.replace("kmeans_", "")
+                bed = root / caller / f"{th:g}" / f"{caller}_kmeans_states_{match_method}.bed"
+            if bed.exists():
+                fracs = _fracs_from_path(bed)
+                if fracs:
+                    per_ds.append(fracs)
+        if per_ds:
+            all_states = set().union(*[d.keys() for d in per_ds])
+            mean_fracs = {s: float(np.mean([d.get(s, 0.0) for d in per_ds])) for s in all_states}
+            coverages[th_str] = mean_fracs
+            labels_out.append(th_str)
+
+    if not coverages:
+        print(f"  skipping {outfile}: no sweep data for method {method_key}", file=sys.stderr)
+        return
+
+    _stacked_composition_chart(
+        coverages, labels_out,
+        title or f"State composition along parameter sweep — {method_label} (mean across datasets)",
+        outfile, label_fontsize=TICK_FONTSIZE,
+    )
+
+
+def plot_sweep_composition(datasets, cells, workdir, nstates,
+                           method_key, method_label, thresholds, outfile,
+                           match_method="matched", title=None):
+    return _plot_sweep_composition(
+        datasets, cells, workdir, nstates,
+        method_key, method_label, thresholds, outfile,
+        match_method=match_method, title=title,
+    )
+
+
+def _plot_all_methods_sweep_composition(datasets, cells, workdir, nstates,
+                                        methods_config, outfile,
+                                        match_method="matched", title=None):
+    """Multi-panel stacked bar chart: state fraction across sweep thresholds for each method."""
+    def _fracs_from_path(path):
+        p = Path(path)
+        if not p.exists():
+            return {}
+        df = load_bed_df(str(p))[["state", "length"]]
+        totals = df.groupby("state")["length"].sum()
+        total_bp = totals.sum()
+        return (totals / total_bp).to_dict() if total_bp > 0 else {}
+
+    all_states = set()
+    method_data = []
+
+    for method_key, method_label, thresholds in methods_config:
+        coverages = {}
+        labels_out = []
+        for th in thresholds:
+            th_str = f"{th:g}"
+            per_ds = []
+            for ds, cell in zip(datasets, cells):
+                root = Path(workdir) / ds / "functional_chr1_sweep"
+                if method_key == CHROMHMM_DEFAULT:
+                    bed = root / "chromhmm_default" / f"{th:g}" / "model" / f"{cell}_{nstates}_dense_{match_method}.bed"
+                else:
+                    caller = method_key.replace("kmeans_", "")
+                    bed = root / caller / f"{th:g}" / f"{caller}_kmeans_states_{match_method}.bed"
+                if bed.exists():
+                    fracs = _fracs_from_path(bed)
+                    if fracs:
+                        per_ds.append(fracs)
+            if per_ds:
+                m_states = set().union(*[d.keys() for d in per_ds])
+                all_states.update(m_states)
+                mean_fracs = {s: float(np.mean([d.get(s, 0.0) for d in per_ds])) for s in m_states}
+                coverages[th_str] = mean_fracs
+                labels_out.append(th_str)
+        if coverages:
+            method_data.append((method_key, method_label, coverages, labels_out))
+
+    if not method_data:
+        print(f"  skipping {outfile}: no sweep data", file=sys.stderr)
+        return
+
+    states = sort_states(all_states)
+    state_colors = state_palette(states)
+
+    n_methods = len(method_data)
+    fig, axes = plt.subplots(1, n_methods, figsize=(5.5 * n_methods, 5), sharey=True, squeeze=False)
+
+    for i, (m_key, m_label, coverages, labels) in enumerate(method_data):
+        ax = axes[0, i]
+        widen_bars(ax)
+        x = np.arange(len(labels))
+        bottom = np.zeros(len(labels))
+
+        norm_coverages = {}
+        for lbl in labels:
+            fracs = coverages[lbl]
+            total = sum(fracs.get(st, 0.0) for st in states)
+            norm_coverages[lbl] = {st: fracs.get(st, 0.0) / total for st in states} if total > 0 else {st: 0.0 for st in states}
+
+        for s in states:
+            vals = np.array([norm_coverages[lbl].get(s, 0.0) for lbl in labels])
+            ax.bar(x, vals, bottom=bottom, label=s, color=state_colors[s], edgecolor='none', width=0.8)
+            bottom += vals
+
+        ax.bar(x, bottom, color='none', edgecolor=BAR_STYLE['edgecolor'],
+               linewidth=BAR_STYLE['linewidth'], width=0.8, label='_nolegend_')
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, fontsize=TICK_FONTSIZE, rotation=45, ha='right')
+        ax.tick_params(axis='y', labelsize=TICK_FONTSIZE)
+        if i == 0:
+            ax.set_ylabel('Fraction of genome', fontsize=AXIS_FONTSIZE)
+        ax.set_ylim(0, 1)
+        ax.grid(axis='y', alpha=0.3, linewidth=0.5)
+        ax.set_title(m_label, **TITLE_STYLE)
+        ax.set_xlabel('Threshold', fontsize=AXIS_FONTSIZE)
+
+    axes[0, -1].legend(title='State', fontsize=LEGEND_FONTSIZE,
+                       title_fontsize=LEGEND_TITLE_FONTSIZE,
+                       bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0, ncol=1)
+
+    fig.suptitle(title or 'State composition along parameter sweep (mean across datasets)', **TITLE_STYLE)
+    save_fig(fig, outfile, bar_width=False)
+
+
+def plot_all_methods_sweep_composition(datasets, cells, workdir, nstates,
+                                       methods_config, outfile,
+                                       match_method="matched", title=None):
+    return _plot_all_methods_sweep_composition(
+        datasets, cells, workdir, nstates,
+        methods_config, outfile,
+        match_method=match_method, title=title,
     )
 
 
@@ -1520,15 +1699,19 @@ def _run_summary_plots(args):
         # The state-level plots (coverage, composition) always show the ENCODE
         # reference; the bar/table plots key it off "ref" instead, so a stray
         # entry here is harmless to them.
-        if "ref" not in args.methods and "ref" in methods_map:
+        req_keys = [m[0] if isinstance(m, (list, tuple)) else m for m in args.methods]
+        if "ref" not in req_keys and "ref" in methods_map:
             new_methods.append(methods_map["ref"])
         for k in args.methods:
-            if k in methods_map:
-                m = methods_map[k]
+            k_key = k[0] if isinstance(k, (list, tuple)) else k
+            if k_key in methods_map:
+                m = methods_map[k_key]
                 if isinstance(m, (list, tuple)):
                     new_methods.append(m)
                 else:
                     new_methods.append((m, m.replace("_", " ").title(), "#808080"))
+            elif isinstance(k, (list, tuple)):
+                new_methods.append(k)
             else:
                 new_methods.append((k, k.replace("_", " ").title(), "#808080"))
         INTER_DS_METHODS = new_methods
@@ -1571,32 +1754,6 @@ def _run_summary_plots(args):
                            "Tx state bp overlap (Precision, %)",
                            os.path.join(args.outdir, "summary_2way_tx.pdf"),
                            order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
-
-        # RefSeq TSS validation (±2kb window by default).
-        for suffix in ("",):
-            data = _collect_table_col(ds, mdirs, "enrich_Tss_RefSeqTSS2kb", include_ref=True)
-            _plot_summary(data, "Tss enrichment at RefSeq TSS", "Fold enrichment",
-                          os.path.join(args.outdir, f"summary_enrich_tss{suffix}.pdf"),
-                          order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
-
-            data = _collect_table_col(ds, mdirs, "sensitivity_Tss_RefSeqTSS2kb", include_ref=True) * 100.0
-            _plot_summary(data, "Tss bp overlap at RefSeq TSS", "% overlap",
-                          os.path.join(args.outdir, f"summary_sensitivity_tss{suffix}.pdf"),
-                          partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
-
-            data = _collect_table_col(ds, mdirs, "coverage_Tss_RefSeqTSS2kb", include_ref=True) * 100.0
-            _plot_summary(data, "Tss bp overlap by RefSeq TSS", "% overlap",
-                          os.path.join(args.outdir, f"summary_coverage_tss{suffix}.pdf"),
-                          partial_note=True, order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
-
-            tss_sens = _collect_table_col(ds, mdirs, "sensitivity_Tss_RefSeqTSS2kb", include_ref=True) * 100.0
-            tss_cov = _collect_table_col(ds, mdirs, "coverage_Tss_RefSeqTSS2kb", include_ref=True) * 100.0
-            _plot_2way_scatter(tss_sens, tss_cov,
-                               "Tss state validation (RefSeq TSS)",
-                               "RefSeq TSS bp overlap (Sensitivity, %)",
-                               "Tss state bp overlap (Precision, %)",
-                               os.path.join(args.outdir, f"summary_2way_tss{suffix}.pdf"),
-                               order=list(dict.fromkeys(["ref"] + METHODS_POOLED)))
 
         # Expressed TSS validation (±2kb window by default).
         for suffix in ("",):
@@ -1844,6 +2001,11 @@ def _run_summary_plots(args):
             (CHROMHMM_MACS2,   DISPLAY_NAMES[CHROMHMM_MACS2]),
             (KMEANS_MACS2,     DISPLAY_NAMES[KMEANS_MACS2]),
         ]
+        if args.methods:
+            req_keys = set(m[0] if isinstance(m, (list, tuple)) else m for m in args.methods)
+            if args.ref_paths or args.markups_dir:
+                req_keys.add("reference")
+            _supp_methods = [m for m in _supp_methods if m[0] in req_keys]
         for method_key, method_label in _supp_methods:
             outfile = os.path.join(args.method_ds_composition_outdir,
                                    f"method_ds_composition_{method_key}.pdf")
