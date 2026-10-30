@@ -536,6 +536,9 @@ BIN_COLORS = {
 
 def parse_method(name):
     """Parse a method key into (binarization, state_model, rep)."""
+    norm = normalize_method(name)
+    if norm is not None:
+        name = norm
     if name == "ref":
         return "reference", "chromhmm", None
     parts = name.split("_")
@@ -584,17 +587,29 @@ def slug(name):
     return str(name).lower().replace(" ", "_")
 
 
-def bin_color(binarization):
+def is_joint(method):
+    """True for a joint model, by key (joint_omni) or display name (Joint ...)."""
+    return "joint" in str(method).lower()
+
+
+def darken_color(color, factor=0.75):
+    """Darken a color by scaling its RGB values."""
+    rgb = mcolors.to_rgb(color)
+    return mcolors.to_hex(tuple(c * factor for c in rgb)).upper()
+
+
+def bin_color(binarization, joint=False):
     """Plot color for a binarization type; the neutral grey when unknown."""
-    return BIN_COLORS.get(binarization, BIN_COLORS["reference"])
+    color = BIN_COLORS.get(binarization, BIN_COLORS["reference"])
+    return darken_color(color) if joint else color
 
 
 def method_color(method):
+    """Plot color for a method; joint models use a darker shade of their caller's colour."""
     binarization, state_model, _ = parse_method(method)
     color = bin_color(binarization)
-    if state_model and "kmeans" in state_model.lower():
-        rgb = mcolors.to_rgb(color)
-        return mcolors.to_hex([c * 0.7 for c in rgb])
+    if is_joint(method) or (state_model and is_joint(state_model)):
+        return darken_color(color)
     return color
 
 
@@ -724,13 +739,8 @@ def strip_points(ax, jitter=0.15, size=STRIP_SIZE, dodge=True, **kwargs):
 JOINT_HATCH = "//"
 
 
-def is_joint(method):
-    """True for a joint model, by key (joint_omni) or display name (Joint ...)."""
-    return "joint" in str(method).lower()
-
-
 def hatch_joint(ax, order, joint=is_joint):
-    """Hatch the bars of the joint models, which share their caller's colour.
+    """Hatch the bars of the joint models, which use a darker shade of their caller's colour.
 
     sns.barplot draws one bar container per hue level, in hue_order order, so
     pass the same hue_order as the barplot (with x == hue, that is its order).

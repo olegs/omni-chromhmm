@@ -271,7 +271,7 @@ def test_plot_sweep_composition(tmp_path):
     assert os.path.exists(multi_out)
 
 
-def test_summary_ranking_and_benchmarks(tmp_path):
+def test_summary_ranking_and_benchmarks(tmp_path, monkeypatch):
     import json
     import pandas as pd
     import numpy as np
@@ -281,6 +281,8 @@ def test_summary_ranking_and_benchmarks(tmp_path):
     env = {}
     for i in [2, 3, 4, 13, 17, 18, 19]:
         exec("".join(nb["cells"][i]["source"]), env)
+
+    env["AXIS_WEIGHTS"] = {"replicates": 2}
 
     df_evidence = pd.DataFrame([
         {"Method": "reference", "Axis": "replicates", "Dataset": "encode", "Cell": "encode:pooled", "Value": 0.5, "score": 0.5},
@@ -318,21 +320,32 @@ def test_summary_ranking_and_benchmarks(tmp_path):
     assert np.isclose(benchmarks_indiv.loc["kmeans_omni", "Score"], 2.15 / 3.0)
 
     # Output figures verification
+    saved_titles = {}
+    orig_save_fig = env["utils"].save_fig
+    def mock_save_fig(fig, path, *args, **kwargs):
+        saved_titles[path] = fig.axes[0].get_title()
+        return orig_save_fig(fig, path, *args, **kwargs)
+    monkeypatch.setattr(env["utils"], "save_fig", mock_save_fig)
+
     out_rank_indiv = str(tmp_path / "ranking_all_individual.pdf")
     env["plot_ranking"](ranking_indiv, table_scores, "individual", out_rank_indiv, xlabel="Summary rank score")
     assert os.path.exists(out_rank_indiv)
+    assert saved_titles[out_rank_indiv] == "Summary ranks of the individual models"
 
     out_rank_joint = str(tmp_path / "ranking_all_joint.pdf")
     env["plot_ranking"](ranking_indiv, table_scores, "joint", out_rank_joint, xlabel="Summary rank score")
     assert os.path.exists(out_rank_joint)
+    assert saved_titles[out_rank_joint] == "Summary ranks of the joint models"
 
     out_bench_indiv = str(tmp_path / "benchmarks_all_individual.pdf")
     env["plot_ranking"](benchmarks_indiv, axis_feats, "individual", out_bench_indiv, xlabel="Summary score")
     assert os.path.exists(out_bench_indiv)
+    assert saved_titles[out_bench_indiv] == "Summary scores of the individual models"
 
     out_bench_joint = str(tmp_path / "benchmarks_all_joint.pdf")
     env["plot_ranking"](benchmarks_indiv, axis_feats, "joint", out_bench_joint, xlabel="Summary score")
     assert os.path.exists(out_bench_joint)
+    assert saved_titles[out_bench_joint] == "Summary scores of the joint models"
 
 
 def test_plot_replicate_family_heatmaps(tmp_path):
@@ -356,3 +369,21 @@ def test_plot_replicate_family_heatmaps(tmp_path):
     assert "agreement_replicates_per_state_families_kappa.pdf" in written
     assert os.path.exists(tmp_path / "agreement_replicates_per_state_families_jaccard.pdf")
     assert os.path.exists(tmp_path / "agreement_replicates_per_state_families_kappa.pdf")
+
+
+def test_method_color_omnipeak_kmeans_consistency():
+    import utils
+    # Individual models match their binarization colors
+    assert utils.method_color("chromhmm_omni") == utils.BIN_COLORS["omnipeak"]
+    assert utils.method_color("kmeans_omni") == utils.BIN_COLORS["omnipeak"]
+    assert utils.method_color("chromhmm_default") == utils.BIN_COLORS["default"]
+    assert utils.method_color("chromhmm_homer") == utils.BIN_COLORS["homer"]
+    assert utils.method_color("kmeans_homer") == utils.BIN_COLORS["homer"]
+    assert utils.method_color("chromhmm_macs2") == utils.BIN_COLORS["macs2"]
+    assert utils.method_color("kmeans_macs2") == utils.BIN_COLORS["macs2"]
+
+    # Joint models use darker colors
+    assert utils.method_color("joint_kmeans_omni") == utils.darken_color(utils.BIN_COLORS["omnipeak"])
+    assert utils.method_color("joint_chromhmm") == utils.darken_color(utils.BIN_COLORS["default"])
+    assert utils.method_color("joint_kmeans_homer") == utils.darken_color(utils.BIN_COLORS["homer"])
+    assert utils.method_color("joint_kmeans_macs2") == utils.darken_color(utils.BIN_COLORS["macs2"])
