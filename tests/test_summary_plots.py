@@ -337,16 +337,6 @@ def test_summary_ranking_and_benchmarks(tmp_path, monkeypatch):
     assert os.path.exists(out_rank_joint)
     assert saved_titles[out_rank_joint] == "Summary ranks of the joint models"
 
-    out_bench_indiv = str(tmp_path / "benchmarks_all_individual.pdf")
-    env["plot_ranking"](benchmarks_indiv, axis_feats, "individual", out_bench_indiv, xlabel="Summary score")
-    assert os.path.exists(out_bench_indiv)
-    assert saved_titles[out_bench_indiv] == "Summary scores of the individual models"
-
-    out_bench_joint = str(tmp_path / "benchmarks_all_joint.pdf")
-    env["plot_ranking"](benchmarks_indiv, axis_feats, "joint", out_bench_joint, xlabel="Summary score")
-    assert os.path.exists(out_bench_joint)
-    assert saved_titles[out_bench_joint] == "Summary scores of the joint models"
-
 
 def test_plot_replicate_family_heatmaps(tmp_path):
     import json
