@@ -35,7 +35,7 @@ and remapped to the matched states.
 DIR=~/data/2026_segmentations
 mkdir -p $DIR && cd $DIR 
 wget https://compbio.mit.edu/ChromHMM/ChromHMM.zip && unzip -q ChromHMM.zip
-wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.5.6815.jar
+wget https://download.jetbrains.com/biolabs/omnipeak/omnipeak-1.6.6883.jar
 ```
 
 ## Run
