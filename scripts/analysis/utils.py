@@ -1113,37 +1113,6 @@ def sample_pairs(pairs, limit=1000, seed=42):
     return sorted(random.Random(seed).sample(pairs, limit))
 
 
-def keyed_cache(path, keys, compute, label=None, valid=None, progress=None):
-    """{key: compute(key)} over *keys*, backed by a {key: value} pickle.
-
-    Only the keys the cache does not hold - or holds a value *valid* rejects -
-    are computed, and the file is rewritten only when some were, which is what
-    makes the per-sample and per-pair tables of the notebooks resumable across
-    runs. *progress* wraps the missing keys: pass tqdm to show a bar.
-    """
-    what = label or os.path.basename(path)
-    cache = {}
-    if os.path.exists(path):
-        with open(path, "rb") as f:
-            cache = pickle.load(f)
-        if valid is not None:
-            stale = [key for key, value in cache.items() if not valid(value)]
-            if stale:
-                print(f"Dropping {len(stale)} cached {what} entries that no "
-                      f"longer match the inputs")
-                for key in stale:
-                    del cache[key]
-        print(f"Loaded {len(cache)} cached {what} entries from {path}")
-    missing = [key for key in keys if key not in cache]
-    if missing:
-        print(f"Computing {what} for {len(missing)} of {len(keys)} keys...")
-        for key in (progress(missing) if progress else missing):
-            cache[key] = compute(key)
-        _save(path, lambda p: _dump_pickle(p, cache))
-        print(f"Saved {what} to {path}")
-    return {key: cache[key] for key in keys}
-
-
 # A bar is BAR_INCHES[1] wide on a chart of up to BAR_FEW bars, narrowing as
 # (n / BAR_FEW) ** -BAR_SHRINK down to BAR_INCHES[0] for the busiest ones: a
 # 4-bar and a 40-bar chart stay within 2.3x of each other in bar width

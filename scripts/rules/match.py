@@ -282,12 +282,6 @@ def _natural_sort_key(s):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s)]
 
 
-def remap_bins(bins, mapping):
-    """Apply a state mapping to a bins dict {chrom: {pos: state}}."""
-    return {chrom: {pos: mapping.get(state, state) for pos, state in positions.items()}
-            for chrom, positions in bins.items()}
-
-
 def _cosine_matrix(mat1, mat2):
     """Pairwise cosine of the rows of mat1 and mat2; 0 where a row is all zeros."""
     denom = np.outer(np.linalg.norm(mat1, axis=1), np.linalg.norm(mat2, axis=1))

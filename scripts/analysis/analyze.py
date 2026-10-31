@@ -450,14 +450,6 @@ def segmentation_stats(segs, bin_size):
             "entropy": entropy, "colors": colors}
 
 
-def segmentation_entropy(seg_path, bin_size):
-    """(entropy, state count) of the transition matrix of one segmentation."""
-    states, counts, state_bp = build_transition_matrix(load_bed(seg_path), bin_size)
-    if not states:
-        return float("nan"), 0
-    return float(transition_entropy(states, counts, state_bp)[0]), len(states)
-
-
 def save_transition_entropy(segs, bin_size, outdir):
     """Compute and save transition entropy + matrix for a single segmentation."""
     edir = os.path.join(outdir, "entropy")
@@ -770,25 +762,6 @@ def _rename_plot_label(label):
     if label.startswith(_PLOT_ANNOTATION_PREFIX):
         return "OpenChromatin ATAC"
     return label
-
-
-def _compute_overlap_bp(by_chrom, starts, ann_segs):
-    state_hit = defaultdict(int)
-    for row in ann_segs:
-        chrom, s, e = row[:3]
-        if chrom not in by_chrom:
-            continue
-        arr = by_chrom[chrom]
-        i = max(0, bisect_left(starts[chrom], s) - 1)
-        while i < len(arr) and arr[i][0] < e:
-            ss, se, st = arr[i]
-            ov = min(se, e) - max(ss, s)
-            if ov > 0:
-                state_hit[st] += ov
-            i += 1
-    return state_hit
-
-
 
 
 def compute_enrichment(segs, annotation_items):
