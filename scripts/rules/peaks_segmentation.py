@@ -144,20 +144,27 @@ def main():
 
     codes = to_pattern_codes(data_matrix)
 
-    print(f"Fitting KMeans with {args.states} states...", file=sys.stderr)
     # Binarized data has at most 2^n_marks unique rows. Collapsing them
     # into a weighted pattern table makes the fit independent of the
     # number of bins.
     patterns, counts = np.unique(codes, return_counts=True)
     print(f"  {len(patterns)} distinct patterns", file=sys.stderr)
+    if len(patterns) == 0:
+        print("No patterns found, skipping clustering.", file=sys.stderr)
+        if args.out:
+            open(args.out, "w").close()
+        return
+
+    n_states = min(args.states, len(patterns))
+    print(f"Fitting KMeans with {n_states} states...", file=sys.stderr)
     x_collapsed = pattern_rows(n_marks, patterns)
-    model = KMeans(n_clusters=args.states, init='k-means++', random_state=args.seed, n_init=10)
+    model = KMeans(n_clusters=n_states, init='k-means++', random_state=args.seed, n_init=10)
     model.fit(x_collapsed, sample_weight=counts)
 
     print("Generating labels...", file=sys.stderr)
     pattern_labels = model.predict(x_collapsed)
     if n_marks <= 24:
-        lut = np.zeros(1 << n_marks, dtype=np.int8)
+        lut = np.zeros(1 << n_marks, dtype=np.int32)
         lut[patterns] = pattern_labels
         labels = lut[codes]
     else:
@@ -169,7 +176,7 @@ def main():
     # Prepare colors
     cmap = plt.get_cmap("tab20")
     colors = []
-    for i in range(args.states):
+    for i in range(max(args.states, n_states)):
         rgb = cmap(i % 20)[:3]
         colors.append(",".join([str(int(c * 255)) for c in rgb]))
 
