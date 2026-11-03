@@ -1,4 +1,4 @@
-# Omni ChromHMM
+# Segmentations
 
 Snakemake pipeline comparing default ChromHMM against peak-caller-based
 binarization (HOMER, MACS2, Omnipeak), with ChromHMM LearnModel and KMeans
@@ -175,15 +175,11 @@ bash process_sagaconf.sh
 1. Launch `analysis_encode.ipynb` for ENCODE analysis, cross-segmentation comparison and inter-dataset summary plots.
 2. Launch `analysis_epi1000.ipynb` for analysis of the 1000 epigenomes dataset.
 3. Launch `analysis_sagaconf.ipynb` for analysis of the SAGAconf dataset.
-4. Launch `summary.ipynb` last. It recomputes nothing: it reads the metric caches the three
-   notebooks leave in their working directories, ranks the eight methods on each comparison
-   (replicate reproducibility, cross-sample concordance, individual/joint agreement, transition
-   complexity, functional correspondence, state-space fidelity, segment-count stability) and
-   writes the summary ranking and the score profiles to `out/summary`, along with
-   the evidence table behind them.
-5. Launch `match.ipynb` to analyze matching strategies and their qualities.
-6. Launch `parameters.ipynb` to analyze the variation of ChromHMM results by different parameters.
-7. Launch `states.ipynb` to analyze the optimal number of states by using TME, Silhouette and Elbow methods.
+4. Launch `match.ipynb` to analyze matching strategies and their qualities.
+5. Launch `parameters.ipynb` to analyze the variation of ChromHMM results by different parameters.
+6. Launch `states.ipynb` to analyze the optimal number of states by using TME, Silhouette and Elbow methods. 
+7. Launch `summary.ipynb` last. It recomputes nothing: it reads the metrics from other notebooks, 
+   ranks the eight methods on each comparison and writes the summary ranking and the score profiles.
 
 ## Questions?
 Contact Oleg Shpynov (oleg.shpynov@jetbrains.com).
