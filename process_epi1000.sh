@@ -11,8 +11,8 @@ cd $DIR
 
 #KMeans states preprocessing
 CHROMSIZES=hg19.chrom.sizes;
-BIN=100;
-
+CHROMHMM_BIN=200;
+PEAKS_BIN=100;
 
 
 # Prepare file names.txt - is a list with names from E001 to E120
@@ -111,8 +111,7 @@ done
 #KMeans states processing
 for E in $(cat names.txt); do echo "===================="; echo $E;
 for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
-  BIN=$(get_bin_size "$PC")
-  MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac"
+ MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac"
  PEAKS=()
  for M in H3K4me3 H3K4me1 H3K36me3 H3K9me3 H3K27me3 H3K27ac; do
   if [[ $PC == "omni" ]]; then
@@ -127,11 +126,10 @@ for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
   PEAKS+=("${P:-NONE}")
  done
  STATES=$E/$PC/${E}_${PC}_kmeans_states.bed;
- if [[ ! -f $STATES ]]; then
  echo "States (KMeans peaks)";
- python "$ROOT/scripts/rules/peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES --cell $E;
+ python "$ROOT/scripts/rules/peaks_segmentation.py" --bin $PEAKS_BIN --chromsizes $CHROMSIZES \
+ --marks $MARKS --peaks "${PEAKS[@]}" --states 15 --out $STATES --cell $E;
  echo "Done: $STATES";
- fi;
 done
 done
 
@@ -146,13 +144,13 @@ for E in $(cat names.txt); do echo $E;
   echo "$E$TAB$m$TAB$m.bed${TAB}Input.bed" >> $t/cell_mark_table.txt; 
  done 
  mkdir -p $E/chromhmm_binary;
- java -mx4000M -jar ChromHMM/ChromHMM.jar BinarizeBed hg19.chrom.sizes $t  $t/cell_mark_table.txt $E/chromhmm_binary;
- java -mx4000M -jar ChromHMM/ChromHMM.jar LearnModel $E/chromhmm_binary $E/${E}_chromhmm 15 hg19; 
+ java -mx4000M -jar ChromHMM/ChromHMM.jar BinarizeBed -b $CHROMHMM_BIN hg19.chrom.sizes $t $t/cell_mark_table.txt $E/chromhmm_binary;
+ java -mx4000M -jar ChromHMM/ChromHMM.jar LearnModel -b $CHROMHMM_BIN $E/chromhmm_binary $E/${E}_chromhmm 15 hg19; 
 done
 
 # Peaks from binarized files for ChromHMM
 for E in $(cat names.txt); do echo $E;
- python "$ROOT/scripts/rules/binarized_to_bed.py" --bin 200 --outdir $E/${E}_chromhmm  $E/chromhmm_binary/*_binary.txt;
+ python "$ROOT/scripts/rules/binarized_to_bed.py" --bin $CHROMHMM_BIN --outdir $E/${E}_chromhmm  $E/chromhmm_binary/*_binary.txt;
 done
 
 
@@ -161,11 +159,10 @@ done
 # Rematch peak caller states
 for E in $(cat names.txt); do echo $E;
 for PC in homer macs2 omni;   do echo $PC;
-  BIN=$(get_bin_size "$PC")
 # REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=$E/$PC/${E}_${PC}_kmeans_states.bed;
- match_states "$REF" "$WORK" "$PC" "$BIN" "$E"
+ match_states "$REF" "$WORK" "$PC" "$PEAKS_BIN" "$E"
 done
 done
 
@@ -174,14 +171,13 @@ for E in $(cat names.txt); do echo $E;
 # REF=~/data/2026_omni_chromhmm/imr90/ENCFF714POQ_chromhmm.bed;
  REF=${E}_15_coreMarks_dense_joint_reodered.bed.gz;
  WORK=${E}/${E}_chromhmm/${E}_15_dense.bed;
- match_states "$REF" "$WORK" "chromhmm" 200 "$E"
+ match_states "$REF" "$WORK" "chromhmm" "$CHROMHMM_BIN" "$E"
 done
 
 ########## Joint models ###################
 
 # Joint KMeans states processing
 for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
-  BIN=$(get_bin_size "$PC")
   MARKS="H3K4me3,H3K4me1,H3K36me3,H3K9me3,H3K27me3,H3K27ac"
  CELLS=$(cat names.txt | tr '\n' ',' | sed 's/,$//')
  ALL_PEAKS=()
@@ -198,16 +194,13 @@ for PC in homer macs2 omni; do echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
   done
  done
  mkdir -p joint_kmeans/$PC;
- if [[ -z $(ls -A "joint_kmeans/$PC") ]]; then
-  python "$ROOT/scripts/rules/joint_peaks_segmentation.py" --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS \
+  python "$ROOT/scripts/rules/joint_peaks_segmentation.py" --bin $PEAKS_BIN --chromsizes $CHROMSIZES --marks $MARKS \
    --cells "$CELLS" --peaks "${ALL_PEAKS[@]}" --states 15 --outdir joint_kmeans/$PC;
- fi
 done
 
 
 # Rematch joint peak caller states
 for PC in homer macs2 omni; do echo $PC;
-  BIN=$(get_bin_size "$PC")
   REFS=()
  WORKS=()
  MATCHEDS=()

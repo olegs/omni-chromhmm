@@ -15,6 +15,7 @@ if _analysis_dir not in sys.path:
     sys.path.insert(0, _analysis_dir)
 
 from analyze import (load_binary, _natural_sort_key, _load_seg_full as load_bed)
+from utils import get_bin_size, CHROMHMM_BIN, PEAKS_BIN
 
 
 def compute_emissions_from_bigwigs(segs, bigwig_paths, mark_names, bin_size):
@@ -96,10 +97,12 @@ def main():
                     help="Binarized files (ChromHMM BinarizeBam output)")
     ap.add_argument("--marks",   nargs="+", default=None,
                     help="Mark names corresponding to bigwig files")
-    ap.add_argument("--bin",     type=int, default=100, help="Bin size (default: 100)")
+    ap.add_argument("--bin",     type=int, default=None, help="Bin size (default: auto-detected from bed)")
     ap.add_argument("--output",  required=True, help="Output .npz file")
 
     args = ap.parse_args()
+
+    bin_size = args.bin if args.bin is not None else get_bin_size(args.bed)
 
     segs = load_bed(args.bed)
     if args.bigwigs:
@@ -107,10 +110,10 @@ def main():
             print("Error: --marks must be provided with --bigwigs", file=sys.stderr)
             sys.exit(1)
         states, marks, mat = compute_emissions_from_bigwigs(
-            segs, args.bigwigs, args.marks, args.bin)
+            segs, args.bigwigs, args.marks, bin_size)
     elif args.binaries:
         states, marks, mat = compute_emissions_from_binarized(
-            segs, args.binaries, args.bin)
+            segs, args.binaries, bin_size)
     else:
         print("Error: either --bigwigs or --binaries must be provided", file=sys.stderr)
         sys.exit(1)

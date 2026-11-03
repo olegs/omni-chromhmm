@@ -8,17 +8,6 @@ if [ -n "$ZSH_VERSION" ]; then
   setopt nonomatch
 fi
 
-# Determine bin size for a given peak caller
-get_bin_size() {
-  case "$1" in
-    omni)  echo 100 ;;
-    homer) echo 200 ;;
-    macs2) echo 100 ;;
-    chromhmm) echo 200 ;;
-    *) echo 200 ;;
-  esac
-}
-
 # Relabel a model to the reference:
 # handle emissions computation if binary tracks are available.
 match_states() {

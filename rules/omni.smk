@@ -15,18 +15,17 @@ rule omnipeak_call:
         bam=ancient("{folder}/bams/{mark}.bam"),
         control=lambda w: [ancient(f"{w.folder}/controls/{w.mark}.bam")] if folder_has_controls(w.folder) else [],
     output:
-        peak=f"{{folder}}/omni/{{mark}}_{OMNI_BIN}.peak",
+        peak=f"{{folder}}/omni/{{mark}}.peak",
     threads: 8
     resources: mem_mb=8192
-    log: f"{{folder}}/omni/{{mark}}_{OMNI_BIN}.log"
+    log: f"{{folder}}/omni/{{mark}}.log"
     params:
-        bin=OMNI_BIN,
         cs=TOOLS["chromsizes"],
         control=lambda w: f"-c {w.folder}/controls/{w.mark}.bam" if folder_has_controls(w.folder) else "",
         wdir="{folder}/omni",
     shell:
         "mkdir -p {params.wdir} && "
-        "{OMNIPEAK} analyze -t {input.bam} {params.control} -cs {params.cs} --bin {params.bin} "
+        "{OMNIPEAK} analyze -t {input.bam} {params.control} -cs {params.cs} "
         "--threads {threads} -w {params.wdir} "
         "-p {output.peak} --clip 0 "
         "> {log} 2>&1"

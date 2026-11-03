@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from utils import (BIN_COLORS, save_fig, BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE,
+from utils import (BIN_COLORS, CHROMHMM_BIN, PEAKS_BIN, save_fig, BAR_STYLE, TITLE_STYLE, AXIS_FONTSIZE,
                    TICK_FONTSIZE, LEGEND_FONTSIZE, LEGEND_TITLE_FONTSIZE,
                    set_style)
 
@@ -50,17 +50,20 @@ def load_bed_regions(path):
     return regions
 
 
-def load_chromhmm_binary_peaks(binary_dir, cell, bin_size=200):
+def load_chromhmm_binary_peaks(binary_dir, cell, bin_size=CHROMHMM_BIN):
     """Convert ChromHMM binary text files to {mark: [(chrom, start, end), ...]}
     by merging consecutive 1-bins.
     """
     mark_regions = defaultdict(list)
-    pattern = os.path.join(binary_dir, f"{cell}_chr*_binary.txt")
-    files = sorted(glob.glob(pattern))
-    if not files:
-        # Fall back to files without the cell prefix.
-        pattern = os.path.join(binary_dir, "*_binary.txt")
+    if isinstance(binary_dir, (list, tuple)):
+        files = list(binary_dir)
+    else:
+        pattern = os.path.join(binary_dir, f"{cell}_chr*_binary.txt")
         files = sorted(glob.glob(pattern))
+        if not files:
+            # Fall back to files without the cell prefix.
+            pattern = os.path.join(binary_dir, "*_binary.txt")
+            files = sorted(glob.glob(pattern))
 
     for path in files:
         with open(path) as fh:
@@ -182,14 +185,15 @@ def _bar_plot(df, value_col, ylabel, title, outpath):
     save_fig(fig, outpath)
 
 
-def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=100, chromhmm_bin=None):
+def run_analyze_peaks(ds, cell, marks, outdir, omni_bin=PEAKS_BIN, chromhmm_bin=CHROMHMM_BIN):
     """Per-mark peak statistics and replicate Jaccard for all callers.
 
     Writes peak_stats.tsv and bar plots under *outdir*; called from analysis.ipynb.
     """
     if chromhmm_bin is None:
-        from utils import load_config
-        chromhmm_bin = load_config()["params"]["chromhmm_bin"]
+        chromhmm_bin = CHROMHMM_BIN
+    if omni_bin is None:
+        omni_bin = PEAKS_BIN
 
     args = SimpleNamespace(ds=ds, cell=cell, marks=marks, outdir=outdir,
                            omni_bin=omni_bin, chromhmm_bin=chromhmm_bin)
@@ -524,7 +528,7 @@ def binarization_mark_coverage(ds, cell, methods=METHOD_ORDER, workdir="."):
                         chroms, sizes = peaks_segmentation.read_chrom_sizes(chromsizes_path)
                         with contextlib.redirect_stderr(io.StringIO()):
                             binarized, _ = peaks_segmentation.binarize_peaks(
-                                peak_files, chroms, sizes, 100, marks
+                                peak_files, chroms, sizes, PEAKS_BIN, marks
                             )
                         sums = binarized.sum(axis=1)
                         total_counts = np.bincount(sums, minlength=len(marks) + 1)
@@ -657,7 +661,7 @@ def binarization_mark_combinations(ds, cell, methods=METHOD_ORDER, workdir="."):
                         chroms, sizes = peaks_segmentation.read_chrom_sizes(chromsizes_path)
                         with contextlib.redirect_stderr(io.StringIO()):
                             binarized, _ = peaks_segmentation.binarize_peaks(
-                                peak_files, chroms, sizes, 100, marks
+                                peak_files, chroms, sizes, PEAKS_BIN, marks
                             )
                         m_total = binarized.shape[1]
                         if m_total <= 62:

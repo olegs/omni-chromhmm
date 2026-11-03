@@ -9,7 +9,8 @@ DIR=~/data/2026_segmentations/sagaconf
 mkdir -p $DIR 
 
 CHROMSIZES=$DIR/hg38.chrom.sizes;
-BIN=100;
+CHROMHMM_BIN=200;
+PEAKS_BIN=100;
 
 # 1. Joint KMeans replicates states processing
 for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
@@ -18,7 +19,6 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
 
  for PC in homer macs2 omni; do
   echo "~~~~~~~~~~~~~~~~~~~~"; echo $PC;
-  BIN=$(get_bin_size "$PC")
   mkdir -p joint_kmeans/$PC;
   # Discover marks present in at least one replicate for this peak caller
   MARKS_LIST="H3K27me3 H3K9me2 H3K4me2 H3K4me3 H3F3A H3K79me2 H3K4me1 H3K9ac H4K20me1 H3K9me3 H3K27ac H2AFZ H3K36me3"
@@ -45,7 +45,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   # Concatenated model, not stacked: replicates are rows sharing one mark space,
   # so a single KMeans yields a shared state space but an own segmentation per replicate.
   python "$ROOT/scripts/rules/joint_peaks_segmentation.py" \
-   --bin $BIN --chromsizes $CHROMSIZES --marks $MARKS --cells "$REPS" \
+   --bin $PEAKS_BIN --chromsizes $CHROMSIZES --marks $MARKS --cells "$REPS" \
    --peaks $ALL_PEAKS --states 15 --outdir joint_kmeans/$PC;
  done
 done
@@ -57,9 +57,8 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
 
  for PC in homer macs2 omni; do
   echo "Matching $ds $PC individual to joint model"
-  BIN=$(get_bin_size "$PC")
   for R in rep1 rep2; do
-   match_states "joint_kmeans/$PC/${R}_kmeans_joint_states.bed" "$R/$PC/${PC}_kmeans_states.bed" "$PC" "$BIN" "$R"
+   match_states "joint_kmeans/$PC/${R}_kmeans_joint_states.bed" "$R/$PC/${PC}_kmeans_states.bed" "$PC" "$PEAKS_BIN" "$R"
   done
  done
 done
@@ -77,7 +76,7 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
   --rep1 rep1/chromhmm_default --rep2 rep2/chromhmm_default --outdir $JOINT_BINARIZED;
  # A single model over both replicates, LearnModel segments each replicate as a cell
  # in the shared state space and writes rep1/rep2 _15_segments.bed and _dense.bed.
- java -mx4000M -jar $DIR/ChromHMM/ChromHMM.jar LearnModel -p 8 -b 200 $JOINT_BINARIZED joint_chromhmm 15 hg38;
+ java -mx4000M -jar $DIR/ChromHMM/ChromHMM.jar LearnModel -p 8 -b $CHROMHMM_BIN $JOINT_BINARIZED joint_chromhmm 15 hg38;
  rm -rf $JOINT_BINARIZED;
 done
 
@@ -95,6 +94,6 @@ for ds in mcf7 gm12878 k562 cd14_monocyte hela_s3; do
  esac
  echo "Matching $ds ChromHMM individual to joint"
  for R in rep1 rep2; do
-  match_states "joint_chromhmm/${R}_15_dense.bed" "$R/chromhmm_default_result/${cell}_15_dense.bed" "chromhmm" 200 "$R"
+  match_states "joint_chromhmm/${R}_15_dense.bed" "$R/chromhmm_default_result/${cell}_15_dense.bed" "chromhmm" $CHROMHMM_BIN "$R"
  done
 done

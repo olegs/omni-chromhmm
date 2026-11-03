@@ -8,10 +8,8 @@ workdir: os.path.expanduser(config.get("workdir","."))
 
 TOOLS = config["tools"]
 P = config["params"]
-CHROMHMM_BIN = P["chromhmm_bin"]
-OMNI_BIN = P["omni_bin"]
-HOMER_BIN = P["homer_bin"]
-MACS2_BIN = P["macs2_bin"]
+CHROMHMM_BIN = P.get("chromhmm_bin", 200)
+PEAKS_BIN = P.get("peaks_bin", 100)
 NSTATES = P["n_states"]
 GENOME = P["genome"]
 
@@ -24,21 +22,6 @@ def get_marks(ds):
 def get_marks_for_folder(folder):
     """List of all histone marks present in a folder's dataset."""
     return get_marks(ds_of(folder))
-
-# Per-caller binarization bin sizes.
-CALLER_BIN = {"omni": OMNI_BIN, "homer": HOMER_BIN, "macs2": MACS2_BIN}
-
-
-def _seg_bin(path):
-    """Native bin size for a segmentation BED path or Snakemake wildcards."""
-    if hasattr(path, "caller"):
-        return CALLER_BIN.get(path.caller, CHROMHMM_BIN)
-    path_str = str(path)
-    for caller, size in CALLER_BIN.items():
-        if f"/{caller}/" in path_str:
-            return size
-    return CHROMHMM_BIN
-
 
 def _flag(key, default=True):
     """Read a boolean flag from --config key=... (top-level) or params.key (yaml).
@@ -213,7 +196,7 @@ def _folders(ds):
 def peak_file(folder, caller, mark):
     """Peak file path produced by a given caller for a mark inside folder."""
     if caller == "omni":
-        return f"{folder}/omni/{mark}_{OMNI_BIN}.peak"
+        return f"{folder}/omni/{mark}.peak"
     elif caller == "homer":
         return f"{folder}/homer/{mark}.bed"
     else:  # macs2

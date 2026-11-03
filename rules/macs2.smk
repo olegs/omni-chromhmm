@@ -8,8 +8,6 @@
 # Output: {folder}/macs2/{mark}.bed  (3-column BED, sorted)
 
 MACS2_NARROW_MARKS = {"H3K4me3", "H3K27ac", "H3K4me2", "H3K9ac", "H2AFZ"}
-MACS2_BIN = P.get("macs2_bin", 100)
-CALLER_BIN["macs2"] = MACS2_BIN
 
 
 def _macs2_opts(mark):

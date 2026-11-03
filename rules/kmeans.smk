@@ -9,6 +9,8 @@
 # This file owns:
 #   - KMeans segmentation:    {folder}/{caller}/{caller}_kmeans_states.bed
 
+PEAKS_BIN = P.get("peaks_bin", 100)
+
 rule binarize_peaks:
     """Binarize peaks for a given caller and folder."""
     input:
@@ -20,7 +22,7 @@ rule binarize_peaks:
     conda: "../envs/python.yaml"
     resources: mem_mb=2000
     params:
-        bin=lambda w: CALLER_BIN[w.caller],
+        bin=PEAKS_BIN,
         marks=lambda w: ",".join(get_marks_for_folder(w.folder)),
         cell=lambda w: DATASETS[ds_of(w.folder)]["cell"],
         outdir="{folder}/{caller}/chromhmm_peaks"
@@ -34,7 +36,8 @@ rule binarize_peaks:
 rule kmeans_states:
     """Run KMeans clustering on binarized peaks."""
     input:
-        peaks=lambda w: [ancient(peak_file(w.folder, w.caller, m)) for m in get_marks_for_folder(w.folder)],
+        peaks=lambda w: [ancient(peak_file(w.folder, w.caller, m))
+                         for m in get_marks_for_folder(w.folder)],
         cs=ancient(TOOLS["chromsizes"]),
         bins=expand("{{folder}}/{{caller}}/chromhmm_peaks/{chr}_binary.txt.gz", chr=CHROMS)
     output:
@@ -43,7 +46,7 @@ rule kmeans_states:
     conda: "../envs/python.yaml"
     resources: mem_mb=4000
     params:
-        bin=lambda w: CALLER_BIN[w.caller],
+        bin=PEAKS_BIN,
         n=NSTATES,
         marks=lambda w: ",".join(get_marks_for_folder(w.folder)),
         cell=lambda w: DATASETS[ds_of(w.folder)]["cell"],

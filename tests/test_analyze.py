@@ -422,3 +422,28 @@ def test_plot_summary_no_legend():
         outpath = os.path.join(tmpdir, "test_summary.pdf")
         summary_plots._plot_summary(df, "Test Title", "Y Label", outpath)
         assert os.path.exists(outpath)
+
+
+def test_global_bin_constants_and_helpers():
+    assert utils.CHROMHMM_BIN == 200
+    assert utils.PEAKS_BIN == 100
+
+    assert utils.method_bin_size("chromhmm_default") == 200
+    assert utils.method_bin_size("joint_chromhmm") == 200
+    assert utils.method_bin_size("ref") == 200
+    assert utils.method_bin_size("kmeans_homer") == 100
+    assert utils.method_bin_size("kmeans_macs2") == 100
+    assert utils.method_bin_size("kmeans_omni") == 100
+    assert utils.method_bin_size("joint_kmeans_homer") == 100
+    assert utils.method_bin_size("joint_kmeans_macs2") == 100
+    assert utils.method_bin_size("joint_kmeans_omni") == 100
+
+    assert utils.seg_bin_size("ds/chromhmm_default_result/cell_15_dense_matched.bed") == 200
+    assert utils.seg_bin_size("ds/omni/omni_kmeans_states_matched.bed") == 100
+    assert utils.seg_bin_size("ds/homer/homer_kmeans_states_matched.bed") == 100
+    assert utils.seg_bin_size("ds/macs2/macs2_kmeans_states_matched.bed") == 100
+    assert utils.seg_bin_size("ds/ENCFF123ABC.bed") == 200
+
+    assert utils.get_bin_size("chromhmm_default") == 200
+    assert utils.get_bin_size("kmeans_homer") == 100
+    assert utils.get_bin_size("ds/omni/omni_kmeans_states_matched.bed") == 100

@@ -13,6 +13,7 @@ CHROMHMM_JAR="$DIR/ChromHMM/ChromHMM.jar"
 GENOME=hg38
 STATES=15
 CHROMHMM_BIN=200
+PEAKS_BIN=100
 # Marks list for the ENCODE datasets
 MARKS="H3K4me3,H3K27ac,H3K4me1,H3K36me3,H3K9me3,H3K27me3"
 REPS="rep1,rep2"
@@ -36,7 +37,6 @@ do
  for PC in homer macs2 omni
  do
   echo "~~~~~~~~~~~~~~~~~~~~"; echo "$PC"
-  BIN=$(get_bin_size "$PC")
   echo "Collecting peaks"
   ALL_PEAKS=""
   for R in rep1 rep2
@@ -44,7 +44,7 @@ do
    for M in H3K4me3 H3K27ac H3K4me1 H3K36me3 H3K9me3 H3K27me3
    do
     case "$PC" in
-     omni)  P="$R/omni/${M}_${BIN}.peak" ;;
+     omni)  P="$R/omni/${M}.peak" ;;
      homer) P="$R/homer/${M}.bed" ;;
      macs2) P="$R/macs2/${M}.bed" ;;
     esac
@@ -56,7 +56,7 @@ do
   if [[ -z $(ls -A "joint_kmeans/$PC") ]]; then
     mkdir -p "joint_kmeans/$PC"
     python "$ROOT/scripts/rules/joint_peaks_segmentation.py" \
-   --bin "$BIN" --chromsizes "$CHROMSIZES" --marks "$MARKS" --cells "$REPS" \
+   --bin "$PEAKS_BIN" --chromsizes "$CHROMSIZES" --marks "$MARKS" --cells "$REPS" \
    --peaks $ALL_PEAKS --states "$STATES" --outdir "joint_kmeans/$PC";
   fi
  done
@@ -70,7 +70,8 @@ do
  for PC in homer macs2 omni
  do
   echo "Matching $ds $PC joint KMeans to the ENCODE reference"
-  match_joint "$(ref_bed "$ds")" "joint_kmeans/$PC/rep1_kmeans_joint_states.bed" "joint_kmeans/$PC/rep2_kmeans_joint_states.bed" "$PC" "$(get_bin_size "$PC")"
+  match_joint "$(ref_bed "$ds")" "joint_kmeans/$PC/rep1_kmeans_joint_states.bed" \
+  "joint_kmeans/$PC/rep2_kmeans_joint_states.bed" "$PC" "$PEAKS_BIN"
  done
 done
 
@@ -82,8 +83,10 @@ do
  echo "~~~~~~~~~~~~~~~~~~~~"; echo "Joint ChromHMM"
  mkdir -p joint_chromhmm
  JOINT_BINARIZED=$(mktemp -d)
- python "$ROOT/scripts/joint_chromhmm.py" concat --rep1 rep1/chromhmm_default --rep2 rep2/chromhmm_default --outdir "$JOINT_BINARIZED"
- java -mx4000M -jar "$CHROMHMM_JAR" LearnModel -p 8 -b "$CHROMHMM_BIN" "$JOINT_BINARIZED" joint_chromhmm "$STATES" "$GENOME"
+ python "$ROOT/scripts/joint_chromhmm.py" concat \
+ --rep1 rep1/chromhmm_default --rep2 rep2/chromhmm_default --outdir "$JOINT_BINARIZED"
+ java -mx4000M -jar "$CHROMHMM_JAR" LearnModel \
+ -p 8 -b "$CHROMHMM_BIN" "$JOINT_BINARIZED" joint_chromhmm "$STATES" "$GENOME"
  rm -rf "$JOINT_BINARIZED"
 done
 
@@ -93,5 +96,6 @@ do
  echo "===================="; echo "$ds"
  cd "$DIR/$ds" || exit
  echo "Matching $ds joint ChromHMM to the ENCODE reference"
- match_joint "$(ref_bed "$ds")" "joint_chromhmm/rep1_${STATES}_dense.bed" "joint_chromhmm/rep2_${STATES}_dense.bed" "chromhmm" 200
+ match_joint "$(ref_bed "$ds")" "joint_chromhmm/rep1_${STATES}_dense.bed" \
+ "joint_chromhmm/rep2_${STATES}_dense.bed" "chromhmm" "$CHROMHMM_BIN"
 done

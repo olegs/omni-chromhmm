@@ -26,6 +26,7 @@ FCHROM=chr1
 GENOME=hg38
 STATES=15
 CHROMHMM_BIN=200
+PEAKS_BIN=100
 MARKS_LIST="H3K4me3,H3K27ac,H3K4me1,H3K36me3,H3K9me3,H3K27me3"
 MARKS_ARR=(H3K4me3 H3K27ac H3K4me1 H3K36me3 H3K9me3 H3K27me3)
 
@@ -106,7 +107,6 @@ do
   do
     echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     echo "Caller: $PC"
-    BIN=$(get_bin_size "$PC")
 
     ALL_PEAKS=()
     KMEANS_BEDS=()
@@ -133,7 +133,7 @@ do
 
     echo "Running joint KMeans for $PC across sweep thresholds..."
     python "$ROOT/scripts/rules/joint_peaks_segmentation.py" \
-      --bin "$BIN" --chromsizes "$CHROMSIZES" --marks "$MARKS_LIST" \
+      --bin "$PEAKS_BIN" --chromsizes "$CHROMSIZES" --marks "$MARKS_LIST" \
       --cells "$JOINED_THRESHOLDS" --peaks "${ALL_PEAKS[@]}" --states "$STATES" \
       --outbeds "${KMEANS_BEDS[@]}"
 

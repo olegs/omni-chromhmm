@@ -10,6 +10,7 @@
 #   - Peak -> binary matrix:  {folder}/{caller}/chromhmm_peaks/
 
 # --- Default ChromHMM binarization ---------------------------------------
+CHROMHMM_BIN = P.get("chromhmm_bin", 200)
 
 rule make_cellmark_table:
     input:

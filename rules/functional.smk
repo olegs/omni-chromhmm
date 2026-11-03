@@ -19,6 +19,8 @@
 #
 # Run (e.g. imr90): snakemake imr90/functional_chr1_sweep/.done --use-conda ...
 
+CHROMHMM_BIN = P.get("chromhmm_bin", 200)
+PEAKS_BIN = P.get("peaks_bin", 100)
 FSWEEP = "functional_chr1_sweep"
 FCHROM = "chr1"
 _FS = P.get("functional_sweep", {})
@@ -93,12 +95,11 @@ rule functional_omni_model:
     resources: mem_mb=8192
     log: f"{{ds}}/{FSWEEP}/omni/models/{{mark}}.log"
     params:
-        bin=OMNI_BIN,
         control=lambda w, input: f"-c {input.control[0]}" if input.control else "",
         wdir=f"{{ds}}/{FSWEEP}/omni/work/{{mark}}",
     shell:
         "mkdir -p {params.wdir} && "
-        "{OMNIPEAK} analyze -t {input.bam} {params.control} -cs {input.cs} --bin {params.bin} "
+        "{OMNIPEAK} analyze -t {input.bam} {params.control} -cs {input.cs} "
         "--threads {threads} -w {params.wdir} -m {output} --clip 0 "
         "> {log} 2>&1"
 
@@ -114,12 +115,11 @@ rule functional_omni_peaks:
     resources: mem_mb=8192
     log: f"{{ds}}/{FSWEEP}/omni/{{thr}}/{{mark}}.log"
     params:
-        bin=OMNI_BIN,
         control=lambda w, input: f"-c {input.control[0]}" if input.control else "",
         wdir=f"{{ds}}/{FSWEEP}/omni/work/{{mark}}_{{thr}}",
     shell:
         "mkdir -p {params.wdir} && "
-        "{OMNIPEAK} analyze -t {input.bam} {params.control} -cs {input.cs} --bin {params.bin} "
+        "{OMNIPEAK} analyze -t {input.bam} {params.control} -cs {input.cs} "
         "--threads {threads} -w {params.wdir} -m {input.model} --fdr {wildcards.thr} "
         "-p {output} --clip 0 > {log} 2>&1 && rm -rf {params.wdir}"
 
@@ -304,7 +304,7 @@ rule functional_binarize_peaks:
     log: f"{{ds}}/{FSWEEP}/{{caller}}/{{thr}}/binarize_peaks.log"
     conda: "../envs/python.yaml"
     params:
-        bin=lambda w: CALLER_BIN[w.caller],
+        bin=PEAKS_BIN,
         marks=lambda w: ",".join(get_marks(w.ds)),
         cell=lambda w: DATASETS[w.ds]["cell"],
         outdir=f"{{ds}}/{FSWEEP}/{{caller}}/{{thr}}/chromhmm_peaks",
@@ -330,7 +330,7 @@ rule functional_joint_segmentation:
     conda: "../envs/python.yaml"
     resources: mem_mb=8000
     params:
-        bin=lambda w: CALLER_BIN[w.caller],
+        bin=PEAKS_BIN,
         marks=lambda w: ",".join(get_marks(w.ds)),
         cells=",".join(FUNCTIONAL_THRESHOLDS),
         n=NSTATES,

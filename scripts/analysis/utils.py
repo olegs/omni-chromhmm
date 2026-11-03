@@ -533,6 +533,29 @@ BIN_COLORS = {
     "reference": "#888888",
 }
 
+CHROMHMM_BIN = 200
+PEAKS_BIN = 100
+
+
+def method_bin_size(method):
+    """Bin size for a segmentation method: CHROMHMM_BIN (200) for ChromHMM / Reference, PEAKS_BIN (100) for peak callers."""
+    binarization, _, _ = parse_method(str(method))
+    if binarization in ("default", "reference"):
+        return CHROMHMM_BIN
+    return PEAKS_BIN
+
+
+def seg_bin_size(path):
+    """Bin size for a segmentation BED path: CHROMHMM_BIN (200) for ChromHMM / Reference, PEAKS_BIN (100) for peak callers."""
+    return method_bin_size(seg_label(path))
+
+
+def get_bin_size(method_or_path):
+    """Return bin size given a method name or segmentation path."""
+    if isinstance(method_or_path, str) and (os.path.exists(method_or_path) or "/" in method_or_path or method_or_path.endswith(".bed")):
+        return seg_bin_size(method_or_path)
+    return method_bin_size(method_or_path)
+
 
 def parse_method(name):
     """Parse a method key into (binarization, state_model, rep)."""

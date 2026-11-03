@@ -4,6 +4,16 @@
 # similarity, driven by match.py.
 # The result is a bijection. See match.md.
 
+CHROMHMM_BIN = P.get("chromhmm_bin", 200)
+PEAKS_BIN = P.get("peaks_bin", 100)
+
+
+def _seg_bin(bedpath):
+    """Determine bin size (PEAKS_BIN vs CHROMHMM_BIN) from segmentation path."""
+    for caller in ("omni", "macs2", "homer", "kmeans"):
+        if f"/{caller}/" in bedpath or f"{caller}_" in os.path.basename(bedpath) or bedpath.startswith(f"{caller}/"):
+            return PEAKS_BIN
+    return CHROMHMM_BIN
 
 def _binarized_files(bedpath):
     """All per-chromosome binarized data paths for a segmentation BED."""
@@ -18,7 +28,7 @@ def _binarized_files(bedpath):
         parts = rel.split("/")
         if parts[0] == "chromhmm_default" and len(parts) == 4:
             return [f"{root}/{FSWEEP}/chromhmm_default/{parts[1]}/binary/{cell}_{FCHROM}_binary.txt"]
-        if parts[0] in CALLER_BIN and len(parts) == 3:
+        if parts[0] in CALLERS and len(parts) == 3:
             return [f"{root}/{FSWEEP}/{parts[0]}/{parts[1]}/chromhmm_peaks/{FCHROM}_binary.txt.gz"]
         return []
     if "chromhmm_default_result" in bedpath:
@@ -29,7 +39,7 @@ def _binarized_files(bedpath):
     # KMeans paths look like {ds}/{caller}/{caller}_kmeans_states...
     # or {ds}/repN/{caller}/{caller}_kmeans_states...
     # In both cases, the caller is the directory containing the bed file.
-    if len(parts) >= 3 and parts[-2] in CALLER_BIN:
+    if len(parts) >= 3 and parts[-2] in CALLERS:
         caller = parts[-2]
         return [f"{folder}/{caller}/chromhmm_peaks/{c}_binary.txt.gz"
                 for c in CHROMS]
@@ -128,7 +138,7 @@ rule compute_bw_emissions:
     params:
         marks=lambda w: " ".join(get_marks_for_folder(_emissions_folder(w.bedpath))),
         bigwigs=lambda w: " ".join(_folder_bigwigs(_emissions_folder(w.bedpath))),
-        bin=CHROMHMM_BIN,
+        bin=lambda w: _seg_bin(w.bedpath),
     shell:
         "python {SCRIPTS_DIR}/emissions.py "
         "--bed {input.bed} --bigwigs {params.bigwigs} --marks {params.marks} "
@@ -148,7 +158,7 @@ rule compute_bin_emissions:
         bedpath=r"[A-Za-z0-9_./-]+",
     conda: "../envs/python.yaml"
     params:
-        bin=_seg_bin,
+        bin=lambda w: _seg_bin(w.bedpath),
     shell:
         "python {SCRIPTS_DIR}/emissions.py "
         "--bed {input.bed} --binaries {input.binaries} "

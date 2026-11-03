@@ -12,9 +12,7 @@ tools:
 
 params:
   chromhmm_bin: 200
-  omni_bin: 100
-  homer_bin: 200
-  macs2_bin: 100
+  peaks_bin: 100
   n_states: 15
   genome: "hg38"
   replicates: true        # process per-replicate folders (rep1/rep2) for datasets that have them

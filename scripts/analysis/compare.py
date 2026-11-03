@@ -515,14 +515,18 @@ def run_segment_stats(seg_paths, outdir, analysis_dir=None):
         _plot_segment_stats(df, outdir)
 
 
-def run_compare(seg, bins, outdir, analysis_dir=None, threads=None,
+def run_compare(seg, bins=None, outdir=".", analysis_dir=None, threads=None,
                 labels=None, all_pairs=False):
     """Cross-segmentation comparison: entropy, kappa, Jaccard, segment stats.
 
-    *bins* may be a single int (broadcast to all segs) or a list, one per seg.
+    *bins* may be a single int (broadcast to all segs), a list (one per seg),
+    or None (derived automatically from seg paths via utils.seg_bin_size).
     Called from analysis.ipynb.
     """
-    if isinstance(bins, int):
+    if bins is None:
+        from utils import seg_bin_size
+        bins = [seg_bin_size(s) for s in seg]
+    elif isinstance(bins, int):
         bins = [bins]
     args = SimpleNamespace(seg=seg, bins=bins, outdir=outdir,
                            analysis_dir=analysis_dir, threads=threads,
